@@ -235,6 +235,10 @@
         box-shadow: 0 4px 10px rgba(21, 101, 192, 0.3); /* 修改：藍色陰影 */
         flex-shrink: 0;
         border: 1px solid #90caf9; /* 修改：邊框顏色 */
+        /* Android 觸控優化 */
+        touch-action: manipulation; 
+        -webkit-tap-highlight-color: transparent;
+        user-select: none;
     }
     #send-btn:active { transform: scale(0.95); }
     #send-btn:disabled { background: #bdbdbd; box-shadow: none; cursor: not-allowed; border: none; color: #fff;}
@@ -773,15 +777,20 @@
         });
 
         async function handleSendMessage() {
+            // 防止重複點擊
+            if (userInput.disabled || sendBtn.disabled) return;
+
             const text = userInput.value.trim();
             if (!text) return;
 
+            // 嘗試播放靜音以解鎖音訊 (加強容錯)
             if (!isMuted) {
-                window.speechSynthesis.cancel();
-                const silent = new SpeechSynthesisUtterance(" ");
-                silent.volume = 0; // 靜音
-                silent.rate = 10;  // 快速播放結束
-                window.speechSynthesis.speak(silent);
+                try {
+                    window.speechSynthesis.cancel();
+                    const silent = new SpeechSynthesisUtterance(" ");
+                    silent.volume = 0; silent.rate = 10;
+                    window.speechSynthesis.speak(silent);
+                } catch (e) { console.warn("Audio init failed", e); }
             }
 
             userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
@@ -807,6 +816,10 @@
 
             finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.`;
 
+            // Add AbortController for timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
@@ -814,8 +827,10 @@
                     body: JSON.stringify({
                         contents: chatHistory,
                         systemInstruction: { parts: [{ text: finalSystemInstruction }] },
-                    })
+                    }),
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
 
                 if (!response.ok) {
                     let errMsg = "Server Error";
@@ -853,7 +868,11 @@
             } catch (error) {
                 console.error(error);
                 removeMessage(loadingMsg);
-                addMessage(`錯誤: ${error.message}`, 'system');
+                if (error.name === 'AbortError') {
+                    addMessage(`錯誤: 連線逾時 (Timeout)，請重試。`, 'system');
+                } else {
+                    addMessage(`錯誤: ${error.message}`, 'system');
+                }
             } finally {
                 userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
             }
@@ -879,6 +898,12 @@
         }
 
         sendBtn.addEventListener('click', handleSendMessage);
+        // 新增 touchend 支援，解決部分手機點擊無反應問題
+        sendBtn.addEventListener('touchend', (e) => {
+            e.preventDefault(); // 防止觸發 click 造成雙重發送
+            handleSendMessage();
+        });
+
         userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSendMessage(); });
 
         window.addEventListener('resize', () => {
