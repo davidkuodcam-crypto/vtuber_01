@@ -2,14 +2,14 @@
 <html lang="zh-TW">
 <head>
 <meta charset="utf-8">
-<title>AI VTuber - Idle Animations Removed</title>
+<title>AI VTuber - Golden New Year</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <style>
     body {
         margin: 0;
         padding: 0;
-        overflow: hidden; 
-        /* 維持亮金色漸層背景 */
+        overflow: hidden; /* 禁止捲動 */
+        /* 修改：改為亮金色漸層背景，突顯黑色衣服 */
         background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 50%, #ffe0b2 100%);
         font-family: "Noto Sans TC", sans-serif;
         overscroll-behavior: none; 
@@ -18,6 +18,7 @@
         height: -webkit-fill-available;
     }
     
+    /* 讀取畫面 */
     #loading-screen {
         position: absolute;
         top: 0; left: 0; width: 100%; height: 100%;
@@ -32,32 +33,34 @@
     
     .loader {
         border: 4px solid #fff3e0;
-        border-top: 4px solid #3498db; /* 改回藍色 */
+        border-top: 4px solid #d32f2f;
         border-radius: 50%;
         width: 40px; height: 40px;
         animation: spin 1s linear infinite;
         margin-bottom: 15px;
     }
 
-    .loading-text { color: #555; font-size: 1rem; font-weight: bold; margin-bottom: 20px; }
+    .loading-text { color: #d32f2f; font-size: 1rem; font-weight: bold; margin-bottom: 20px; }
 
     #start-btn {
         padding: 12px 30px;
         font-size: 1.1rem;
-        background: #3498db; /* 改回藍色 */
-        color: white;
-        border: none;
+        background: linear-gradient(to right, #d32f2f, #f44336);
+        color: #ffd700;
+        border: 2px solid #ffd700;
         border-radius: 50px;
         cursor: pointer;
         display: none;
-        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+        box-shadow: 0 4px 15px rgba(211, 47, 47, 0.3);
         transition: transform 0.2s, background 0.2s;
         font-weight: bold;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.2);
     }
-    #start-btn:active { transform: scale(0.95); background: #2980b9; }
+    #start-btn:active { transform: scale(0.95); background: #b71c1c; }
 
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
+    /* API 狀態 (右上角) */
     #api-status {
         position: absolute;
         top: 15px; right: 15px;
@@ -67,18 +70,19 @@
         border-radius: 20px;
         font-size: 12px;
         font-weight: bold;
-        color: #333; /* 改回黑色 */
+        color: #bf360c; /* 深橘紅色文字 */
         display: flex; align-items: center;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         z-index: 100;
         transition: all 0.3s;
-        border: 1px solid #ddd;
+        border: 1px solid #ffcc80;
     }
     .status-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #ccc; margin-right: 6px; }
     .status-connected { background-color: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
     .status-error { background-color: #e74c3c; box-shadow: 0 0 5px #e74c3c; }
     .status-preview { background-color: #f39c12; box-shadow: 0 0 5px #f39c12; }
 
+    /* 檔案讀取狀態面板 */
     #file-status {
         position: absolute;
         top: 15px; left: 15px;
@@ -90,10 +94,10 @@
         color: #5d4037;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         z-index: 100;
-        max-width: 200px;
+        max-width: 180px;
         transition: opacity 0.5s;
         pointer-events: none;
-        border: 1px solid #ddd;
+        border: 1px solid #ffcc80;
     }
     .file-status-item { 
         margin-bottom: 4px; 
@@ -108,6 +112,9 @@
     .icon-fail { color: #c62828; margin-right: 6px; font-weight: bold; }
     .icon-loading { color: #ef6c00; margin-right: 6px; animation: pulse 1s infinite; }
     
+    @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+
+    /* 對話介面 */
     #chat-container {
         position: absolute; 
         bottom: 20px; 
@@ -123,14 +130,21 @@
     }
 
     @media (max-width: 600px) {
-        #chat-container { width: 95%; bottom: 30px; }
-        #file-status, #api-status { top: 10px; transform: scale(0.9); transform-origin: top; }
+        #chat-container {
+            width: 95%; 
+            bottom: 30px; 
+        }
+        #file-status, #api-status {
+            top: 10px;
+            transform: scale(0.9); 
+            transform-origin: top;
+        }
         #file-status { left: 10px; }
         #api-status { right: 10px; }
     }
 
     #chat-display {
-        background: rgba(255, 255, 255, 0.4); 
+        background: rgba(255, 255, 255, 0.4); /* 更亮更通透 */
         padding: 12px; 
         border-radius: 16px;
         height: 140px; 
@@ -157,33 +171,63 @@
         text-shadow: 0 1px 1px rgba(0,0,0,0.1);
     }
 
-    .message-user { align-self: flex-end; background-color: rgba(52, 152, 219, 0.9); border-bottom-right-radius: 2px; color: #fff; } /* 藍色 */
-    .message-ai { align-self: flex-start; background-color: rgba(255, 255, 255, 0.9); border-bottom-left-radius: 2px; color: #333; text-shadow: none; border: 1px solid #ffd700; }
+    .message-user { 
+        align-self: flex-end; 
+        background-color: rgba(211, 47, 47, 0.9); /* 深紅色 */
+        border-bottom-right-radius: 2px; 
+        color: #fff;
+    }
+    .message-ai { 
+        align-self: flex-start; 
+        background-color: rgba(255, 255, 255, 0.9); 
+        border-bottom-left-radius: 2px; 
+        color: #333; 
+        text-shadow: none;
+        border: 1px solid #ffd700;
+    }
     .message-system { align-self: center; background: transparent; color: #e65100; font-size: 12px; font-style: italic; text-shadow: none; text-align: center;}
+
     .message a { color: #1e88e5; text-decoration: none; border-bottom: 1px dotted #1e88e5; }
     .message-user a { color: #ffe0b2; }
 
     #input-area { display: flex; gap: 8px; align-items: center; }
-    #user-input { flex: 1; padding: 12px 16px; border-radius: 25px; border: 1px solid rgba(255, 215, 0, 0.6); outline: none; background: rgba(255, 255, 255, 0.95); font-size: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: #5d4037; }
-    #user-input::placeholder { color: #999; }
     
-    #send-btn { 
+    #user-input {
+        flex: 1; 
+        padding: 12px 16px; 
+        border-radius: 25px; 
+        border: 1px solid rgba(255, 215, 0, 0.6);
+        outline: none;
+        background: rgba(255, 255, 255, 0.95); 
+        font-size: 16px; 
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        color: #5d4037;
+    }
+    #user-input::placeholder { color: #999; }
+
+    #send-btn {
         padding: 0 20px; 
         height: 44px; 
-        border-radius: 22px; 
-        border: none; 
-        background: #3498db; /* 改回藍色 */
-        color: white; 
-        font-weight: bold; 
-        cursor: pointer; 
-        transition: background 0.2s; 
-        box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3); 
-        flex-shrink: 0; 
+        border-radius: 22px; border: none;
+        background: linear-gradient(to right, #d32f2f, #c62828);
+        color: #ffd700; font-weight: bold; cursor: pointer;
+        transition: background 0.2s;
+        box-shadow: 0 4px 10px rgba(198, 40, 40, 0.3);
+        flex-shrink: 0;
+        border: 1px solid #ffd700;
     }
     #send-btn:active { transform: scale(0.95); }
-    #send-btn:disabled { background: #bdbdbd; box-shadow: none; cursor: not-allowed; color: #fff;}
-    
-    #mute-btn { width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.95); font-size: 20px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); flex-shrink: 0; border: 1px solid #ffd700; color: #3498db; }
+    #send-btn:disabled { background: #bdbdbd; box-shadow: none; cursor: not-allowed; border: none; color: #fff;}
+
+    #mute-btn {
+        width: 44px; height: 44px; border-radius: 50%; border: none;
+        background: rgba(255, 255, 255, 0.95); font-size: 20px; cursor: pointer;
+        display: flex; justify-content: center; align-items: center;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        flex-shrink: 0;
+        border: 1px solid #ffd700;
+        color: #d32f2f;
+    }
     #mute-btn.muted { background: #e74c3c; color: white; border: none; }
     
     #emotion-debug {
@@ -197,6 +241,7 @@
         line-height: 1.3;
         opacity: 0.6; 
     }
+
 </style>
 
 <script type="importmap">
@@ -215,7 +260,7 @@
     <div id="loading-screen">
         <div class="loader" id="loader"></div>
         <div class="loading-text" id="status-text">初始化新年系統...</div>
-        <button id="start-btn">開始對話</button>
+        <button id="start-btn">開始新年對話</button>
     </div>
 
     <div id="file-status">
@@ -233,10 +278,12 @@
     </div>
 
     <div id="chat-container">
-        <div id="chat-display"></div>
+        <div id="chat-display">
+            <!-- 訊息將由 JavaScript 動態加入 -->
+        </div>
         <div id="input-area">
             <button id="mute-btn" title="切換聲音">🔊</button>
-            <input type="text" id="user-input" placeholder="輸入訊息..." disabled>
+            <input type="text" id="user-input" placeholder="輸入新年祝福..." disabled>
             <button id="send-btn" disabled>發送</button>
         </div>
     </div>
@@ -249,34 +296,47 @@
 
         const API_URL = "/api/chat"; 
         const VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm';
-        
+
         let currentVrm = undefined;
         let chatHistory = [];
         let isSpeaking = false;
+        let currentEmotion = 'neutral';
         let isMuted = false;
+        
         let externalSystemPrompt = ""; 
         let externalKnowledge = "";
-        let openingRemark = ""; 
+        let openingRemark = ""; // 儲存開場白
 
         const isPreviewEnv = window.location.protocol === 'blob:' || window.location.protocol === 'file:';
 
         // --- 場景初始化 ---
         const scene = new THREE.Scene();
+        // 修改：改為暖米黃色背景，與 CSS 亮金背景呼應
         scene.background = new THREE.Color(0xfff8e1); 
+        
+        // 霧氣改為暖米色
         scene.fog = new THREE.Fog(0xfff8e1, 5, 15);
+        
+        // 修改：網格線改為亮紅色 (Red) 和 深橘色 (Deep Orange)，在亮地板上清晰可見
         scene.add(new THREE.GridHelper(20, 20, 0xd32f2f, 0xffcc80)); 
 
         const camera = new THREE.PerspectiveCamera(30.0, window.innerWidth / window.innerHeight, 0.1, 20.0);
         
+        // **相機位置邏輯**
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
-            // 對話特寫視角
             if (aspect < 0.8) {
+                // 手機直立模式：初始特寫
                 camera.position.set(0.0, 1.35, 2.2); 
-                if(currentVrm) controls.target.set(0.0, 1.35, 0.0);
+                if(currentVrm) {
+                    controls.target.set(0.0, 1.35, 0.0);
+                }
             } else {
+                // 桌面寬螢幕模式
                 camera.position.set(0.0, 1.4, 3.5);
-                if(currentVrm) controls.target.set(0.0, 1.3, 0.0); 
+                if(currentVrm) {
+                    controls.target.set(0.0, 1.3, 0.0); 
+                }
             }
             camera.updateProjectionMatrix();
             controls.update();
@@ -287,178 +347,257 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
         document.body.appendChild(renderer.domElement);
 
-        const directionalLight = new THREE.DirectionalLight(0xffedd5, 1.5); 
+        // 燈光優化：暖色光
+        const directionalLight = new THREE.DirectionalLight(0xffedd5, 1.5); // 暖白光
         directionalLight.position.set(-1.0, 2.0, 1.0).normalize();
         scene.add(directionalLight);
-        scene.add(new THREE.DirectionalLight(0xffd700, 0.6));
+        
+        // 補光 (金色)
+        const fillLight = new THREE.DirectionalLight(0xffd700, 0.6);
+        fillLight.position.set(1.0, 1.0, 1.0).normalize();
+        scene.add(fillLight);
+        
         scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-        // --- 粒子特效 ---
+        // --- 新年特效：飄落金粉/紅紙屑 ---
         let particlesMesh;
-        const particlesCount = 300; 
+        const particlesCount = 300; // 粒子數量
         function createFestiveParticles() {
             const geometry = new THREE.BufferGeometry();
             const posArray = new Float32Array(particlesCount * 3);
             const colorArray = new Float32Array(particlesCount * 3);
+            
             for(let i = 0; i < particlesCount * 3; i+=3) {
-                posArray[i] = (Math.random() - 0.5) * 15; 
-                posArray[i+1] = Math.random() * 10;       
-                posArray[i+2] = (Math.random() - 0.5) * 15; 
-                if (Math.random() > 0.5) { colorArray[i] = 0.9; colorArray[i+1] = 0.1; colorArray[i+2] = 0.1; } 
-                else { colorArray[i] = 0.8; colorArray[i+1] = 0.6; colorArray[i+2] = 0.0; }
+                // 隨機位置
+                posArray[i] = (Math.random() - 0.5) * 15; // X
+                posArray[i+1] = Math.random() * 10;       // Y
+                posArray[i+2] = (Math.random() - 0.5) * 15; // Z
+
+                // 修改：顏色對比度調整
+                if (Math.random() > 0.5) {
+                    // 正紅色 (在淺色背景很明顯)
+                    colorArray[i] = 0.9;
+                    colorArray[i+1] = 0.1;
+                    colorArray[i+2] = 0.1;
+                } else {
+                    // 深金色 (避免太亮看不見)
+                    colorArray[i] = 0.8;
+                    colorArray[i+1] = 0.6;
+                    colorArray[i+2] = 0.0;
+                }
             }
+            
             geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
-            const material = new THREE.PointsMaterial({ size: 0.15, vertexColors: true, transparent: true, opacity: 0.8 });
+            
+            const material = new THREE.PointsMaterial({
+                size: 0.15, // 稍微加大粒子
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                // blending: THREE.AdditiveBlending // 在淺色背景取消 Additive，不然會變白
+            });
+            
             particlesMesh = new THREE.Points(geometry, material);
             scene.add(particlesMesh);
         }
         createFestiveParticles();
 
+        // --- 控制器設定 (OrbitControls) ---
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enablePan = true; controls.screenSpacePanning = true; 
-        controls.enableDamping = true; controls.dampingFactor = 0.05;
-        controls.minDistance = 1.0; controls.maxDistance = 8.0;
-        controls.maxPolarAngle = Math.PI / 2 + 0.1; controls.minPolarAngle = Math.PI / 3;
+        controls.enablePan = true; 
+        controls.screenSpacePanning = true; 
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 1.0; 
+        controls.maxDistance = 8.0;
+        controls.maxPolarAngle = Math.PI / 2 + 0.1; 
+        controls.minPolarAngle = Math.PI / 3;
+
         updateCameraPosition(); 
 
-        // --- 載入外部檔案與模型 ---
-        async function loadData() {
+        // --- 檔案讀取 (左上角狀態) ---
+        async function loadExternalData() {
             const statusText = document.getElementById('status-text');
             const fileStatusDiv = document.getElementById('file-status');
             
-            let promptStatus = '<span class="icon-loading">●</span> Prompt';
-            let kbStatus = '<span class="icon-loading">●</span> KB';
+            let promptStatusHTML = '<span class="icon-loading">●</span> Prompt';
+            let kbStatusHTML = '<span class="icon-loading">●</span> KB';
 
-            const updateStatus = () => {
+            const renderStatus = () => {
                 fileStatusDiv.innerHTML = `
-                    <div class="file-status-item">${promptStatus}</div>
-                    <div class="file-status-item">${kbStatus}</div>
+                    <div class="file-status-item">${promptStatusHTML}</div>
+                    <div class="file-status-item">${kbStatusHTML}</div>
                 `;
             };
-            updateStatus();
+            
+            renderStatus();
 
-            // 1. Prompt & KB
-            statusText.innerText = "讀取知識庫...";
             try {
+                statusText.innerText = "讀取角色設定...";
                 const res = await fetch(`./Prompt.txt?t=${Date.now()}`);
-                if (res.ok) { externalSystemPrompt = await res.text(); promptStatus = '<span class="icon-ok">✓</span> Prompt OK'; }
-                else promptStatus = '<span class="icon-fail">✗</span> Prompt Def';
-            } catch(e) { promptStatus = '<span class="icon-fail">✗</span> Prompt Err'; }
-            updateStatus();
+                if (res.ok) {
+                    externalSystemPrompt = await res.text();
+                    promptStatusHTML = '<span class="icon-ok">✓</span> Prompt OK';
+                } else {
+                    promptStatusHTML = '<span class="icon-fail">✗</span> Prompt Def';
+                }
+            } catch (e) {
+                promptStatusHTML = '<span class="icon-fail">✗</span> Prompt Err';
+            }
+            renderStatus();
 
+            statusText.innerText = "讀取雲端知識庫...";
             let fileIndex = 1;
+            let keepLoading = true;
             let loadedCount = 0;
-            while(true) {
-                try {
-                    const fname = `KnowledgeBase${String(fileIndex).padStart(2,'0')}.txt`;
-                    const res = await fetch(`./${fname}?t=${Date.now()}`); 
-                    
-                    if(res.ok) {
-                        const txt = await res.text();
-                        if(fileIndex===1) openingRemark = txt;
-                        externalKnowledge += `\n[KB:${fname}]\n${txt}`;
-                        loadedCount++; fileIndex++;
-                    } else {
-                        break; 
-                    }
-                } catch(e) { break; }
-            }
-            if(loadedCount>0) kbStatus = `<span class="icon-ok">✓</span> KB x${loadedCount}`;
-            else kbStatus = `<span class="icon-fail">✗</span> No KB`;
-            updateStatus();
-
-            // 2. VRM
-            statusText.innerText = "載入模型...";
-            try {
-                // VRM Loader
-                const loader = new GLTFLoader();
-                loader.crossOrigin = 'anonymous';
-                loader.register(parser => new VRMLoaderPlugin(parser));
+            
+            while (keepLoading) {
+                const fileNameRoot = `KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
+                const fileNameFolder = `KnowledgeBase/KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
                 
-                const vrmGltf = await new Promise((res, rej) => loader.load(VRM_URL, res, undefined, rej));
-                const vrm = vrmGltf.userData.vrm;
-                VRMUtils.rotateVRM0(vrm);
-                scene.add(vrm.scene);
-                currentVrm = vrm;
+                kbStatusHTML = `<span class="icon-loading">●</span> 掃描 KB${String(fileIndex).padStart(2,'0')}...`;
+                renderStatus();
 
-                // Arm Fix
-                const lArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
-                const rArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
-                if(lArm) { lArm.rotation.z = -1.1; lArm.rotation.x = 0.15; }
-                if(rArm) { rArm.rotation.z = 1.1; rArm.rotation.x = 0.15; }
+                try {
+                    let res = await fetch(`./${fileNameFolder}?t=${Date.now()}`);
+                    let usedPath = fileNameFolder;
+                    
+                    if (!res.ok) {
+                         res = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
+                         usedPath = fileNameRoot;
+                    }
 
-                updateCameraPosition();
-                startBlinking();
-
-                // Ready
-                document.getElementById('loader').style.display = 'none';
-                statusText.innerText = "準備完成";
-                document.getElementById('start-btn').style.display = 'block';
-
-            } catch(e) {
-                statusText.innerText = "模型載入失敗";
-                console.error(e);
+                    if (res.ok) {
+                        const text = await res.text();
+                        if (text.trim().length > 0) {
+                            if (fileIndex === 1) {
+                                openingRemark = text;
+                            }
+                            externalKnowledge += `\n\n【KB: ${usedPath}】\n${text}`;
+                            loadedCount++;
+                            fileIndex++;
+                        } else {
+                            fileIndex++;
+                        }
+                    } else {
+                        keepLoading = false;
+                    }
+                } catch (e) {
+                    keepLoading = false;
+                }
             }
+
+            if (loadedCount > 0) {
+                kbStatusHTML = `<span class="icon-ok">✓</span> KB x${loadedCount}`;
+            } else {
+                kbStatusHTML = `<span class="icon-fail">✗</span> No KB`;
+            }
+            renderStatus();
+            statusText.innerText = "系統就緒！";
         }
 
-        document.getElementById('start-btn').addEventListener('click', () => {
-            if(!isMuted) {
-                window.speechSynthesis.cancel();
-                window.speechSynthesis.speak(new SpeechSynthesisUtterance(" "));
-            }
-            document.getElementById('loading-screen').style.display = 'none';
+        // --- VRM 載入 ---
+        const loader = new GLTFLoader();
+        loader.crossOrigin = 'anonymous';
+        loader.register((parser) => new VRMLoaderPlugin(parser));
+
+        Promise.all([
+            new Promise((resolve) => {
+                loader.load(VRM_URL, (gltf) => {
+                    const vrm = gltf.userData.vrm;
+                    VRMUtils.rotateVRM0(vrm);
+                    scene.add(vrm.scene);
+                    currentVrm = vrm;
+                    
+                    const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+                    const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+                    if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
+                    if (rightUpperArm) { rightUpperArm.rotation.z = 1.1; rightUpperArm.rotation.x = 0.15; }
+
+                    updateCameraPosition(); 
+                    startBlinking();
+                    resolve();
+                },
+                (progress) => {
+                    const percent = Math.round(100.0 * (progress.loaded / progress.total));
+                    document.getElementById('status-text').innerText = `下載模型... ${percent}%`;
+                }, (e) => resolve());
+            }),
+            loadExternalData()
+        ]).then(() => {
+            const loaderEl = document.getElementById('loader');
+            const statusText = document.getElementById('status-text');
+            const startBtn = document.getElementById('start-btn');
             
-            const intro = openingRemark || "（未讀取到 KnowledgeBase01.txt）";
-            addMessage(intro, 'ai');
-            chatHistory.push({ role: "model", parts: [{ text: intro }] });
-            speak(intro);
-            testApiConnection();
+            loaderEl.style.display = 'none';
+            statusText.innerText = "準備完成";
+            startBtn.style.display = 'block';
+
+            startBtn.addEventListener('click', () => {
+                if (!isMuted) {
+                    window.speechSynthesis.cancel();
+                    const silent = new SpeechSynthesisUtterance(" ");
+                    silent.volume = 0; silent.rate = 10;
+                    window.speechSynthesis.speak(silent);
+                }
+
+                const loadingScreen = document.getElementById('loading-screen');
+                loadingScreen.style.opacity = 0;
+                setTimeout(() => loadingScreen.style.display = 'none', 500);
+
+                const introText = openingRemark || "（未讀取到 KnowledgeBase01.txt，請檢查檔案）";
+                addMessage(introText, 'ai');
+                
+                chatHistory.push({ role: "model", parts: [{ text: introText }] });
+                
+                speak(introText);
+                
+                testApiConnection();
+            });
         });
 
-        // --- Animation Loop ---
+        // --- 動畫 ---
         const clock = new THREE.Clock();
         function animate() {
             requestAnimationFrame(animate);
-            const delta = clock.getDelta();
-            const elapsed = clock.elapsedTime;
+            const deltaTime = clock.getDelta();
+            const elapsedTime = clock.elapsedTime;
 
-            if (currentVrm) {
-                currentVrm.update(delta);
-                
-                // 呼吸和說話嘴型
-                const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
-                if (spine) {
-                    spine.rotation.x = Math.sin(elapsed * 1.5) * 0.02;
-                    spine.rotation.y = Math.sin(elapsed * 0.8) * 0.02;
-                }
-                if (isSpeaking && !isMuted) {
-                    const s = Math.sin(elapsed * 18); 
-                    currentVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
-                } else {
-                    const v = currentVrm.expressionManager.getValue('aa');
-                    currentVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(v, 0, 0.2));
-                }
-            }
-
+            // 粒子動畫 (緩緩飄落)
             if (particlesMesh) {
-                particlesMesh.rotation.y += 0.001;
-                const pos = particlesMesh.geometry.attributes.position.array;
-                for(let i=1; i<particlesCount*3; i+=3) {
-                    pos[i] -= 0.015;
-                    if(pos[i] < 0) pos[i] = 10;
+                particlesMesh.rotation.y += 0.001; // 整體旋轉
+                const positions = particlesMesh.geometry.attributes.position.array;
+                for(let i = 1; i < particlesCount * 3; i+=3) {
+                    positions[i] -= 0.015; // 向下飄落
+                    // 如果掉到地板以下，重置到上方隨機位置
+                    if (positions[i] < 0) {
+                        positions[i] = 10;
+                    }
                 }
                 particlesMesh.geometry.attributes.position.needsUpdate = true;
             }
 
+            if (currentVrm) {
+                currentVrm.update(deltaTime);
+                const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
+                if (spine) {
+                    spine.rotation.x = Math.sin(elapsedTime * 1.5) * 0.02;
+                    spine.rotation.y = Math.sin(elapsedTime * 0.8) * 0.02;
+                }
+                if (isSpeaking && !isMuted) {
+                    const s = Math.sin(elapsedTime * 18); // 說話速度微調
+                    currentVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
+                } else {
+                    const currentVal = currentVrm.expressionManager.getValue('aa');
+                    currentVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(currentVal, 0, 0.2));
+                }
+            }
             controls.update();
             renderer.render(scene, camera);
         }
-        
-        loadData(); // Start Loading
         animate();
 
-        // --- Utils (Chat, Blink, etc) ---
         function startBlinking() {
             if(!currentVrm) return;
             const blinkLoop = () => {
@@ -477,120 +616,220 @@
             blinkLoop();
         }
 
+        // --- 情緒控制 ---
+        const VALID_EMOTIONS = ['neutral', 'happy', 'angry', 'sad', 'relaxed', 'surprised'];
+        function setEmotion(emotionName) {
+            if (!currentVrm) return;
+            if (emotionName === 'joy') emotionName = 'happy';
+            if (emotionName === 'sorrow') emotionName = 'sad';
+            if (emotionName === 'fun') emotionName = 'relaxed';
+            if (!VALID_EMOTIONS.includes(emotionName)) emotionName = 'neutral';
+            
+            updateDebugDisplay(emotionName, null);
+            VALID_EMOTIONS.forEach(emo => currentVrm.expressionManager.setValue(emo, 0));
+            if (emotionName !== 'neutral') currentVrm.expressionManager.setValue(emotionName, 0.8);
+        }
+
+        window.actionActive = false;
+        function triggerAction(actionName, duration) {
+            if (!currentVrm || actionName === 'none') return;
+            updateDebugDisplay(null, `${actionName}`);
+            let shapeName = actionName === 'blink_left' ? 'blinkLeft' : (actionName === 'blink_right' ? 'blinkRight' : 'blink');
+            window.actionActive = true;
+            currentVrm.expressionManager.setValue(shapeName, 1.0);
+            setTimeout(() => {
+                currentVrm.expressionManager.setValue(shapeName, 0);
+                window.actionActive = false;
+                updateDebugDisplay(null, 'Done');
+            }, duration);
+        }
+
+        function updateDebugDisplay(emo, act) {
+            const debugDiv = document.getElementById('emotion-debug');
+            if(emo) debugDiv.innerHTML = debugDiv.innerHTML.replace(/情緒: .*/, `情緒: ${emo}`);
+            if(act) debugDiv.innerHTML = debugDiv.innerHTML.replace(/動作: .*/, `動作: ${act}`);
+        }
+
         function addMessage(text, type) {
+            const chatDisplay = document.getElementById('chat-display');
             const div = document.createElement('div');
             div.className = `message message-${type}`;
-            div.innerHTML = text.replace(/\n/g, "<br>");
-            document.getElementById('chat-display').appendChild(div);
-            document.getElementById('chat-display').scrollTo({ top: 99999, behavior: 'smooth' });
+            
+            let safeText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+            safeText = safeText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+            
+            div.innerHTML = safeText;
+            chatDisplay.appendChild(div);
+            chatDisplay.scrollTo({ top: chatDisplay.scrollHeight, behavior: 'smooth' });
+            return div;
         }
 
-        function removeMessage(el) { if(el?.parentNode) el.parentNode.removeChild(el); }
+        function removeMessage(el) { if(el && el.parentNode) el.parentNode.removeChild(el); }
+
+        // --- API 連線檢查 (右上角) ---
+        const statusDot = document.getElementById('status-dot');
+        const statusMsg = document.getElementById('status-msg');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const muteBtn = document.getElementById('mute-btn');
 
         async function testApiConnection() {
-            if (isPreviewEnv) return;
-            const dot = document.getElementById('status-dot');
-            const msg = document.getElementById('status-msg');
-            msg.innerText = "連線測試...";
-            try {
-                const res = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ contents: [{ parts: [{ text: "Test" }] }] })
-                });
-                if(res.ok) { dot.classList.add('status-connected'); msg.innerText = "系統正常"; 
-                             document.getElementById('user-input').disabled = false; 
-                             document.getElementById('send-btn').disabled = false; }
-                else throw new Error("API Err");
-            } catch(e) { dot.classList.add('status-error'); msg.innerText = "連線失敗"; }
-        }
+            if (isPreviewEnv) {
+                statusDot.classList.add('status-preview');
+                statusMsg.innerText = "預覽模式";
+                userInput.disabled = false; sendBtn.disabled = false;
+                return;
+            }
 
-        document.getElementById('send-btn').addEventListener('click', handleSendMessage);
-        
-        async function handleSendMessage() {
-            const input = document.getElementById('user-input');
-            const text = input.value.trim();
-            if(!text) return;
-            
-            if(!isMuted) { window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(" ")); }
-
-            input.value = ''; 
-            addMessage(text, 'user');
-            
-            if (isPreviewEnv) { addMessage("預覽模式無法連線", 'system'); return; }
-
-            const loadMsg = document.createElement('div');
-            loadMsg.className = 'message message-system';
-            loadMsg.innerText = 'Thinking...';
-            document.getElementById('chat-display').appendChild(loadMsg);
-
-            chatHistory.push({ role: "user", parts: [{ text }] });
+            statusMsg.innerText = "連線測試...";
+            statusDot.className = 'status-dot'; 
             
             try {
-                let sysPrompt = externalSystemPrompt || "You are a VTuber.";
-                if(externalKnowledge) sysPrompt += "\nKB:\n" + externalKnowledge;
-                
-                const res = await fetch(API_URL, {
+                const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: chatHistory, systemInstruction: { parts: [{ text: sysPrompt }] } })
+                    body: JSON.stringify({ contents: [{ parts: [{ text: "Test" }] }] })
                 });
+
+                if (response.ok) {
+                    statusDot.classList.add('status-connected');
+                    statusMsg.innerText = "系統連線正常";
+                    userInput.disabled = false; 
+                    sendBtn.disabled = false;
+                } else {
+                    let errMsg = "API Response Error";
+                    try {
+                        const errData = await response.json();
+                        if (errData.error) errMsg = errData.error;
+                    } catch(e) {}
+                    throw new Error(errMsg);
+                }
+            } catch (e) {
+                statusDot.classList.add('status-error');
+                statusMsg.innerText = "連線失敗";
+                console.error("API Test Failed:", e);
+                addMessage(`連線測試失敗: ${e.message}`, 'system');
+            }
+        }
+
+        // --- 訊息發送與處理 ---
+        muteBtn.addEventListener('click', () => {
+            isMuted = !isMuted;
+            muteBtn.classList.toggle('muted', isMuted);
+            muteBtn.innerText = isMuted ? '🔇' : '🔊';
+            if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
+        });
+
+        async function handleSendMessage() {
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            if (!isMuted) {
+                window.speechSynthesis.cancel();
+                const silent = new SpeechSynthesisUtterance(" ");
+                silent.volume = 0; // 靜音
+                silent.rate = 10;  // 快速播放結束
+                window.speechSynthesis.speak(silent);
+            }
+
+            userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
+            addMessage(text, 'user');
+            
+            if (isPreviewEnv) {
+                addMessage("【提示】預覽模式無法連接 AI，請部署至 Vercel。", 'system');
+                userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
+                return;
+            }
+
+            const loadingMsg = addMessage("Thinking...", 'system');
+            
+            chatHistory.push({ role: "user", parts: [{ text: text }] });
+
+            let finalSystemInstruction = "";
+            if (externalSystemPrompt) finalSystemInstruction += externalSystemPrompt;
+            else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none" }`;
+
+            if (externalKnowledge) {
+                finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
+            }
+
+            finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.`;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: chatHistory,
+                        systemInstruction: { parts: [{ text: finalSystemInstruction }] },
+                    })
+                });
+
+                if (!response.ok) {
+                    let errMsg = "Server Error";
+                    try {
+                         const errData = await response.json();
+                         if (errData.error) errMsg = errData.error;
+                    } catch(e) {}
+                    throw new Error(errMsg);
+                }
+
+                const data = await response.json();
+                removeMessage(loadingMsg);
                 
-                if(!res.ok) throw new Error("Server Error");
-                const data = await response.json(); 
-                const jsonData = await res.json(); 
-                
-                removeMessage(loadMsg);
-                const raw = jsonData.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
-                let result = { text: raw, emotion: 'neutral' };
-                try { result = JSON.parse(raw.match(/\{[\s\S]*\}/)[0]); } catch(e){}
-                if(!result.text) result.text = raw;
+                let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
+                let result = { text: rawText, emotion: 'neutral' };
+
+                try {
+                    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+                } catch(e) {}
+
+                if(!result.text) result.text = rawText;
+
+                if(result.emotion === 'neutral') {
+                    if(result.text.match(/(開心|快樂|happy)/)) result.emotion = 'happy';
+                    if(result.text.match(/(難過|悲傷|sad)/)) result.emotion = 'sad';
+                }
 
                 chatHistory.push({ role: "model", parts: [{ text: result.text }] });
                 addMessage(result.text, 'ai');
                 setEmotion(result.emotion);
                 if(result.action) triggerAction(result.action, 2000);
                 speak(result.text);
-            } catch(e) {
-                removeMessage(loadMsg);
-                addMessage("連線錯誤", 'system');
+
+            } catch (error) {
+                console.error(error);
+                removeMessage(loadingMsg);
+                addMessage(`錯誤: ${error.message}`, 'system');
+            } finally {
+                userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
             }
         }
 
-        function triggerAction(act, dur) {
-            if(!currentVrm || act==='none') return;
-            window.actionActive = true;
-            let name = act==='blink_left'?'blinkLeft':(act==='blink_right'?'blinkRight':'blink');
-            currentVrm.expressionManager.setValue(name, 1);
-            setTimeout(()=>{ currentVrm.expressionManager.setValue(name, 0); window.actionActive=false; }, dur);
-        }
-        
-        function setEmotion(emo) {
-            if(!currentVrm) return;
-            ['neutral','happy','angry','sad','relaxed','surprised'].forEach(e=>currentVrm.expressionManager.setValue(e,0));
-            if(emo!=='neutral') currentVrm.expressionManager.setValue(emo, 0.8);
-        }
-
         function speak(text) {
-            if(isMuted) return;
-            const u = new SpeechSynthesisUtterance(text.replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?]/g, ''));
+            if (isMuted) return;
+            const cleanText = text.replace(/\[.*?\]\(.*?\)/g, '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?]/g, '');
+            if(!cleanText) return;
+            
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(cleanText);
             u.lang = 'zh-TW';
+            u.rate = 1.0; // 語速正常
+            u.pitch = 1.0;
             u.onstart = () => isSpeaking = true;
             u.onend = () => { isSpeaking = false; if(currentVrm) currentVrm.expressionManager.setValue('aa', 0); };
             window.speechSynthesis.speak(u);
         }
 
-        document.getElementById('mute-btn').addEventListener('click', (e) => {
-            isMuted = !isMuted;
-            e.target.classList.toggle('muted', isMuted);
-            e.target.innerText = isMuted ? '🔇' : '🔊';
-            if(isMuted) window.speechSynthesis.cancel();
-        });
+        sendBtn.addEventListener('click', handleSendMessage);
+        userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSendMessage(); });
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            // 視窗改變大小時，重新檢查相機位置
             updateCameraPosition();
         });
     </script>
