@@ -120,29 +120,6 @@
     .icon-fail { color: #c62828; margin-right: 6px; font-weight: bold; }
     .icon-loading { color: #ef6c00; margin-right: 6px; animation: pulse 1s infinite; }
     
-    /* Android 除錯面板 */
-    #tts-debug {
-        position: absolute;
-        top: 120px; /* 位於其他狀態下方 */
-        left: 10px;
-        background: rgba(0, 0, 0, 0.85);
-        color: #00ff00; /* 駭客綠，方便閱讀 */
-        font-family: "Courier New", monospace;
-        font-size: 11px;
-        padding: 10px;
-        border-radius: 8px;
-        width: 280px;
-        max-height: 200px;
-        overflow-y: auto;
-        z-index: 9999;
-        pointer-events: none; /* 點擊穿透 */
-        display: none; /* 預設隱藏 */
-        border: 2px solid #00ff00;
-        line-height: 1.4;
-        white-space: pre-wrap;
-        box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    }
-
     /* 瀏覽器不支援警告 */
     #browser-warning {
         position: absolute;
@@ -294,7 +271,8 @@
     #send-btn:active { transform: scale(0.95); }
     #send-btn:disabled { background: #bdbdbd; box-shadow: none; cursor: not-allowed; border: none; color: #fff;}
 
-    #mute-btn {
+    /* 按鈕共用樣式 */
+    .control-btn {
         width: 44px; height: 44px; border-radius: 50%; border: none;
         background: rgba(255, 255, 255, 0.95); font-size: 20px; cursor: pointer;
         display: flex; justify-content: center; align-items: center;
@@ -302,8 +280,11 @@
         flex-shrink: 0;
         border: 1px solid #ffd700;
         color: #d32f2f;
+        transition: transform 0.1s;
     }
+    .control-btn:active { transform: scale(0.95); }
     #mute-btn.muted { background: #e74c3c; color: white; border: none; }
+    #dance-btn { color: #e91e63; } /* 跳舞按鈕顏色 */
     
     #emotion-debug {
         position: absolute; top: 60px; right: 15px;
@@ -327,7 +308,8 @@
     "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
-        "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js"
+        "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js",
+        "@pixiv/three-vrm-animation": "https://unpkg.com/@pixiv/three-vrm-animation@3.0.0/lib/three-vrm-animation.module.js"
     }
 }
 </script>
@@ -358,9 +340,6 @@
         <span id="status-msg">連線中...</span>
     </div>
     
-    <!-- Android 語音診斷面板 (預設隱藏) -->
-    <div id="tts-debug">TTS 系統診斷中...</div>
-    
     <div id="emotion-debug">
         情緒: Neutral<br>
         動作: None
@@ -371,7 +350,8 @@
             <!-- 訊息將由 JavaScript 動態加入 -->
         </div>
         <div id="input-area">
-            <button id="mute-btn" title="切換聲音">🔊</button>
+            <button id="dance-btn" class="control-btn" title="跳舞">💃</button>
+            <button id="mute-btn" class="control-btn" title="切換聲音">🔊</button>
             <!-- 修改：提示文字改為 請輸入訊息... -->
             <input type="text" id="user-input" placeholder="請輸入訊息..." disabled>
             <button id="send-btn" disabled>發送</button>
@@ -383,6 +363,7 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+        import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
 
         const API_URL = "/api/chat"; 
         
@@ -390,54 +371,22 @@
         const isAndroid = /Android/i.test(navigator.userAgent);
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-        // Android Debug Logger Setup
-        const ttsDebug = document.getElementById('tts-debug');
-        
-        // 修正：如果偵測到是 Android，立刻顯示面板並寫入第一行 Log
-        if (isAndroid) {
-            // ttsDebug.style.display = 'block'; // 修改：隱藏除錯面板
-            ttsDebug.innerHTML = "=== Android Debug Log (Init) ===<br>";
-        }
-
-        function logTTS(msg) {
-            // 允許 Android 或強制開啟除錯時寫入
-            if (!isAndroid) return;
-            const time = new Date().toTimeString().split(' ')[0];
-            // 採用 append 方式，新的訊息在最上方
-            ttsDebug.innerHTML = `[${time}] ${msg}<br>` + ttsDebug.innerHTML;
-        }
-
-        // 立即測試 Log 功能
-        logTTS("腳本載入... 檢查 API");
-
-        // ⭐⭐⭐ 瀏覽器功能檢查與相容性修復 ⭐⭐⭐
+        // --- 瀏覽器相容性檢查 (Android 除錯用) ---
         let ttsSupported = true;
-
         if (!window.speechSynthesis) {
-            // 嘗試舊版前綴
             if (window.webkitSpeechSynthesis) {
                 window.speechSynthesis = window.webkitSpeechSynthesis;
                 window.SpeechSynthesisUtterance = window.webkitSpeechSynthesisUtterance;
-                logTTS("⚠️ 使用 webkitSpeechSynthesis 相容模式");
             } else {
-                logTTS("❌ 錯誤: 不支援 speechSynthesis");
                 ttsSupported = false;
             }
-        } else {
-            logTTS("✅ 支援 speechSynthesis");
         }
-
         if (ttsSupported && !window.SpeechSynthesisUtterance) {
-             logTTS("❌ 錯誤: 不支援 SpeechSynthesisUtterance");
              ttsSupported = false;
-        } else if (ttsSupported) {
-             logTTS("✅ 支援 SpeechSynthesisUtterance");
         }
-
         // 如果不支援，顯示警告面板
         if (!ttsSupported && isAndroid) {
             document.getElementById('browser-warning').style.display = 'block';
-            logTTS(">> 已顯示瀏覽器更換提示 <<");
         }
 
         // --- 隨機角色選擇邏輯 ---
@@ -452,6 +401,10 @@
         console.log(`Loading Avatar: ${VRM_URL}`); // 在 Console 顯示載入哪隻角色
 
         let currentVrm = undefined;
+        let currentMixer = undefined; // 動畫混合器
+        let isDancing = false;        // 是否正在跳舞
+        let danceAction = undefined;  // 跳舞動作
+
         let chatHistory = [];
         let isSpeaking = false;
         let currentEmotion = 'neutral';
@@ -463,7 +416,6 @@
         function updateVoices() {
             if (!window.speechSynthesis) return;
             const voices = window.speechSynthesis.getVoices();
-            // console.log("Voices loaded:", voices.length); // Debug
             if (voices.length > 0) {
                 // Android 優先策略：
                 // 1. 本地 (localService) 的繁體中文
@@ -472,23 +424,12 @@
                 preferredVoice = voices.find(v => (v.lang === 'zh-TW' || v.lang.includes('zh-TW')) && v.localService) ||
                                  voices.find(v => v.lang === 'zh-TW' || v.lang.includes('zh-TW')) ||
                                  voices.find(v => v.lang.includes('zh'));
-                
-                if (preferredVoice) {
-                    logTTS(`選定: ${preferredVoice.name} (${preferredVoice.lang})`);
-                } else {
-                    logTTS(`⚠️ 警告: 未找到合適中文語音`);
-                }
-            } else {
-                logTTS(`等待語音包載入...`);
             }
         }
         
         // 確保語音列表載入 (Android 需要重試)
         if (window.speechSynthesis) {
-            window.speechSynthesis.onvoiceschanged = () => {
-                logTTS("Event: voiceschanged");
-                updateVoices();
-            };
+            window.speechSynthesis.onvoiceschanged = updateVoices;
             updateVoices(); 
             // 強制重試機制，每秒檢查一次，直到抓到語音或過了 5 秒
             let voiceRetryCount = 0;
@@ -497,7 +438,6 @@
                 voiceRetryCount++;
                 if ((preferredVoice && preferredVoice.lang) || voiceRetryCount > 8) {
                     clearInterval(voiceInterval);
-                    logTTS(`語音掃描結束 (嘗試 ${voiceRetryCount} 次)`);
                 }
             }, 1000);
         }
@@ -521,20 +461,28 @@
 
         const camera = new THREE.PerspectiveCamera(30.0, window.innerWidth / window.innerHeight, 0.1, 20.0);
         
-        // **相機位置邏輯**
+        // **相機位置邏輯 (修正：支援跳舞時自動運鏡)**
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
             if (aspect < 0.8) {
-                // 手機直立模式：初始特寫
-                camera.position.set(0.0, 1.35, 2.2); 
-                if(currentVrm) {
-                    controls.target.set(0.0, 1.35, 0.0);
+                // 手機直立模式
+                if (isDancing) {
+                    // 跳舞時：相機拉遠、視點降低，確保全身入鏡
+                    camera.position.set(0.0, 1.0, 4.5);
+                    if(currentVrm) controls.target.set(0.0, 0.8, 0.0);
+                } else {
+                    // 對話時：相機拉近、視點提高，特寫上半身
+                    camera.position.set(0.0, 1.35, 2.2); 
+                    if(currentVrm) controls.target.set(0.0, 1.35, 0.0);
                 }
             } else {
                 // 桌面寬螢幕模式
-                camera.position.set(0.0, 1.4, 3.5);
-                if(currentVrm) {
-                    controls.target.set(0.0, 1.3, 0.0); 
+                if (isDancing) {
+                     camera.position.set(0.0, 1.0, 4.0);
+                     if(currentVrm) controls.target.set(0.0, 0.8, 0.0);
+                } else {
+                     camera.position.set(0.0, 1.4, 3.5);
+                     if(currentVrm) controls.target.set(0.0, 1.3, 0.0);
                 }
             }
             camera.updateProjectionMatrix();
@@ -699,7 +647,9 @@
         // --- VRM 載入 ---
         const loader = new GLTFLoader();
         loader.crossOrigin = 'anonymous';
+        // 註冊 VRM 與 VRM 動畫插件
         loader.register((parser) => new VRMLoaderPlugin(parser));
+        loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
         Promise.all([
             new Promise((resolve) => {
@@ -788,13 +738,23 @@
                 particlesMesh.geometry.attributes.position.needsUpdate = true;
             }
 
+            // 更新跳舞動畫混合器
+            if (currentMixer) {
+                currentMixer.update(deltaTime);
+            }
+
             if (currentVrm) {
                 currentVrm.update(deltaTime);
-                const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
-                if (spine) {
-                    spine.rotation.x = Math.sin(elapsedTime * 1.5) * 0.02;
-                    spine.rotation.y = Math.sin(elapsedTime * 0.8) * 0.02;
+                
+                // 如果沒有在跳舞，才執行自然的呼吸動作
+                if (!isDancing) {
+                    const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
+                    if (spine) {
+                        spine.rotation.x = Math.sin(elapsedTime * 1.5) * 0.02;
+                        spine.rotation.y = Math.sin(elapsedTime * 0.8) * 0.02;
+                    }
                 }
+
                 if (isSpeaking && !isMuted) {
                     const s = Math.sin(elapsedTime * 18); // 說話速度微調
                     currentVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
@@ -825,6 +785,84 @@
             };
             blinkLoop();
         }
+
+        // --- 跳舞邏輯 ---
+        const danceBtn = document.getElementById('dance-btn');
+        const danceURL = 'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma';
+        
+        // 載入並播放動畫的函式
+        function loadAndPlayDance() {
+            if (!currentVrm || isDancing) return; // 避免重複載入或模型未就緒
+
+            // 如果已經載入過動畫 action，直接播放
+            if (danceAction) {
+                startDance(danceAction);
+                return;
+            }
+
+            addMessage("準備跳舞...", "system");
+            
+            // 讀取 VRMA 檔案
+            loader.load(danceURL, (gltf) => {
+                const vrmAnimations = gltf.userData.vrmAnimations;
+                if (!vrmAnimations || vrmAnimations.length === 0) return;
+
+                // 創建動畫剪輯
+                const clip = createVRMAnimationClip(vrmAnimations[0], currentVrm);
+                
+                // 創建混合器
+                if (!currentMixer) {
+                    currentMixer = new THREE.AnimationMixer(currentVrm.scene);
+                }
+                
+                danceAction = currentMixer.clipAction(clip);
+                startDance(danceAction);
+            }, undefined, (e) => {
+                console.error("Dance Load Error:", e);
+                addMessage("舞蹈載入失敗", "system");
+            });
+        }
+
+        function startDance(action) {
+            isDancing = true;
+            danceBtn.disabled = true; // 防止連點
+            
+            // ⭐ 觸發動態運鏡
+            updateCameraPosition();
+
+            action.reset();
+            action.setLoop(THREE.LoopOnce); // 只播放一次
+            action.clampWhenFinished = true; // 結束後停在最後動作
+            action.fadeIn(0.5); // 淡入效果
+            action.play();
+
+            // 監聽動畫結束
+            if (currentMixer) {
+                currentMixer.addEventListener('finished', onDanceFinished);
+            }
+        }
+
+        function onDanceFinished() {
+            if (danceAction) {
+                danceAction.fadeOut(0.5); // 淡出，回到原本姿勢
+                setTimeout(() => {
+                    isDancing = false;
+                    danceBtn.disabled = false;
+                    
+                    // ⭐ 動畫結束，鏡頭復位
+                    updateCameraPosition();
+
+                    // 移除監聽器避免重複堆疊
+                    if(currentMixer) currentMixer.removeEventListener('finished', onDanceFinished);
+                }, 500);
+            }
+        }
+
+        danceBtn.addEventListener('click', loadAndPlayDance);
+        danceBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            loadAndPlayDance();
+        });
 
         // --- 情緒控制 ---
         const VALID_EMOTIONS = ['neutral', 'happy', 'angry', 'sad', 'relaxed', 'surprised'];
@@ -945,24 +983,16 @@
 
         // 解鎖語音函式 (Android 必須)
         async function unlockTTS() {
-            logTTS("正在解鎖語音...");
             return new Promise(resolve => {
                 try {
                     const u = new SpeechSynthesisUtterance(" ");
                     u.volume = 0; // 靜音
                     u.rate = 10; // 超快
-                    u.onend = () => {
-                        logTTS("語音解鎖完成 (onend)");
-                        resolve();
-                    };
+                    u.onend = resolve;
                     //有些瀏覽器 onend 不會觸發如果 volume 是 0，加個 timeout 保險
-                    setTimeout(() => {
-                        logTTS("語音解鎖完成 (timeout)");
-                        resolve();
-                    }, 200); 
+                    setTimeout(resolve, 200); 
                     speechSynthesis.speak(u);
                 } catch(e) {
-                    logTTS(`語音解鎖失敗: ${e.message}`);
                     resolve();
                 }
             });
@@ -977,7 +1007,6 @@
 
             // ⭐⭐⭐ 每次發送訊息前都重新解鎖語音（Android 必須）
             if (!isMuted && ttsSupported) {
-                logTTS("開始訊息發送流程...");
                 // 用 race 避免 unlock 卡死
                 await Promise.race([
                     unlockTTS(),
@@ -1073,7 +1102,6 @@
         async function speak(text) {
             if (isMuted) return;
             if (!ttsSupported || !window.speechSynthesis) {
-                logTTS("❌ 說話失敗: 語音功能不支援");
                 return;
             }
 
@@ -1084,12 +1112,9 @@
 
             if (!cleanText || cleanText.length === 0) return;
 
-            logTTS(`準備說話: ${cleanText.substring(0, 10)}...`);
-
             try {
                 // ⭐⭐⭐ 等待 voices 載入（Android 超重要）
                 if (speechSynthesis.getVoices().length === 0) {
-                    logTTS("等待語音列表...");
                     await new Promise(r => setTimeout(r, 300));
                 }
 
@@ -1114,10 +1139,8 @@
                     if (voice) {
                         u.voice = voice;
                         u.lang  = voice.lang;
-                        logTTS(`Android 使用語音: ${voice.name}`);
                     } else {
                         u.lang = 'zh-TW';
-                        logTTS("Android 使用預設 zh-TW");
                     }
 
                 } else {
@@ -1129,26 +1152,18 @@
                 u.pitch = 1.0;
                 u.volume = 1;
 
-                u.onstart = () => {
-                    isSpeaking = true;
-                    logTTS("開始播放 (onstart)");
-                };
+                u.onstart = () => isSpeaking = true;
                 u.onend   = () => {
                     isSpeaking = false;
-                    logTTS("播放結束 (onend)");
                     if(currentVrm) currentVrm.expressionManager.setValue('aa', 0);
                 };
 
-                u.onerror = (e) => {
-                    console.error("TTS error:", e);
-                    logTTS(`TTS 錯誤: ${e.error}`);
-                };
+                u.onerror = (e) => console.error("TTS error:", e);
 
                 speechSynthesis.speak(u);
 
             } catch (err) {
                 console.error("Speech error:", err);
-                logTTS(`Speech 執行錯誤: ${err.message}`);
             }
         }
 
