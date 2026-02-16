@@ -90,7 +90,7 @@
         color: #5d4037;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         z-index: 100;
-        max-width: 180px;
+        max-width: 200px;
         transition: opacity 0.5s;
         pointer-events: none;
         border: 1px solid #ffcc80;
@@ -238,9 +238,10 @@
         const API_URL = "/api/chat"; 
         const VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm';
         
+        // *** 修改處：使用您提供的完整 GitHub Pages 網址 ***
         const IDLE_ANIMATIONS = [
-            './Taunt_with_Skin.vrma',
-            './Breakdance_Freeze_Var_3.vrma'
+            'https://davidkuodcam-crypto.github.io/VTuber/Taunt_with_Skin.vrma',
+            'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma'
         ];
         const IDLE_TIMEOUT_MS = 10000; // 10秒
 
@@ -367,13 +368,16 @@
             while(true) {
                 try {
                     const fname = `KnowledgeBase${String(fileIndex).padStart(2,'0')}.txt`;
-                    const res = await fetch(`./${fname}?t=${Date.now()}`); // 簡化路徑嘗試
+                    const res = await fetch(`./${fname}?t=${Date.now()}`); 
+                    
                     if(res.ok) {
                         const txt = await res.text();
                         if(fileIndex===1) openingRemark = txt;
                         externalKnowledge += `\n[KB:${fname}]\n${txt}`;
                         loadedCount++; fileIndex++;
-                    } else break;
+                    } else {
+                        break; 
+                    }
                 } catch(e) { break; }
             }
             if(loadedCount>0) kbStatus = `<span class="icon-ok">✓</span> KB x${loadedCount}`;
@@ -413,11 +417,13 @@
                             idleClips.push(clip);
                             animSuccess++;
                         }
-                    } catch(e) { console.warn("Anim load failed:", url); }
+                    } catch(e) { 
+                        console.warn("Anim load failed:", url); 
+                    }
                 }
                 
                 if(animSuccess > 0) animStatus = `<span class="icon-ok">✓</span> Anim x${animSuccess}`;
-                else animStatus = `<span class="icon-fail">✗</span> No Anim`;
+                else animStatus = `<span class="icon-fail">✗</span> 動作檔遺失`; 
                 updateStatus();
 
                 updateCameraPosition();
