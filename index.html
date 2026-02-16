@@ -453,15 +453,11 @@
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm'  // 角色 W
         ];
         
-        // 從陣列中隨機挑選一個 URL
-        const VRM_URL = VRM_MODELS[Math.floor(Math.random() * VRM_MODELS.length)];
-        
-        console.log(`Loading Avatar: ${VRM_URL}`); // 在 Console 顯示載入哪隻角色
-
-        let currentVrm = undefined;
-        let currentMixer = undefined; // 動畫混合器
-        let isDancing = false;        // 是否正在跳舞
-        let danceAction = undefined;  // 跳舞動作
+        // 變數修改：支援多角色
+        let currentVrms = []; // 改為陣列
+        let mixers = [];      // 動畫混合器陣列
+        let isDancing = false;
+        let danceActions = []; // 儲存所有角色的跳舞動作
 
         let chatHistory = [];
         let isSpeaking = false;
@@ -539,21 +535,23 @@
                 // 手機直立模式
                 if (isDancing) {
                     // 跳舞時：相機大幅拉遠、視點降低，確保地板動作與全身入鏡
-                    camera.position.set(0.0, 0.8, 6.5); 
-                    if(currentVrm) controls.target.set(0.0, 0.8, 0.0);
+                    camera.position.set(0.0, 0.8, 8.5); 
+                    controls.target.set(0.0, 0.8, 0.0); // 瞄準兩人中心
                 } else {
                     // 對話時：相機拉近、視點提高，特寫上半身
-                    camera.position.set(0.0, 1.35, 2.2); 
-                    if(currentVrm) controls.target.set(0.0, 1.35, 0.0);
+                    // 為了看到兩人，稍微退後一點，並瞄準中間
+                    camera.position.set(0.0, 1.35, 2.5); 
+                    controls.target.set(0.0, 1.35, -0.2);
                 }
             } else {
                 // 桌面寬螢幕模式
                 if (isDancing) {
-                     camera.position.set(0.0, 1.0, 5.0);
-                     if(currentVrm) controls.target.set(0.0, 0.8, 0.0);
+                     // 桌面模式也稍微拉遠一點
+                     camera.position.set(0.0, 1.0, 6.0);
+                     controls.target.set(0.0, 0.8, 0.0);
                 } else {
                      camera.position.set(0.0, 1.4, 3.5);
-                     if(currentVrm) controls.target.set(0.0, 1.3, 0.0);
+                     controls.target.set(0.0, 1.3, -0.2);
                 }
             }
             camera.updateProjectionMatrix();
@@ -715,44 +713,57 @@
             statusText.innerText = "系統就緒！";
         }
 
-        // --- VRM 載入 ---
+        // --- VRM 載入 (修改：同時載入多個角色) ---
         const loader = new GLTFLoader();
         loader.crossOrigin = 'anonymous';
         // 註冊 VRM 與 VRM 動畫插件
         loader.register((parser) => new VRMLoaderPlugin(parser));
         loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
-        Promise.all([
-            new Promise((resolve) => {
-                loader.load(VRM_URL, (gltf) => {
+        // 使用 Promise.all 同時載入所有模型
+        const loadPromises = VRM_MODELS.map((url, index) => {
+            return new Promise((resolve) => {
+                loader.load(url, (gltf) => {
                     const vrm = gltf.userData.vrm;
                     VRMUtils.rotateVRM0(vrm);
                     scene.add(vrm.scene);
-                    currentVrm = vrm;
                     
+                    // --- 隊形排列 ---
+                    if (index === 0) {
+                        // 角色 A: 左前
+                        vrm.scene.position.set(-0.3, 0.0, 0.2);
+                    } else {
+                        // 角色 B: 右後 (避免重疊)
+                        vrm.scene.position.set(0.3, 0.0, -0.8);
+                    }
+
+                    // 調整手臂
                     const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
                     const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
                     if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
                     if (rightUpperArm) { rightUpperArm.rotation.z = 1.1; rightUpperArm.rotation.x = 0.15; }
 
-                    updateCameraPosition(); 
-                    startBlinking();
+                    currentVrms.push(vrm); // 加入陣列
+                    startBlinking(vrm);    // 個別啟動眨眼
                     resolve();
-                },
-                (progress) => {
-                    const percent = Math.round(100.0 * (progress.loaded / progress.total));
-                    document.getElementById('status-text').innerText = `下載模型... ${percent}%`;
-                }, (e) => resolve());
-            }),
-            loadExternalData()
-        ]).then(() => {
+                }, undefined, (e) => {
+                    console.error("VRM Load Error:", e);
+                    resolve(); // 失敗也 resolve，避免卡住
+                });
+            });
+        });
+
+        Promise.all([...loadPromises, loadExternalData()]).then(() => {
             const loaderEl = document.getElementById('loader');
             const statusText = document.getElementById('status-text');
             const startBtn = document.getElementById('start-btn');
             
             loaderEl.style.display = 'none';
-            statusText.innerText = "準備完成";
+            statusText.innerText = `準備完成 (${currentVrms.length} 人)`;
             startBtn.style.display = 'block';
+            
+            // 更新相機以對準兩人中心
+            updateCameraPosition();
 
             // 修改：優化安卓點擊處理
             const handleStart = (e) => {
@@ -809,47 +820,49 @@
                 particlesMesh.geometry.attributes.position.needsUpdate = true;
             }
 
-            // 更新跳舞動畫混合器
-            if (currentMixer) {
-                currentMixer.update(deltaTime);
-            }
+            // 更新所有跳舞動畫混合器
+            mixers.forEach(mixer => mixer.update(deltaTime));
 
-            if (currentVrm) {
-                currentVrm.update(deltaTime);
+            // 更新所有 VRM 角色
+            currentVrms.forEach(vrm => {
+                vrm.update(deltaTime);
                 
                 // 如果沒有在跳舞，才執行自然的呼吸動作
                 if (!isDancing) {
-                    const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
+                    const spine = vrm.humanoid.getNormalizedBoneNode('spine');
                     if (spine) {
                         spine.rotation.x = Math.sin(elapsedTime * 1.5) * 0.02;
                         spine.rotation.y = Math.sin(elapsedTime * 0.8) * 0.02;
                     }
                 }
 
+                // 說話嘴型同步 (所有角色一起對嘴)
                 if (isSpeaking && !isMuted) {
                     const s = Math.sin(elapsedTime * 18); // 說話速度微調
-                    currentVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
+                    vrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
                 } else {
-                    const currentVal = currentVrm.expressionManager.getValue('aa');
-                    currentVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(currentVal, 0, 0.2));
+                    const currentVal = vrm.expressionManager.getValue('aa');
+                    vrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(currentVal, 0, 0.2));
                 }
-            }
+            });
+
             controls.update();
             renderer.render(scene, camera);
         }
         animate();
 
-        function startBlinking() {
-            if(!currentVrm) return;
+        // 修改：支援多角色獨立眨眼
+        function startBlinking(vrm) {
+            if(!vrm) return;
             const blinkLoop = () => {
                 if (!window.actionActive) {
                     setTimeout(() => {
-                        currentVrm.expressionManager.setValue('blink', 1);
+                        vrm.expressionManager.setValue('blink', 1);
                         setTimeout(() => {
-                            currentVrm.expressionManager.setValue('blink', 0);
+                            vrm.expressionManager.setValue('blink', 0);
                             blinkLoop();
                         }, 120);
-                    }, Math.random() * 3000 + 2000);
+                    }, Math.random() * 3000 + 2000); // 隨機時間，讓兩人眨眼不同步，更自然
                 } else {
                     setTimeout(blinkLoop, 1000);
                 }
@@ -857,76 +870,80 @@
             blinkLoop();
         }
 
-        // --- 跳舞邏輯 ---
+        // --- 跳舞邏輯 (修改：支援多角色同步) ---
         const danceBtn = document.getElementById('dance-btn');
         const danceURL = 'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma';
         
         // 載入並播放動畫的函式
         function loadAndPlayDance() {
-            if (!currentVrm || isDancing) return; // 避免重複載入或模型未就緒
+            if (currentVrms.length === 0 || isDancing) return; 
 
             // 如果已經載入過動畫 action，直接播放
-            if (danceAction) {
-                startDance(danceAction);
+            if (danceActions.length > 0) {
+                startDance();
                 return;
             }
 
             addMessage("準備跳舞...", "system");
             
-            // 讀取 VRMA 檔案
+            // 讀取 VRMA 檔案 (讀一次就好)
             loader.load(danceURL, (gltf) => {
                 const vrmAnimations = gltf.userData.vrmAnimations;
                 if (!vrmAnimations || vrmAnimations.length === 0) return;
 
-                // 創建動畫剪輯
-                const clip = createVRMAnimationClip(vrmAnimations[0], currentVrm);
+                // 為每一個角色創建獨立的動畫剪輯與混合器
+                currentVrms.forEach(vrm => {
+                    // 重要：必須為每個 VRM 實例重新綁定動畫
+                    const clip = createVRMAnimationClip(vrmAnimations[0], vrm);
+                    const mixer = new THREE.AnimationMixer(vrm.scene);
+                    const action = mixer.clipAction(clip);
+                    
+                    mixers.push(mixer);
+                    danceActions.push(action);
+                });
                 
-                // 創建混合器
-                if (!currentMixer) {
-                    currentMixer = new THREE.AnimationMixer(currentVrm.scene);
-                }
-                
-                danceAction = currentMixer.clipAction(clip);
-                startDance(danceAction);
+                startDance();
+
             }, undefined, (e) => {
                 console.error("Dance Load Error:", e);
                 addMessage("舞蹈載入失敗", "system");
             });
         }
 
-        function startDance(action) {
+        function startDance() {
             isDancing = true;
-            danceBtn.disabled = true; // 防止連點
+            danceBtn.disabled = true; 
             
             // ⭐ 觸發動態運鏡
             updateCameraPosition();
 
-            action.reset();
-            action.setLoop(THREE.LoopOnce); // 只播放一次
-            action.clampWhenFinished = true; // 結束後停在最後動作
-            action.fadeIn(0.5); // 淡入效果
-            action.play();
-
-            // 監聽動畫結束
-            if (currentMixer) {
-                currentMixer.addEventListener('finished', onDanceFinished);
-            }
+            // 讓所有角色同時開始跳舞
+            danceActions.forEach((action, index) => {
+                action.reset();
+                action.setLoop(THREE.LoopOnce); 
+                action.clampWhenFinished = true; 
+                action.fadeIn(0.5); 
+                action.play();
+                
+                // 只監聽第一個混合器的結束事件即可
+                if (index === 0) {
+                    mixers[0].addEventListener('finished', onDanceFinished);
+                }
+            });
         }
 
         function onDanceFinished() {
-            if (danceAction) {
-                danceAction.fadeOut(0.5); // 淡出，回到原本姿勢
-                setTimeout(() => {
-                    isDancing = false;
-                    danceBtn.disabled = false;
-                    
-                    // ⭐ 動畫結束，鏡頭復位
-                    updateCameraPosition();
+            danceActions.forEach(action => action.fadeOut(0.5));
+            
+            setTimeout(() => {
+                isDancing = false;
+                danceBtn.disabled = false;
+                
+                // ⭐ 動畫結束，鏡頭復位
+                updateCameraPosition();
 
-                    // 移除監聽器避免重複堆疊
-                    if(currentMixer) currentMixer.removeEventListener('finished', onDanceFinished);
-                }, 500);
-            }
+                if(mixers.length > 0) mixers[0].removeEventListener('finished', onDanceFinished);
+            }, 500);
         }
 
         danceBtn.addEventListener('click', loadAndPlayDance);
@@ -938,26 +955,32 @@
         // --- 情緒控制 ---
         const VALID_EMOTIONS = ['neutral', 'happy', 'angry', 'sad', 'relaxed', 'surprised'];
         function setEmotion(emotionName) {
-            if (!currentVrm) return;
+            if (currentVrms.length === 0) return;
             if (emotionName === 'joy') emotionName = 'happy';
             if (emotionName === 'sorrow') emotionName = 'sad';
             if (emotionName === 'fun') emotionName = 'relaxed';
             if (!VALID_EMOTIONS.includes(emotionName)) emotionName = 'neutral';
             
             updateDebugDisplay(emotionName, null);
-            VALID_EMOTIONS.forEach(emo => currentVrm.expressionManager.setValue(emo, 0));
-            if (emotionName !== 'neutral') currentVrm.expressionManager.setValue(emotionName, 0.8);
+            
+            // 套用到所有角色
+            currentVrms.forEach(vrm => {
+                VALID_EMOTIONS.forEach(emo => vrm.expressionManager.setValue(emo, 0));
+                if (emotionName !== 'neutral') vrm.expressionManager.setValue(emotionName, 0.8);
+            });
         }
 
         window.actionActive = false;
         function triggerAction(actionName, duration) {
-            if (!currentVrm || actionName === 'none') return;
+            if (currentVrms.length === 0 || actionName === 'none') return;
             updateDebugDisplay(null, `${actionName}`);
             let shapeName = actionName === 'blink_left' ? 'blinkLeft' : (actionName === 'blink_right' ? 'blinkRight' : 'blink');
             window.actionActive = true;
-            currentVrm.expressionManager.setValue(shapeName, 1.0);
+            
+            currentVrms.forEach(vrm => vrm.expressionManager.setValue(shapeName, 1.0));
+            
             setTimeout(() => {
-                currentVrm.expressionManager.setValue(shapeName, 0);
+                currentVrms.forEach(vrm => vrm.expressionManager.setValue(shapeName, 0));
                 window.actionActive = false;
                 updateDebugDisplay(null, 'Done');
             }, duration);
@@ -1245,7 +1268,8 @@
                 u.onend   = () => {
                     isSpeaking = false;
                     logTTS("播放結束 (onend)");
-                    if(currentVrm) currentVrm.expressionManager.setValue('aa', 0);
+                    // 結束時讓所有角色閉嘴
+                    currentVrms.forEach(vrm => vrm.expressionManager.setValue('aa', 0));
                 };
 
                 u.onerror = (e) => {
