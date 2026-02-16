@@ -303,11 +303,19 @@
         flex-shrink: 0;
         border: 1px solid #ffd700;
         color: #d32f2f;
-        transition: transform 0.1s;
+        transition: all 0.2s; /* 增加過渡效果 */
     }
     .control-btn:active { transform: scale(0.95); }
     #mute-btn.muted { background: #e74c3c; color: white; border: none; }
-    #dance-btn { color: #e91e63; } /* 跳舞按鈕顏色 */
+    
+    /* 修改：跳舞按鈕按下狀態的樣式 */
+    #dance-btn { color: #e91e63; } 
+    #dance-btn.active {
+        background: #e91e63; /* 按下變深粉紅 */
+        color: white;
+        box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
+        border-color: #c2185b;
+    }
     
     #emotion-debug {
         position: absolute; top: 60px; right: 15px;
@@ -376,7 +384,8 @@
             <!-- 訊息將由 JavaScript 動態加入 -->
         </div>
         <div id="input-area">
-            <button id="dance-btn" class="control-btn" title="跳舞">💃</button>
+            <!-- 修改：跳舞按鈕 -->
+            <button id="dance-btn" class="control-btn" title="跳舞模式">💃</button>
             <button id="mute-btn" class="control-btn" title="切換聲音">🔊</button>
             <!-- 修改：提示文字改為 請輸入訊息... -->
             <input type="text" id="user-input" placeholder="請輸入訊息..." disabled>
@@ -870,13 +879,38 @@
             blinkLoop();
         }
 
-        // --- 跳舞邏輯 (修改：支援多角色同步) ---
+        // --- 跳舞邏輯 (修改：支援切換模式與循環播放) ---
         const danceBtn = document.getElementById('dance-btn');
         const danceURL = 'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma';
         
+        // 停止跳舞的函式
+        function stopDance() {
+            if (!isDancing) return;
+            
+            // 淡出動畫
+            danceActions.forEach(action => action.fadeOut(0.5));
+            
+            isDancing = false;
+            danceBtn.classList.remove('active'); // 移除按鈕啟用樣式
+            
+            // 重置相機
+            setTimeout(() => {
+                updateCameraPosition();
+            }, 500);
+        }
+
+        // 切換跳舞狀態
+        function toggleDance() {
+            if (isDancing) {
+                stopDance();
+            } else {
+                loadAndPlayDance();
+            }
+        }
+        
         // 載入並播放動畫的函式
         function loadAndPlayDance() {
-            if (currentVrms.length === 0 || isDancing) return; 
+            if (currentVrms.length === 0) return; 
 
             // 如果已經載入過動畫 action，直接播放
             if (danceActions.length > 0) {
@@ -912,44 +946,25 @@
 
         function startDance() {
             isDancing = true;
-            danceBtn.disabled = true; 
+            danceBtn.classList.add('active'); // 設定按鈕為啟用樣式
             
             // ⭐ 觸發動態運鏡
             updateCameraPosition();
 
-            // 讓所有角色同時開始跳舞
-            danceActions.forEach((action, index) => {
+            // 讓所有角色同時開始跳舞 (循環播放)
+            danceActions.forEach((action) => {
                 action.reset();
-                action.setLoop(THREE.LoopOnce); 
-                action.clampWhenFinished = true; 
+                action.setLoop(THREE.LoopRepeat); // 設定為無限循環
+                action.clampWhenFinished = false; 
                 action.fadeIn(0.5); 
                 action.play();
-                
-                // 只監聽第一個混合器的結束事件即可
-                if (index === 0) {
-                    mixers[0].addEventListener('finished', onDanceFinished);
-                }
             });
         }
 
-        function onDanceFinished() {
-            danceActions.forEach(action => action.fadeOut(0.5));
-            
-            setTimeout(() => {
-                isDancing = false;
-                danceBtn.disabled = false;
-                
-                // ⭐ 動畫結束，鏡頭復位
-                updateCameraPosition();
-
-                if(mixers.length > 0) mixers[0].removeEventListener('finished', onDanceFinished);
-            }, 500);
-        }
-
-        danceBtn.addEventListener('click', loadAndPlayDance);
+        danceBtn.addEventListener('click', toggleDance);
         danceBtn.addEventListener('touchend', (e) => {
             e.preventDefault();
-            loadAndPlayDance();
+            toggleDance();
         });
 
         // --- 情緒控制 ---
@@ -1106,6 +1121,9 @@
 
             const text = userInput.value.trim();
             if (!text) return;
+
+            // ⭐ 若正在跳舞，先停止跳舞
+            if (isDancing) stopDance();
 
             // ⭐⭐⭐ 每次發送訊息前都重新解鎖語音（Android 必須）
             if (!isMuted && ttsSupported) {
