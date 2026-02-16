@@ -2,20 +2,20 @@
 <html lang="zh-TW">
 <head>
 <meta charset="utf-8">
-<title>AI VTuber - Intro & Touch</title>
+<title>AI VTuber - Golden New Year</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <style>
     body {
         margin: 0;
         padding: 0;
         overflow: hidden; /* 禁止捲動 */
-        background-color: #f0f4f8;
+        /* 修改：改為亮金色漸層背景，突顯黑色衣服 */
+        background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 50%, #ffe0b2 100%);
         font-family: "Noto Sans TC", sans-serif;
-        /* 防止 iOS 橡皮筋捲動效果 */
         overscroll-behavior: none; 
         width: 100vw;
         height: 100vh;
-        height: -webkit-fill-available; /* 解決 iOS Safari 網址列高度問題 */
+        height: -webkit-fill-available;
     }
     
     /* 讀取畫面 */
@@ -32,69 +32,72 @@
     }
     
     .loader {
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #3498db;
+        border: 4px solid #fff3e0;
+        border-top: 4px solid #d32f2f;
         border-radius: 50%;
         width: 40px; height: 40px;
         animation: spin 1s linear infinite;
         margin-bottom: 15px;
     }
 
-    .loading-text { color: #555; font-size: 1rem; font-weight: bold; margin-bottom: 20px; }
+    .loading-text { color: #d32f2f; font-size: 1rem; font-weight: bold; margin-bottom: 20px; }
 
     #start-btn {
         padding: 12px 30px;
         font-size: 1.1rem;
-        background: #3498db;
-        color: white;
-        border: none;
+        background: linear-gradient(to right, #d32f2f, #f44336);
+        color: #ffd700;
+        border: 2px solid #ffd700;
         border-radius: 50px;
         cursor: pointer;
-        display: none; /* 一開始隱藏，載入完才顯示 */
-        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+        display: none;
+        box-shadow: 0 4px 15px rgba(211, 47, 47, 0.3);
         transition: transform 0.2s, background 0.2s;
         font-weight: bold;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.2);
     }
-    #start-btn:active { transform: scale(0.95); background: #2980b9; }
+    #start-btn:active { transform: scale(0.95); background: #b71c1c; }
 
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
     /* API 狀態 (右上角) */
     #api-status {
         position: absolute;
-        top: 15px; right: 15px; /* 手機版邊距縮小 */
+        top: 15px; right: 15px;
         padding: 6px 12px;
-        background: rgba(255, 255, 255, 0.85);
+        background: rgba(255, 255, 255, 0.8);
         backdrop-filter: blur(4px);
         border-radius: 20px;
         font-size: 12px;
         font-weight: bold;
-        color: #666;
+        color: #bf360c; /* 深橘紅色文字 */
         display: flex; align-items: center;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         z-index: 100;
         transition: all 0.3s;
+        border: 1px solid #ffcc80;
     }
     .status-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #ccc; margin-right: 6px; }
     .status-connected { background-color: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
     .status-error { background-color: #e74c3c; box-shadow: 0 0 5px #e74c3c; }
     .status-preview { background-color: #f39c12; box-shadow: 0 0 5px #f39c12; }
 
-    /* 檔案讀取狀態面板 (左上角) */
+    /* 檔案讀取狀態面板 */
     #file-status {
         position: absolute;
         top: 15px; left: 15px;
         padding: 10px;
-        background: rgba(255, 255, 255, 0.85);
+        background: rgba(255, 255, 255, 0.8);
         backdrop-filter: blur(4px);
         border-radius: 12px;
         font-size: 12px;
-        color: #333;
+        color: #5d4037;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         z-index: 100;
         max-width: 180px;
         transition: opacity 0.5s;
         pointer-events: none;
+        border: 1px solid #ffcc80;
     }
     .file-status-item { 
         margin-bottom: 4px; 
@@ -105,16 +108,16 @@
         text-overflow: ellipsis;
     }
     .file-status-item:last-child { margin-bottom: 0; }
-    .icon-ok { color: #27ae60; margin-right: 6px; font-weight: bold; }
-    .icon-fail { color: #e74c3c; margin-right: 6px; font-weight: bold; }
-    .icon-loading { color: #3498db; margin-right: 6px; animation: pulse 1s infinite; }
+    .icon-ok { color: #2e7d32; margin-right: 6px; font-weight: bold; }
+    .icon-fail { color: #c62828; margin-right: 6px; font-weight: bold; }
+    .icon-loading { color: #ef6c00; margin-right: 6px; animation: pulse 1s infinite; }
     
     @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
 
     /* 對話介面 */
     #chat-container {
         position: absolute; 
-        bottom: 20px; /* 預設 Desktop */
+        bottom: 20px; 
         left: 50%; 
         transform: translateX(-50%);
         width: 90%; 
@@ -126,15 +129,14 @@
         transition: bottom 0.3s;
     }
 
-    /* 手機版直立優化 */
     @media (max-width: 600px) {
         #chat-container {
-            width: 95%; /* 手機版更寬 */
-            bottom: 30px; /* 留出底部操作條空間 */
+            width: 95%; 
+            bottom: 30px; 
         }
         #file-status, #api-status {
             top: 10px;
-            transform: scale(0.9); /* 稍微縮小狀態列 */
+            transform: scale(0.9); 
             transform-origin: top;
         }
         #file-status { left: 10px; }
@@ -142,18 +144,17 @@
     }
 
     #chat-display {
-        background: rgba(0, 0, 0, 0.4); /* 更通透一點 */
+        background: rgba(255, 255, 255, 0.4); /* 更亮更通透 */
         padding: 12px; 
         border-radius: 16px;
-        height: 140px; /* 稍微增高以容納更多對話 */
+        height: 140px; 
         overflow-y: auto;
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        border: 1px solid rgba(255,255,255,0.15);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 215, 0, 0.6);
         display: flex;
         flex-direction: column;
         gap: 8px;
-        /* 隱藏卷軸但保留功能 */
         scrollbar-width: none; 
         -ms-overflow-style: none;
     }
@@ -167,15 +168,27 @@
         font-size: 14px;
         line-height: 1.5;
         color: white;
-        text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        text-shadow: 0 1px 1px rgba(0,0,0,0.1);
     }
 
-    .message-user { align-self: flex-end; background-color: rgba(52, 152, 219, 0.9); border-bottom-right-radius: 2px; }
-    .message-ai { align-self: flex-start; background-color: rgba(255, 255, 255, 0.25); border-bottom-left-radius: 2px; }
-    .message-system { align-self: center; background: transparent; color: #ddd; font-size: 12px; font-style: italic; text-shadow: none; text-align: center;}
+    .message-user { 
+        align-self: flex-end; 
+        background-color: rgba(211, 47, 47, 0.9); /* 深紅色 */
+        border-bottom-right-radius: 2px; 
+        color: #fff;
+    }
+    .message-ai { 
+        align-self: flex-start; 
+        background-color: rgba(255, 255, 255, 0.9); 
+        border-bottom-left-radius: 2px; 
+        color: #333; 
+        text-shadow: none;
+        border: 1px solid #ffd700;
+    }
+    .message-system { align-self: center; background: transparent; color: #e65100; font-size: 12px; font-style: italic; text-shadow: none; text-align: center;}
 
-    .message a { color: #82cfff; text-decoration: none; border-bottom: 1px dotted #82cfff; }
-    .message-user a { color: #cceeff; }
+    .message a { color: #1e88e5; text-decoration: none; border-bottom: 1px dotted #1e88e5; }
+    .message-user a { color: #ffe0b2; }
 
     #input-area { display: flex; gap: 8px; align-items: center; }
     
@@ -183,26 +196,28 @@
         flex: 1; 
         padding: 12px 16px; 
         border-radius: 25px; 
-        border: 1px solid rgba(255,255,255,0.3);
+        border: 1px solid rgba(255, 215, 0, 0.6);
         outline: none;
         background: rgba(255, 255, 255, 0.95); 
-        font-size: 16px; /* 16px 防止 iOS 輸入時放大 */
-        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
-        color: #333;
+        font-size: 16px; 
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        color: #5d4037;
     }
     #user-input::placeholder { color: #999; }
 
     #send-btn {
         padding: 0 20px; 
-        height: 44px; /* 加大觸控區域 */
+        height: 44px; 
         border-radius: 22px; border: none;
-        background: #3498db; color: white; font-weight: bold; cursor: pointer;
+        background: linear-gradient(to right, #d32f2f, #c62828);
+        color: #ffd700; font-weight: bold; cursor: pointer;
         transition: background 0.2s;
-        box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3);
+        box-shadow: 0 4px 10px rgba(198, 40, 40, 0.3);
         flex-shrink: 0;
+        border: 1px solid #ffd700;
     }
     #send-btn:active { transform: scale(0.95); }
-    #send-btn:disabled { background: #bdc3c7; box-shadow: none; cursor: not-allowed; }
+    #send-btn:disabled { background: #bdbdbd; box-shadow: none; cursor: not-allowed; border: none; color: #fff;}
 
     #mute-btn {
         width: 44px; height: 44px; border-radius: 50%; border: none;
@@ -210,19 +225,21 @@
         display: flex; justify-content: center; align-items: center;
         box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         flex-shrink: 0;
+        border: 1px solid #ffd700;
+        color: #d32f2f;
     }
-    #mute-btn.muted { background: #e74c3c; color: white; }
+    #mute-btn.muted { background: #e74c3c; color: white; border: none; }
     
     #emotion-debug {
         position: absolute; top: 60px; right: 15px;
-        font-size: 10px; color: #777;
+        font-size: 10px; color: #5d4037;
         background: rgba(255,255,255,0.7);
         padding: 4px 8px; border-radius: 6px;
         pointer-events: none;
         backdrop-filter: blur(2px);
         text-align: right;
         line-height: 1.3;
-        opacity: 0.6; /* 淡化顯示 */
+        opacity: 0.6; 
     }
 
 </style>
@@ -242,8 +259,8 @@
 
     <div id="loading-screen">
         <div class="loader" id="loader"></div>
-        <div class="loading-text" id="status-text">初始化系統中...</div>
-        <button id="start-btn">點擊開始對話</button>
+        <div class="loading-text" id="status-text">初始化新年系統...</div>
+        <button id="start-btn">開始新年對話</button>
     </div>
 
     <div id="file-status">
@@ -266,8 +283,8 @@
         </div>
         <div id="input-area">
             <button id="mute-btn" title="切換聲音">🔊</button>
-            <input type="text" id="user-input" placeholder="輸入訊息..." disabled>
-            <button id="send-btn" disabled>Send</button>
+            <input type="text" id="user-input" placeholder="輸入新年祝福..." disabled>
+            <button id="send-btn" disabled>發送</button>
         </div>
     </div>
 
@@ -294,12 +311,14 @@
 
         // --- 場景初始化 ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xf0f4f8); // 柔和背景色
+        // 修改：改為暖米黃色背景，與 CSS 亮金背景呼應
+        scene.background = new THREE.Color(0xfff8e1); 
         
-        // 增加一個霧效果，讓地板與背景融合，視覺更無限延伸
-        scene.fog = new THREE.Fog(0xf0f4f8, 5, 15);
+        // 霧氣改為暖米色
+        scene.fog = new THREE.Fog(0xfff8e1, 5, 15);
         
-        scene.add(new THREE.GridHelper(20, 20, 0xccd6e0, 0xeef2f6)); // 淡化網格
+        // 修改：網格線改為亮紅色 (Red) 和 深橘色 (Deep Orange)，在亮地板上清晰可見
+        scene.add(new THREE.GridHelper(20, 20, 0xd32f2f, 0xffcc80)); 
 
         const camera = new THREE.PerspectiveCamera(30.0, window.innerWidth / window.innerHeight, 0.1, 20.0);
         
@@ -325,25 +344,67 @@
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制最高 2x 像素比以節省手機效能
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
         document.body.appendChild(renderer.domElement);
 
-        // 燈光優化：更立體的光影
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        // 燈光優化：暖色光
+        const directionalLight = new THREE.DirectionalLight(0xffedd5, 1.5); // 暖白光
         directionalLight.position.set(-1.0, 2.0, 1.0).normalize();
         scene.add(directionalLight);
         
-        // 補光
-        const fillLight = new THREE.DirectionalLight(0xeeeeff, 0.5);
+        // 補光 (金色)
+        const fillLight = new THREE.DirectionalLight(0xffd700, 0.6);
         fillLight.position.set(1.0, 1.0, 1.0).normalize();
         scene.add(fillLight);
         
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+        // --- 新年特效：飄落金粉/紅紙屑 ---
+        let particlesMesh;
+        const particlesCount = 300; // 粒子數量
+        function createFestiveParticles() {
+            const geometry = new THREE.BufferGeometry();
+            const posArray = new Float32Array(particlesCount * 3);
+            const colorArray = new Float32Array(particlesCount * 3);
+            
+            for(let i = 0; i < particlesCount * 3; i+=3) {
+                // 隨機位置
+                posArray[i] = (Math.random() - 0.5) * 15; // X
+                posArray[i+1] = Math.random() * 10;       // Y
+                posArray[i+2] = (Math.random() - 0.5) * 15; // Z
+
+                // 修改：顏色對比度調整
+                if (Math.random() > 0.5) {
+                    // 正紅色 (在淺色背景很明顯)
+                    colorArray[i] = 0.9;
+                    colorArray[i+1] = 0.1;
+                    colorArray[i+2] = 0.1;
+                } else {
+                    // 深金色 (避免太亮看不見)
+                    colorArray[i] = 0.8;
+                    colorArray[i+1] = 0.6;
+                    colorArray[i+2] = 0.0;
+                }
+            }
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+            
+            const material = new THREE.PointsMaterial({
+                size: 0.15, // 稍微加大粒子
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                // blending: THREE.AdditiveBlending // 在淺色背景取消 Additive，不然會變白
+            });
+            
+            particlesMesh = new THREE.Points(geometry, material);
+            scene.add(particlesMesh);
+        }
+        createFestiveParticles();
 
         // --- 控制器設定 (OrbitControls) ---
         const controls = new OrbitControls(camera, renderer.domElement);
-        
-        // *** 觸控功能開啟 ***
         controls.enablePan = true; 
         controls.screenSpacePanning = true; 
         controls.enableDamping = true;
@@ -353,7 +414,7 @@
         controls.maxPolarAngle = Math.PI / 2 + 0.1; 
         controls.minPolarAngle = Math.PI / 3;
 
-        updateCameraPosition(); // 初始化呼叫一次
+        updateCameraPosition(); 
 
         // --- 檔案讀取 (左上角狀態) ---
         async function loadExternalData() {
@@ -410,7 +471,6 @@
                     if (res.ok) {
                         const text = await res.text();
                         if (text.trim().length > 0) {
-                            // **修正：特別抓取第一份知識庫作為開場白**
                             if (fileIndex === 1) {
                                 openingRemark = text;
                             }
@@ -466,7 +526,6 @@
             }),
             loadExternalData()
         ]).then(() => {
-            // *** 修改處：準備就緒後，不直接關閉 Loading，而是顯示「開始按鈕」 ***
             const loaderEl = document.getElementById('loader');
             const statusText = document.getElementById('status-text');
             const startBtn = document.getElementById('start-btn');
@@ -475,9 +534,7 @@
             statusText.innerText = "準備完成";
             startBtn.style.display = 'block';
 
-            // 綁定按鈕點擊事件
             startBtn.addEventListener('click', () => {
-                // 1. 解除 iOS 音訊封鎖 (Priming)
                 if (!isMuted) {
                     window.speechSynthesis.cancel();
                     const silent = new SpeechSynthesisUtterance(" ");
@@ -485,21 +542,17 @@
                     window.speechSynthesis.speak(silent);
                 }
 
-                // 2. 隱藏載入畫面
                 const loadingScreen = document.getElementById('loading-screen');
                 loadingScreen.style.opacity = 0;
                 setTimeout(() => loadingScreen.style.display = 'none', 500);
 
-                // 3. 顯示開場白並朗讀
-                const introText = openingRemark || "Hello! 我準備好了。";
+                const introText = openingRemark || "（未讀取到 KnowledgeBase01.txt，請檢查檔案）";
                 addMessage(introText, 'ai');
                 
-                // 為了讓 AI 知道它已經說過這句話（避免重複），我們也可以加入歷史紀錄
                 chatHistory.push({ role: "model", parts: [{ text: introText }] });
                 
                 speak(introText);
                 
-                // 4. 連線測試
                 testApiConnection();
             });
         });
@@ -510,6 +563,20 @@
             requestAnimationFrame(animate);
             const deltaTime = clock.getDelta();
             const elapsedTime = clock.elapsedTime;
+
+            // 粒子動畫 (緩緩飄落)
+            if (particlesMesh) {
+                particlesMesh.rotation.y += 0.001; // 整體旋轉
+                const positions = particlesMesh.geometry.attributes.position.array;
+                for(let i = 1; i < particlesCount * 3; i+=3) {
+                    positions[i] -= 0.015; // 向下飄落
+                    // 如果掉到地板以下，重置到上方隨機位置
+                    if (positions[i] < 0) {
+                        positions[i] = 10;
+                    }
+                }
+                particlesMesh.geometry.attributes.position.needsUpdate = true;
+            }
 
             if (currentVrm) {
                 currentVrm.update(deltaTime);
@@ -593,7 +660,6 @@
             
             div.innerHTML = safeText;
             chatDisplay.appendChild(div);
-            // 平滑捲動到底部
             chatDisplay.scrollTo({ top: chatDisplay.scrollHeight, behavior: 'smooth' });
             return div;
         }
@@ -631,7 +697,6 @@
                     userInput.disabled = false; 
                     sendBtn.disabled = false;
                 } else {
-                    // 嘗試讀取後端回傳的錯誤訊息
                     let errMsg = "API Response Error";
                     try {
                         const errData = await response.json();
@@ -643,7 +708,6 @@
                 statusDot.classList.add('status-error');
                 statusMsg.innerText = "連線失敗";
                 console.error("API Test Failed:", e);
-                // 顯示錯誤在對話框，方便除錯
                 addMessage(`連線測試失敗: ${e.message}`, 'system');
             }
         }
@@ -660,7 +724,6 @@
             const text = userInput.value.trim();
             if (!text) return;
 
-            // *** iOS 語音修正 (Priming) ***
             if (!isMuted) {
                 window.speechSynthesis.cancel();
                 const silent = new SpeechSynthesisUtterance(" ");
