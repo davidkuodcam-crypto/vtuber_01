@@ -125,20 +125,22 @@
         position: absolute;
         top: 120px; /* 位於其他狀態下方 */
         left: 10px;
-        background: rgba(0, 0, 0, 0.8);
+        background: rgba(0, 0, 0, 0.85);
         color: #00ff00; /* 駭客綠，方便閱讀 */
-        font-family: monospace;
-        font-size: 10px;
-        padding: 8px;
+        font-family: "Courier New", monospace;
+        font-size: 11px;
+        padding: 10px;
         border-radius: 8px;
-        max-width: 250px;
-        max-height: 150px;
+        width: 280px;
+        max-height: 200px;
         overflow-y: auto;
-        z-index: 200;
+        z-index: 9999;
         pointer-events: none; /* 點擊穿透 */
         display: none; /* 預設隱藏，JS 偵測到 Android 才開啟 */
-        border: 1px solid #00ff00;
-        line-height: 1.2;
+        border: 2px solid #00ff00;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        box-shadow: 0 0 10px rgba(0,0,0,0.5);
     }
 
     @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
@@ -320,7 +322,7 @@
         <span id="status-msg">連線中...</span>
     </div>
     
-    <!-- Android 語音診斷面板 -->
+    <!-- Android 語音診斷面板 (預設隱藏) -->
     <div id="tts-debug">TTS 系統診斷中...</div>
     
     <div id="emotion-debug">
@@ -352,16 +354,37 @@
         const isAndroid = /Android/i.test(navigator.userAgent);
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-        // Android Debug Logger
+        // Android Debug Logger Setup
         const ttsDebug = document.getElementById('tts-debug');
+        
+        // 修正：如果偵測到是 Android，立刻顯示面板並寫入第一行 Log
         if (isAndroid) {
             ttsDebug.style.display = 'block';
+            ttsDebug.innerHTML = "=== Android Debug Log (Init) ===<br>";
         }
 
         function logTTS(msg) {
+            // 允許 Android 或強制開啟除錯時寫入
             if (!isAndroid) return;
             const time = new Date().toTimeString().split(' ')[0];
+            // 採用 append 方式，新的訊息在最上方
             ttsDebug.innerHTML = `[${time}] ${msg}<br>` + ttsDebug.innerHTML;
+        }
+
+        // 立即測試 Log 功能
+        logTTS("腳本載入... 檢查 API");
+
+        // 檢查 API 支援度
+        if (!window.speechSynthesis) {
+            logTTS("❌ 錯誤: 不支援 speechSynthesis");
+        } else {
+            logTTS("✅ 支援 speechSynthesis");
+        }
+
+        if (!window.SpeechSynthesisUtterance) {
+            logTTS("❌ 錯誤: 不支援 SpeechSynthesisUtterance");
+        } else {
+            logTTS("✅ 支援 SpeechSynthesisUtterance");
         }
 
         // --- 隨機角色選擇邏輯 ---
@@ -387,7 +410,9 @@
         function updateVoices() {
             if (!window.speechSynthesis) return;
             const voices = window.speechSynthesis.getVoices();
-            logTTS(`載入語音包: ${voices.length} 個`);
+            
+            // 寫入 Log 讓使用者看到是否載入成功
+            logTTS(`偵測到語音包: ${voices.length} 個`);
             
             if (voices.length > 0) {
                 // Android 優先策略：
@@ -399,23 +424,31 @@
                                  voices.find(v => v.lang.includes('zh'));
                 
                 if (preferredVoice) {
-                    logTTS(`已選定語音: ${preferredVoice.name} (${preferredVoice.lang})`);
+                    logTTS(`選定: ${preferredVoice.name} (${preferredVoice.lang})`);
                 } else {
-                    logTTS(`警告: 找不到合適中文語音`);
+                    logTTS(`⚠️ 警告: 未找到合適中文語音`);
                 }
+            } else {
+                logTTS(`等待語音包載入...`);
             }
         }
         
         // 確保語音列表載入 (Android 需要重試)
         if (window.speechSynthesis) {
-            window.speechSynthesis.onvoiceschanged = updateVoices;
+            window.speechSynthesis.onvoiceschanged = () => {
+                logTTS("Event: voiceschanged");
+                updateVoices();
+            };
             updateVoices(); 
             // 強制重試機制，每秒檢查一次，直到抓到語音或過了 5 秒
             let voiceRetryCount = 0;
             const voiceInterval = setInterval(() => {
                 updateVoices();
                 voiceRetryCount++;
-                if (preferredVoice || voiceRetryCount > 5) clearInterval(voiceInterval);
+                if ((preferredVoice && preferredVoice.lang) || voiceRetryCount > 8) {
+                    clearInterval(voiceInterval);
+                    logTTS(`語音掃描結束 (嘗試 ${voiceRetryCount} 次)`);
+                }
             }, 1000);
         }
 
