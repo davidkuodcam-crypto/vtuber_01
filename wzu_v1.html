@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VRM AI Presenter</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Segoe UI', sans-serif;
+            user-select: none; 
+        }
+
+        /* 1. 背景層 */
+        #webpage-frame {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            border: none;
+            z-index: 0;
+            background: #fff;
+        }
+
+        /* 2. 角色層 (Canvas) */
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        /* 3. 實體判定框 (Hitbox) */
+        #character-hitbox {
+            position: absolute;
+            z-index: 10; 
+            cursor: grab;
+            background: rgba(255, 0, 0, 0.0);
+            border-radius: 20px;
+            display: none; 
+            touch-action: none; 
+        }
+        #character-hitbox:active {
+            cursor: grabbing;
+        }
+
+        /* 4. 繪圖層 (Drawing Canvas) */
+        #drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 20;
+            pointer-events: none;
+            touch-action: none;
+        }
+
+        /* 5. 簡報控制台 */
+        #control-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: auto;
+            min-width: 180px;
+        }
+        #control-panel h3 {
+            margin: 0 0 5px 0;
+            font-size: 16px;
+            color: #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* AI 狀態指示燈 */
+        .ai-status {
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #f3f4f6;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-weight: normal;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ef4444; /* 預設紅色 */
+            box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+            transition: background-color 0.3s ease;
+        }
+        .status-dot.connected {
+            background-color: #22c55e; /* 綠色 */
+            box-shadow: 0 0 4px rgba(34, 197, 94, 0.5);
+        }
+        .status-text { color: #666; font-weight: 500; }
+
+        /* 按鈕通用樣式 */
+        .btn-group { display: flex; gap: 5px; justify-content: center; }
+        
+        button {
+            /* 預設樣式 (淺藍色底，黑色字) */
+            background: #dbeafe; 
+            color: #000; 
+            border: 1px solid #bfdbfe;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 600;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        button:hover { background: #bfdbfe; transform: translateY(-1px); }
+        
+        /* 設定 Key 按鈕 (淺黃色) */
+        #btn-config-key { background: #fef3c7; border-color: #fde68a; }
+        #btn-config-key:hover { background: #fde68a; }
+
+        /* 顯示/隱藏按鈕 (顯示時淺藍，隱藏時淺橘) */
+        #btn-toggle-char { background: #dbeafe; border-color: #bfdbfe; }
+        #btn-toggle-char.active { background: #ffedd5; border-color: #fed7aa; } /* 淺橘色 */
+        #btn-toggle-char.active:hover { background: #fed7aa; }
+
+        /* 跳舞按鈕 (淺綠色) */
+        #btn-dance { background: #d1fae5; border-color: #a7f3d0; display: none; }
+        #btn-dance:hover { background: #a7f3d0; }
+        
+        /* 交談按鈕 (一般淺紫，啟用淺紅) */
+        #btn-chat { background: #ede9fe; border-color: #ddd6fe; display: none; } 
+        #btn-chat:hover { background: #ddd6fe; }
+        #btn-chat.active { background: #fee2e2; border-color: #fecaca; } /* 淺紅色 */
+        #btn-chat.active:hover { background: #fecaca; }
+
+        /* 工具按鈕 */
+        .tool-btn {
+            background: #f3f4f6; color: #000; border: 1px solid #e5e7eb; position: relative;
+        }
+        .tool-btn:hover { background: #e5e7eb; }
+        .tool-btn.active {
+            background: #dbeafe; color: #000; border-color: #3b82f6;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+        }
+        .icon-svg { width: 18px; height: 18px; fill: currentColor; }
+
+        /* 清除按鈕 (淺紅) */
+        #btn-tool-clear { background: #fee2e2; border-color: #fecaca; color: #dc2626; }
+        #btn-tool-clear:hover { background: #fecaca; }
+
+        /* 6. 交談 UI */
+        #chat-ui {
+            position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+            z-index: 100; display: none; background: rgba(255, 255, 255, 0.95);
+            padding: 10px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            pointer-events: auto; align-items: center; gap: 10px; width: 300px;
+        }
+        #chat-input {
+            flex: 1; border: 1px solid #e5e7eb; border-radius: 20px; padding: 8px 15px;
+            font-size: 14px; outline: none;
+        }
+        #chat-submit {
+            background: #dbeafe; color: #000; border: 1px solid #bfdbfe; padding: 8px 15px;
+            border-radius: 20px; cursor: pointer; font-size: 14px; flex: none;
+        }
+        #chat-submit:hover { background: #bfdbfe; }
+
+        /* 7. 對話氣泡 */
+        #chat-bubble {
+            position: absolute; z-index: 90; background: rgba(255, 255, 255, 0.95);
+            padding: 12px 16px; border-radius: 12px; border-bottom-left-radius: 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 14px; color: #1f2937;
+            max-width: 250px; display: none; pointer-events: auto;
+            transform: translate(20px, -100%); line-height: 1.5;
+            word-break: break-word;
+        }
+        #chat-bubble a { color: #2563eb; text-decoration: underline; font-weight: 500; }
+        #chat-bubble a:hover { color: #1d4ed8; }
+
+        /* 8. API Key Modal */
+        #apikey-modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: white; padding: 25px; border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3); z-index: 200;
+            width: 320px; display: none; flex-direction: column; gap: 15px;
+            pointer-events: auto;
+        }
+        #apikey-modal h3 { margin: 0; color: #1f2937; }
+        #apikey-input {
+            padding: 10px; border: 1px solid #d1d5db; border-radius: 8px;
+            font-size: 14px; outline: none; width: 100%; box-sizing: border-box;
+        }
+        #apikey-status { font-size: 13px; min-height: 18px; margin-bottom: 5px; }
+        .modal-actions { display: flex; gap: 10px; }
+        #btn-connect-key { background: #dbeafe; color: #000; border: 1px solid #bfdbfe; }
+        #btn-cancel-key { background: #f3f4f6; color: #000; border: 1px solid #e5e7eb; }
+
+        /* Loading */
+        #loading-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.9); display: flex;
+            justify-content: center; align-items: center; z-index: 50;
+            transition: opacity 0.5s ease; pointer-events: none;
+        }
+        .spinner {
+            width: 30px; height: 30px; border: 3px solid #ccc;
+            border-top: 3px solid #000; border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+                "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js",
+                "@pixiv/three-vrm-animation": "https://unpkg.com/@pixiv/three-vrm-animation@3.0.0/lib/three-vrm-animation.module.js"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <iframe id="webpage-frame" src="https://a001.wzu.edu.tw/"></iframe>
+
+    <!-- 繪圖層 -->
+    <canvas id="drawing-canvas"></canvas>
+
+    <!-- 對話氣泡 -->
+    <div id="chat-bubble"></div>
+
+    <!-- 交談輸入介面 -->
+    <div id="chat-ui">
+        <input type="text" id="chat-input" placeholder="輸入文字與我交談..." autocomplete="off">
+        <button id="chat-submit">送出</button>
+    </div>
+
+    <!-- API Key 設定視窗 -->
+    <div id="apikey-modal">
+        <h3>設定 API Key</h3>
+        <p style="font-size: 13px; color: #666; margin:0;">請輸入 Gemini API Key 以啟用 AI 功能。</p>
+        <input type="password" id="apikey-input" placeholder="貼上 API Key...">
+        <div id="apikey-status"></div>
+        <div class="modal-actions">
+            <button id="btn-connect-key">連線</button>
+            <button id="btn-cancel-key">取消</button>
+        </div>
+    </div>
+
+    <!-- 簡報控制台 -->
+    <div id="control-panel">
+        <h3>
+            簡報控制台
+            <div class="ai-status" title="Gemini AI 連線狀態">
+                <div id="ai-status-dot" class="status-dot"></div>
+                <span id="ai-status-text" class="status-text">未連線</span>
+            </div>
+        </h3>
+        <button id="btn-config-key">🔑 設定 AI Key</button>
+        <button id="btn-toggle-char">顯示虛擬人物</button>
+        <button id="btn-dance">跳舞</button>
+        <button id="btn-chat">💬 交談</button>
+        
+        <div class="btn-group" style="margin-top: 5px; border-top: 1px solid #eee; padding-top: 10px;">
+            <button id="btn-tool-mouse" class="tool-btn active" title="操作網頁/拖曳角色">🖱️</button>
+            <button id="btn-tool-pen" class="tool-btn" title="畫筆 (左鍵)">✏️</button>
+            <button id="btn-tool-eraser" class="tool-btn" title="橡皮擦 (左鍵)">
+                <svg class="icon-svg" viewBox="0 0 24 24">
+                    <path d="M15.14,3c-0.51,0-1.02,0.2-1.41,0.59L2.59,14.73C1.81,15.51,1.81,16.77,2.59,17.55l5.86,5.86
+                        C8.84,23.8,9.35,24,9.86,24s1.02-0.2,1.41-0.59l11.14-11.14c0.78-0.78,0.78-2.05,0-2.83l-5.86-5.86C16.16,3.2,15.65,3,15.14,3z
+                         M9.86,22.14L4,16.28l8.48-8.49l5.86,5.86L9.86,22.14z"/>
+                </svg>
+            </button>
+            <button id="btn-tool-clear" class="tool-btn" title="清除全部">🗑️</button>
+        </div>
+    </div>
+
+    <div id="character-hitbox"></div>
+    <div id="loading-overlay"><div class="spinner"></div></div>
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+        import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
+
+        // --- Config ---
+        const MODEL_URL = 'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm';
+        const ANIMATION_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Taunt_with_Skin.vrma';
+        const SPECIAL_ANIMATION_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma';
+        
+        const GEMINI_MODEL = 'gemini-2.5-flash-preview-09-2025';
+
+        // --- State ---
+        let scene, camera, renderer, clock, mixer;
+        let currentVrm = null;
+        let idleAction = null;
+        let specialAction = null;
+        let screenBounds = { minX: -5, maxX: 5, minY: -5, maxY: 5 };
+        let isCharacterVisible = false;
+        let isChatting = false; 
+        
+        let userApiKey = ''; 
+        let chatHistory = []; 
+
+        // Interaction
+        const mouse = new THREE.Vector2();
+        const raycaster = new THREE.Raycaster();
+        let isDragging = false;
+        let isPerformingSpecial = false; 
+        let dragPlane = new THREE.Plane();
+        let targetPosition = new THREE.Vector3();
+        let dragOffset = new THREE.Vector3(); 
+        let velocity = new THREE.Vector3(0, 0, 0);
+
+        // Speech
+        let isSpeaking = false;
+        let synth = window.speechSynthesis;
+
+        // Drawing State
+        let drawingMode = 'none'; 
+        let isDrawing = false;
+        let ctx;
+
+        // DOM Elements
+        const container = document.getElementById('canvas-container');
+        const hitbox = document.getElementById('character-hitbox'); 
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const iframeFrame = document.getElementById('webpage-frame'); 
+        
+        const btnToggle = document.getElementById('btn-toggle-char');
+        const btnDance = document.getElementById('btn-dance');
+        const btnChat = document.getElementById('btn-chat');
+        const btnConfigKey = document.getElementById('btn-config-key'); 
+        
+        const chatUI = document.getElementById('chat-ui');
+        const chatInput = document.getElementById('chat-input');
+        const chatSubmit = document.getElementById('chat-submit');
+        const chatBubble = document.getElementById('chat-bubble');
+        
+        const drawingCanvas = document.getElementById('drawing-canvas');
+        const btnToolMouse = document.getElementById('btn-tool-mouse');
+        const btnToolPen = document.getElementById('btn-tool-pen');
+        const btnToolEraser = document.getElementById('btn-tool-eraser');
+        const btnToolClear = document.getElementById('btn-tool-clear');
+        
+        const apikeyModal = document.getElementById('apikey-modal');
+        const apikeyInput = document.getElementById('apikey-input');
+        const apikeyStatus = document.getElementById('apikey-status');
+        const btnConnectKey = document.getElementById('btn-connect-key');
+        const btnCancelKey = document.getElementById('btn-cancel-key');
+        
+        const aiStatusDot = document.getElementById('ai-status-dot');
+        const aiStatusText = document.getElementById('ai-status-text');
+
+        function init() {
+            // UI Events
+            btnToggle.addEventListener('click', toggleCharacter);
+            btnDance.addEventListener('click', playSpecialAnimation);
+            btnChat.addEventListener('click', toggleChatMode);
+            chatSubmit.addEventListener('click', sendChatMessage);
+            chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+
+            btnConfigKey.addEventListener('click', showApiKeyModal);
+            btnConnectKey.addEventListener('click', handleConnectKey);
+            btnCancelKey.addEventListener('click', hideApiKeyModal);
+
+            btnToolMouse.addEventListener('click', () => setDrawingMode('none'));
+            btnToolPen.addEventListener('click', () => setDrawingMode('pen'));
+            btnToolEraser.addEventListener('click', () => setDrawingMode('eraser'));
+            btnToolClear.addEventListener('click', clearCanvas);
+
+            ctx = drawingCanvas.getContext('2d');
+            resizeDrawingCanvas();
+            drawingCanvas.addEventListener('mousedown', onCanvasMouseDown);
+            window.addEventListener('mousemove', onCanvasMouseMove);
+            window.addEventListener('mouseup', onCanvasMouseUp);
+
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 50.0);
+            camera.position.set(0.0, 1.0, 6.0); 
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            container.appendChild(renderer.domElement);
+
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 1.0);
+            scene.add(hemiLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            dirLight.position.set(5, 10, 5);
+            scene.add(dirLight);
+
+            hitbox.addEventListener('mousedown', onHitboxMouseDown);
+            window.addEventListener('mousemove', onGlobalMouseMove);
+            window.addEventListener('mouseup', onGlobalMouseUp);
+            window.addEventListener('resize', onWindowResize);
+
+            clock = new THREE.Clock();
+            updateBoundaries();
+            
+            testGeminiConnection(userApiKey); 
+
+            loadAssets();
+            animate();
+        }
+
+        // --- Helper: Markdown Link Parser & Speech Cleaner ---
+        function processResponse(text) {
+            const displayHtml = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
+                return `<a href="${url}" target="_blank">${linkText}</a>`;
+            });
+            let speechText = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
+                return linkText;
+            });
+            
+            speechText = speechText.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}]/gu, '');
+            speechText = speechText.replace(/[\*\#\-\`\~\_]/g, '');
+            
+            return { display: displayHtml, speech: speechText };
+        }
+
+        // --- API Key Modal Logic ---
+        function showApiKeyModal() {
+            apikeyModal.style.display = 'flex';
+            apikeyInput.focus();
+            apikeyStatus.textContent = '';
+            apikeyStatus.style.color = '#333';
+        }
+
+        function hideApiKeyModal() {
+            apikeyModal.style.display = 'none';
+        }
+
+        async function handleConnectKey() {
+            const key = apikeyInput.value.trim();
+            if (!key) {
+                apikeyStatus.textContent = "請輸入 API Key";
+                apikeyStatus.style.color = 'red';
+                return;
+            }
+            apikeyStatus.textContent = "驗證連線中...";
+            apikeyStatus.style.color = '#2563eb';
+            btnConnectKey.disabled = true;
+
+            const isValid = await testGeminiConnection(key);
+            btnConnectKey.disabled = false;
+
+            if (isValid) {
+                userApiKey = key; 
+                apikeyStatus.textContent = "連線成功！";
+                apikeyStatus.style.color = 'green';
+                setTimeout(hideApiKeyModal, 1000);
+            } else {
+                apikeyStatus.textContent = "連線失敗，請檢查 Key 是否正確或有效。";
+                apikeyStatus.style.color = 'red';
+            }
+        }
+
+        // --- AI Logic ---
+        async function testGeminiConnection(keyToTest) {
+            if (!keyToTest) {
+                aiStatusText.textContent = "未連線";
+                aiStatusDot.className = "status-dot";
+                return false;
+            }
+
+            aiStatusText.textContent = "連線中...";
+            aiStatusDot.className = "status-dot"; 
+            
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${keyToTest}`;
+            const payload = { contents: [{ parts: [{ text: "Hello" }] }] };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (response.ok) {
+                    aiStatusDot.classList.add('connected');
+                    aiStatusText.textContent = "AI 已連線";
+                    return true;
+                } else {
+                    aiStatusText.textContent = "連線失敗";
+                    aiStatusDot.className = "status-dot";
+                    return false;
+                }
+            } catch (error) {
+                aiStatusText.textContent = "連線錯誤";
+                aiStatusDot.className = "status-dot";
+                return false;
+            }
+        }
+
+        async function callGeminiWithHistory() {
+            if (!userApiKey) {
+                alert("請先設定 API Key 才能使用 AI 功能！");
+                showApiKeyModal();
+                return null;
+            }
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${userApiKey}`;
+            
+            const systemInstruction = {
+                parts: [{ text: `
+                    你是文藻外語大學的虛擬導覽員，個性活潑熱情。
+                    1. **務必使用 Google 搜尋工具**查詢最新資訊，特別是網址連結。
+                    2. **嚴格驗證網址**：當使用者詢問特定系所（如數位內容應用與管理系）時，**務必**確認網址是否對應到該系所。例如，數位內容系的網址通常包含 'c033' 或類似結構。**絕對不要**提供錯誤的單位（如華語中心）連結或失效連結。如果你無法透過搜尋找到確切的官方網址，請直接回答文字資訊，**不要**提供網址。
+                    3. 回答使用繁體中文，字數控制在 50 字以內，但**不要在回答中提及字數限制**。
+                    4. 若提供連結，請務必使用 Markdown 格式 [標題](網址)。
+                    5. 直接輸出回答內容，不要有任何前言後語（如「好的，這是...」）。
+                `}]
+            };
+
+            const payload = { 
+                contents: chatHistory,
+                systemInstruction: systemInstruction,
+                tools: [{ "google_search": {} }] 
+            };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                return data.candidates?.[0]?.content?.parts?.[0]?.text;
+            } catch (error) {
+                console.error("AI Error:", error);
+                return "抱歉，我現在連線有點問題。";
+            }
+        }
+
+        // --- Chat Logic ---
+        function toggleChatMode() {
+            if (!isCharacterVisible) return; 
+            isChatting = !isChatting;
+            if (isChatting) {
+                chatUI.style.display = 'flex';
+                btnChat.textContent = '❌ 結束交談';
+                btnChat.classList.add('active');
+                setTimeout(() => chatInput.focus(), 100);
+            } else {
+                closeChat();
+            }
+        }
+
+        function closeChat() {
+            isChatting = false;
+            chatUI.style.display = 'none';
+            chatBubble.style.display = 'none'; 
+            btnChat.textContent = '💬 交談';
+            btnChat.classList.remove('active');
+            stopSpeaking();
+        }
+
+        async function sendChatMessage() {
+            const text = chatInput.value.trim();
+            if (!text) return;
+
+            chatInput.value = ''; 
+            chatBubble.style.display = 'block';
+            chatBubble.textContent = "🤔 思考中...";
+            
+            chatHistory.push({ role: "user", parts: [{ text: text }] });
+            
+            const responseText = await callGeminiWithHistory();
+            
+            if (responseText && isChatting && isCharacterVisible) {
+                chatHistory.push({ role: "model", parts: [{ text: responseText }] });
+
+                const processed = processResponse(responseText);
+                chatBubble.innerHTML = processed.display;
+                speak(processed.speech);
+            } else {
+                chatBubble.textContent = "...";
+            }
+        }
+
+        // --- AI Intro Logic ---
+        async function generateAndSpeak() {
+            if (!userApiKey) {
+                speak("請先點選左下角的設定按鈕，輸入您的 AI Key 才能啟用智慧介紹喔！");
+                showApiKeyModal();
+                return;
+            }
+
+            chatHistory = []; 
+            const introPrompt = `
+                請用繁體中文介紹文藻外語大學，字數嚴格限制在50字以內。
+                請優先搜尋網路最新資訊來作為介紹的切入點（例如最新活動或新聞），讓每次內容都不同。
+                只能包含中文和英文，絕對不要包含任何表情符號。
+                直接輸出講稿內容，不要包含「好的」、「這是介紹」或關於字數的說明。
+            `;
+            const text = await callGeminiWithHistory(introPrompt); // Note: callGeminiWithHistory uses history, so prompt needs to be injected carefully.
+            // Actually, for intro, we might want to bypass history or inject it as user prompt. 
+            // Let's adjust generateAndSpeak to use chatHistory logic properly.
+            
+            // Re-implement generateAndSpeak correctly with history:
+            chatHistory = []; // Reset
+            chatHistory.push({ role: "user", parts: [{ text: introPrompt }] });
+            
+            const responseText = await callGeminiWithHistory();
+
+            if (responseText && isCharacterVisible) {
+                chatHistory.push({ role: "model", parts: [{ text: responseText }] });
+                
+                const processed = processResponse(responseText);
+                chatBubble.innerHTML = processed.display;
+                chatBubble.style.display = 'block';
+                speak(processed.speech);
+            }
+        }
+
+        // --- Common & Other Logic (Same as before) ---
+        function updateChatBubblePosition() {
+            if (!currentVrm || !isCharacterVisible || chatBubble.style.display === 'none') return;
+            const waistPos = currentVrm.scene.position.clone();
+            waistPos.y += 0.85; 
+            const vector = waistPos.project(camera);
+            const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
+            chatBubble.style.left = `${x}px`;
+            chatBubble.style.top = `${y}px`;
+        }
+
+        function resizeDrawingCanvas() {
+            drawingCanvas.width = window.innerWidth;
+            drawingCanvas.height = window.innerHeight;
+        }
+
+        function setDrawingMode(mode) {
+            drawingMode = mode;
+            btnToolMouse.classList.toggle('active', mode === 'none');
+            btnToolPen.classList.toggle('active', mode === 'pen');
+            btnToolEraser.classList.toggle('active', mode === 'eraser');
+
+            if (mode === 'none') {
+                drawingCanvas.style.pointerEvents = 'none'; 
+                container.style.cursor = 'default';
+            } else {
+                drawingCanvas.style.pointerEvents = 'auto'; 
+                drawingCanvas.style.cursor = mode === 'eraser' ? 'cell' : 'crosshair';
+            }
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+        }
+
+        function onCanvasMouseDown(e) {
+            if (e.button === 0 && drawingMode !== 'none') {
+                isDrawing = true;
+                ctx.beginPath();
+                ctx.moveTo(e.clientX, e.clientY);
+                ctx.lineWidth = drawingMode === 'pen' ? 3 : 20;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = 'red';
+                ctx.globalCompositeOperation = drawingMode === 'eraser' ? 'destination-out' : 'source-over';
+            }
+        }
+
+        function onCanvasMouseMove(e) {
+            if (isDrawing && drawingMode !== 'none') {
+                ctx.lineTo(e.clientX, e.clientY);
+                ctx.stroke();
+            }
+        }
+
+        function onCanvasMouseUp(e) {
+            if (e.button === 0) {
+                isDrawing = false;
+            }
+        }
+
+        function stopSpeaking() {
+            if (synth.speaking) {
+                synth.cancel();
+            }
+            isSpeaking = false;
+        }
+
+        function speak(text) {
+            stopSpeaking();
+            if (!text) return;
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-TW'; 
+            utterance.rate = 1.0;
+            utterance.onstart = () => { isSpeaking = true; };
+            utterance.onend = () => { isSpeaking = false; };
+            utterance.onerror = () => { isSpeaking = false; };
+            synth.speak(utterance);
+        }
+
+        function toggleCharacter() {
+            if (!currentVrm) return;
+            isCharacterVisible = !isCharacterVisible;
+            currentVrm.scene.visible = isCharacterVisible;
+            if (isCharacterVisible) {
+                currentVrm.scene.position.set(0, -1.0, 0);
+                targetPosition.copy(currentVrm.scene.position);
+                velocity.set(0, 0, 0);
+                hitbox.style.display = 'block';
+                updateHitbox();
+                btnToggle.textContent = '隱藏虛擬人物';
+                btnToggle.classList.add('active');
+                btnDance.style.display = 'block';
+                btnChat.style.display = 'block'; 
+                generateAndSpeak();
+            } else {
+                hitbox.style.display = 'none';
+                isDragging = false;
+                container.style.cursor = 'default';
+                iframeFrame.style.pointerEvents = 'auto';
+                btnToggle.textContent = '顯示虛擬人物';
+                btnToggle.classList.remove('active');
+                btnDance.style.display = 'none';
+                btnChat.style.display = 'none'; 
+                closeChat();
+                stopSpeaking();
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = Math.min(clock.getDelta(), 0.05);
+            if (currentVrm && isCharacterVisible) {
+                const pos = currentVrm.scene.position;
+                if (!isPerformingSpecial) {
+                    if (isDragging) {
+                        const displacement = new THREE.Vector3().subVectors(targetPosition, pos);
+                        const force = displacement.multiplyScalar(300.0); 
+                        velocity.add(force.multiplyScalar(delta));
+                        velocity.multiplyScalar(0.85); 
+                        pos.add(velocity.clone().multiplyScalar(delta));
+                    } else {
+                        velocity.set(0, 0, 0); 
+                    }
+                    pos.x = Math.max(screenBounds.minX + 0.4, Math.min(screenBounds.maxX - 0.4, pos.x));
+                    pos.y = Math.max(screenBounds.minY, Math.min(screenBounds.maxY - 1.6, pos.y));
+                }
+                currentVrm.scene.rotation.y = 0; 
+                updateHitbox();
+                updateChatBubblePosition();
+                if (isSpeaking) {
+                    const s = Math.sin(clock.elapsedTime * 20) * 0.5 + 0.5;
+                    currentVrm.expressionManager.setValue('aa', s);
+                } else {
+                    currentVrm.expressionManager.setValue('aa', 0);
+                }
+            }
+            if (mixer) mixer.update(delta);
+            if (currentVrm) currentVrm.update(delta);
+            renderer.render(scene, camera);
+        }
+
+        function updateBoundaries() {
+            const vFOV = THREE.MathUtils.degToRad(camera.fov); 
+            const dist = camera.position.z; 
+            const visibleHeight = 2 * Math.tan(vFOV / 2) * dist;
+            const visibleWidth = visibleHeight * camera.aspect;
+            const cameraY = camera.position.y;
+            screenBounds.minY = cameraY - visibleHeight / 2;
+            screenBounds.maxY = cameraY + visibleHeight / 2;
+            screenBounds.minX = -visibleWidth / 2;
+            screenBounds.maxX = visibleWidth / 2;
+        }
+
+        async function loadAssets() {
+            const loader = new GLTFLoader();
+            loader.register((parser) => new VRMLoaderPlugin(parser));
+            loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+            try {
+                const vrmGltf = await loader.loadAsync(MODEL_URL);
+                const vrm = vrmGltf.userData.vrm;
+                currentVrm = vrm;
+                VRMUtils.rotateVRM0(vrm);
+                vrm.scene.rotation.y = 0; 
+                updateBoundaries();
+                vrm.scene.position.set(0, -1.0, 0);
+                targetPosition.copy(vrm.scene.position);
+                vrm.scene.visible = false;
+                scene.add(vrm.scene);
+                mixer = new THREE.AnimationMixer(currentVrm.scene);
+                const vrmaGltf1 = await loader.loadAsync(ANIMATION_URL);
+                const clip1 = createVRMAnimationClip(vrmaGltf1.userData.vrmAnimations[0], currentVrm);
+                idleAction = mixer.clipAction(clip1);
+                idleAction.play(); 
+                const vrmaGltf2 = await loader.loadAsync(SPECIAL_ANIMATION_URL);
+                const clip2 = createVRMAnimationClip(vrmaGltf2.userData.vrmAnimations[0], currentVrm);
+                specialAction = mixer.clipAction(clip2);
+                specialAction.setLoop(THREE.LoopOnce); 
+                specialAction.clampWhenFinished = false; 
+                mixer.addEventListener('finished', (e) => {
+                    if (e.action === specialAction) {
+                        isPerformingSpecial = false;
+                        velocity.set(0, 0, 0);
+                        idleAction.reset();
+                        idleAction.play();
+                        specialAction.crossFadeTo(idleAction, 0.5);
+                        if (chatBubble.textContent.trim() !== "") {
+                            chatBubble.style.display = 'block';
+                        }
+                    }
+                });
+                hitbox.style.display = 'none';
+                loadingOverlay.style.opacity = 0;
+                setTimeout(() => loadingOverlay.style.display = 'none', 500);
+            } catch (e) { console.error(e); }
+        }
+
+        function playSpecialAnimation() {
+            if (!specialAction || !idleAction || isPerformingSpecial || !isCharacterVisible) return;
+            isPerformingSpecial = true;
+            chatBubble.style.display = 'none';
+            stopSpeaking();
+            specialAction.reset();
+            specialAction.play();
+            idleAction.crossFadeTo(specialAction, 0.3);
+        }
+
+        function updateHitbox() {
+            if (!currentVrm || !isCharacterVisible) return;
+            const targetPos = currentVrm.scene.position.clone();
+            targetPos.y += 0.75; 
+            const vector = targetPos.project(camera);
+            const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
+            const boxWidth = 140; const boxHeight = 240; 
+            hitbox.style.left = `${x - boxWidth / 2}px`;
+            hitbox.style.top = `${y - boxHeight / 2}px`;
+            hitbox.style.width = `${boxWidth}px`;
+            hitbox.style.height = `${boxHeight}px`;
+        }
+
+        function updateMouse(clientX, clientY) {
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onHitboxMouseDown(e) {
+            e.preventDefault();
+            if (drawingMode !== 'none') return;
+            if (isPerformingSpecial) return;
+            if (e.button === 0) {
+                updateMouse(e.clientX, e.clientY);
+                startDrag();
+            }
+        }
+
+        function startDrag() {
+            if (!currentVrm) return;
+            isDragging = true;
+            hitbox.style.cursor = 'grabbing';
+            iframeFrame.style.pointerEvents = 'none';
+            dragPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, 1), currentVrm.scene.position);
+            raycaster.setFromCamera(mouse, camera);
+            const intersectPoint = new THREE.Vector3();
+            raycaster.ray.intersectPlane(dragPlane, intersectPoint);
+            if (intersectPoint) dragOffset.subVectors(currentVrm.scene.position, intersectPoint);
+            targetPosition.copy(currentVrm.scene.position);
+        }
+
+        function onGlobalMouseMove(e) {
+            if (isDragging) {
+                e.preventDefault();
+                updateMouse(e.clientX, e.clientY);
+                raycaster.setFromCamera(mouse, camera);
+                const intersectPoint = new THREE.Vector3();
+                raycaster.ray.intersectPlane(dragPlane, intersectPoint);
+                if (intersectPoint) {
+                    targetPosition.addVectors(intersectPoint, dragOffset);
+                    targetPosition.x = Math.max(screenBounds.minX + 0.4, Math.min(screenBounds.maxX - 0.4, targetPosition.x));
+                    targetPosition.y = Math.max(screenBounds.minY, Math.min(screenBounds.maxY - 1.6, targetPosition.y));
+                }
+            }
+        }
+
+        function onGlobalMouseUp(e) {
+            if (isDragging) {
+                isDragging = false;
+                hitbox.style.cursor = 'grab';
+                if (drawingMode === 'none') {
+                    iframeFrame.style.pointerEvents = 'auto';
+                }
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            resizeDrawingCanvas();
+            updateBoundaries();
+            if (currentVrm && !isPerformingSpecial && !isDragging) {
+                targetPosition.copy(currentVrm.scene.position);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 WBC 中華隊 30 人名單</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState } = React;
+
+        // Icons Components
+        const IconBase = ({ size = 24, className = "", children }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                {children}
+            </svg>
+        );
+
+        const Trophy = (props) => <IconBase {...props}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5 2.5 2.5 0 0 0 0 5H18" /><path d="M4 22h16" /><path d="M10 14.66V17" /><path d="M14 14.66V17" /><path d="M18 2h-3a5 5 0 0 0-10 0H2l.5 7.5a6.5 6.5 0 0 0 2.5 4.95L7 17a5 5 0 0 0 5 5h0a5 5 0 0 0 5-5l2-2.55A6.5 6.5 0 0 0 21.5 9.5L22 2Z" /></IconBase>;
+        const Users = (props) => <IconBase {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></IconBase>;
+        const Globe = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></IconBase>;
+        const MapPin = (props) => <IconBase {...props}><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></IconBase>;
+        const X = (props) => <IconBase {...props}><path d="M18 6 6 18" /><path d="m6 6 12 12" /></IconBase>;
+        const Star = (props) => <IconBase {...props}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></IconBase>;
+        const Activity = (props) => <IconBase {...props}><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></IconBase>;
+        const Info = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></IconBase>;
+        const Shield = (props) => <IconBase {...props}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></IconBase>;
+        const Target = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></IconBase>;
+        const Crosshair = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" /><line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" /></IconBase>;
+        const LayoutGrid = (props) => <IconBase {...props}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></IconBase>;
+        const Layers = (props) => <IconBase {...props}><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></IconBase>;
+        const Search = (props) => <IconBase {...props}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></IconBase>;
+        const Briefcase = (props) => <IconBase {...props}><rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></IconBase>;
+        const BarChart2 = (props) => <IconBase {...props}><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></IconBase>;
+        const Youtube = (props) => <IconBase {...props}><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17" /><path d="m10 15 5-3-5-3z" /></IconBase>;
+        const MessageSquare = (props) => <IconBase {...props}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></IconBase>;
+
+        // 頭像生成輔助函式
+        const getMaleAvatar = (seed) => {
+            const baseUrl = "https://api.dicebear.com/7.x/avataaars/svg";
+            const params = new URLSearchParams({
+                seed: seed,
+                backgroundColor: "e5e7eb",
+                top: "shortHair,shortHairDreads01,shortHairDreads02,shortHairFrizzle,shortHairShaggy,shortHairSides,shortHairTheCaesar,shortHairTheCaesarSidePart",
+                accessoriesProbability: "10",
+                mouth: "default,smile,twinkle,grimace,serious,scream",
+                facialHairProbability: "20"
+            });
+            return `${baseUrl}?${params.toString()}`;
+        };
+
+        const JoshAnalysisModal = ({ onClose }) => {
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+                    <div 
+                        className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="bg-red-600 p-6 flex items-center justify-between">
+                            <div className="flex items-center space-x-3 text-white">
+                                <div className="p-2 bg-white/20 rounded-full">
+                                    <Youtube size={24} />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-black">台南Josh 觀點分析</h2>
+                                    <p className="text-red-100 text-xs mt-0.5">針對 30 人名單與戰術佈局的深度解析</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={onClose}
+                                className="p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto custom-scrollbar">
+                            <div className="space-y-6">
+                                {/* 捕手篇 */}
+                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-100">
+                                    <h3 className="flex items-center text-lg font-bold text-slate-800 mb-3">
+                                        <Shield size={20} className="mr-2 text-yellow-600" />
+                                        捕手：守備優先的抉擇
+                                    </h3>
+                                    <p className="text-slate-600 leading-relaxed text-sm">
+                                        選用 <span className="font-bold text-slate-800">蔣少宏</span> 而非戴培峰，關鍵在於教練團對「防守穩定性」的重視。
+                                        預期 <span className="font-bold text-slate-800">林家正</span> 將在對捷克等關鍵戰役中「蹲好蹲滿」。
+                                        二號捕手的主要任務是在對日本戰後段、或比分拉開時上場穩住局面，因此守備能力優於打擊能力（蔣、戴兩人 OPS+ 差距不大）成為入選關鍵。
+                                    </p>
+                                </div>
+
+                                {/* DH 與野手篇 */}
+                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-100">
+                                    <h3 className="flex items-center text-lg font-bold text-slate-800 mb-3">
+                                        <Crosshair size={20} className="mr-2 text-red-600" />
+                                        DH 與野手佈局：火力極大化
+                                    </h3>
+                                    <ul className="space-y-3 text-sm text-slate-600">
+                                        <li className="flex items-start">
+                                            <span className="inline-block w-1.5 h-1.5 bg-red-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                            <span>
+                                                <strong className="text-slate-800">林安可守右外野：</strong> 
+                                                既然沒帶宋晟睿，暗示林安可極可能擔任先發右外野手，而非佔據 DH。
+                                            </span>
+                                        </li>
+                                        <li className="flex items-start">
+                                            <span className="inline-block w-1.5 h-1.5 bg-red-500 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                                            <span>
+                                                <strong className="text-slate-800">Jonathon Long 打 DH：</strong> 
+                                                Long 報到時間晚，與投手群（牽制默契）及內野手搭配時間不足，且有語言隔閡。
+                                                為了讓他專心輸出 3A 等級的火力，將他擺在 DH 是最合理的戰術配置，同時也能讓內野溝通更順暢。
+                                            </span>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                {/* 工具人篇 */}
+                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-100">
+                                    <h3 className="flex items-center text-lg font-bold text-slate-800 mb-3">
+                                        <Users size={20} className="mr-2 text-blue-600" />
+                                        林子偉的入選邏輯
+                                    </h3>
+                                    <p className="text-slate-600 leading-relaxed text-sm">
+                                        在 Long 佔據 DH、張育成可能守一壘的情況下，內野替補僅剩江坤宇。
+                                        雖然 <span className="font-bold text-slate-800">林子偉</span> 外野守備有隱憂，但他的價值在於「萬能保險」。
+                                        當球隊需要一個同時能 cover 內野與外野突發狀況的替補時，他是最佳解。理想狀況下備而不用，但必須帶著以防萬一。
+                                    </p>
+                                </div>
+
+                                {/* 投手篇 */}
+                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-100">
+                                    <h3 className="flex items-center text-lg font-bold text-slate-800 mb-3">
+                                        <Activity size={20} className="mr-2 text-green-600" />
+                                        投手：吃局數與奇兵
+                                    </h3>
+                                    <p className="text-slate-600 leading-relaxed text-sm mb-2">
+                                        旅外投手（如古林、徐若熙、林昱珉）可能都有嚴格球數或局數限制，因此選入 <span className="font-bold text-slate-800">胡智爲</span> 與 <span className="font-bold text-slate-800">沙子宸</span> 這類能長中繼「吃局數」的投手至關重要。
+                                    </p>
+                                    <p className="text-slate-600 leading-relaxed text-sm">
+                                        <strong className="text-slate-800">張峻瑋</strong> 的入選類似去年的孫易磊。雖然層級尚低（日職三軍），但具備極佳的球速條件，被定位為本次投手陣容中的「奇兵」。
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <div className="mt-6 text-center">
+                                <a 
+                                    href="https://youtu.be/SfhoeJjZ8hI?si=LpzO-YHLjd5dFkaQ" 
+                                    target="_blank" 
+                                    className="inline-flex items-center text-red-600 hover:text-red-700 font-bold text-sm transition-colors hover:underline"
+                                >
+                                    <Youtube size={16} className="mr-2" />
+                                    觀看完整影片：中華隊經典賽30人名單公布！
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const PlayerModal = ({ player, onClose }) => {
+            if (!player) return null;
+
+            const handleScoutingReport = () => {
+                const query = encodeURIComponent(`${player.name} ${player.group === '美職組' ? 'scouting report baseball' : '棒球 數據 報告'}`);
+                window.open(`https://www.google.com/search?q=${query}`, '_blank');
+            };
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+                <div 
+                    className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+                    onClick={e => e.stopPropagation()}
+                >
+                    <div className={`h-32 ${player.group === '美職組' ? 'bg-blue-600' : player.group === '日職組' ? 'bg-red-600' : 'bg-slate-700'} relative`}>
+                    <button 
+                        onClick={onClose}
+                        className="absolute top-4 right-4 p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors"
+                    >
+                        <X size={20} />
+                    </button>
+                    <div className="absolute -bottom-12 left-8">
+                        <img 
+                        src={getMaleAvatar(player.name)}
+                        alt={player.name}
+                        className="w-24 h-24 rounded-full border-4 border-white shadow-lg bg-slate-100"
+                        />
+                    </div>
+                    {/* Modal 內的層級標示 */}
+                    {player.level && (
+                        <div className="absolute bottom-4 right-4 bg-white/20 backdrop-blur-md text-white px-3 py-1 rounded-full text-sm font-bold border border-white/30 shadow-sm">
+                        {player.level}
+                        </div>
+                    )}
+                    </div>
+
+                    <div className="pt-14 px-8 pb-8">
+                    <div className="flex justify-between items-start mb-4">
+                        <div>
+                        <h2 className="text-2xl font-bold text-slate-900">{player.name}</h2>
+                        <div className="flex items-center space-x-2 mt-1">
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-bold rounded uppercase">
+                            {player.group}
+                            </span>
+                            <span className="text-sm text-slate-500 font-medium">{player.position}</span>
+                        </div>
+                        </div>
+                        <div className="text-right">
+                        <div className="text-4xl">
+                            {player.group === '日職組' ? '🇯🇵' : player.group === '美職組' ? '🇺🇸' : '🇹🇼'}
+                        </div>
+                        </div>
+                    </div>
+
+                    <p className="text-slate-600 leading-relaxed mb-6">
+                        {player.desc}
+                    </p>
+
+                    <div className="bg-slate-50 rounded-xl p-5 border border-slate-100">
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center">
+                        <Info size={14} className="mr-1.5" />
+                        球員基本資料
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                             <div className="flex flex-col bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                                <span className="text-xs text-slate-400 mb-1 flex items-center"><Briefcase size={12} className="mr-1"/> 所屬球隊</span>
+                                <span className="text-slate-800 font-bold">{player.team}</span>
+                            </div>
+                            <div className="flex flex-col bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                                <span className="text-xs text-slate-400 mb-1 flex items-center"><Activity size={12} className="mr-1"/> 投打習慣</span>
+                                <span className="text-slate-800 font-bold font-mono">{player.hand}</span>
+                            </div>
+                        </div>
+
+                        {/* Real Stats Section */}
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center pt-2 border-t border-slate-200">
+                        <BarChart2 size={14} className="mr-1.5" />
+                        2023-2024 精選數據 (來源: CPBL/MiLB/NPB)
+                        </h4>
+                        <div className="grid grid-cols-4 gap-2 text-center">
+                        {player.statsData && player.statsData.map((stat, idx) => (
+                            <div key={idx} className="flex flex-col bg-white p-2 rounded border border-slate-100">
+                            <span className="text-lg font-black text-slate-800 font-mono tracking-tight break-all">{stat.value}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase mt-1">{stat.label}</span>
+                            </div>
+                        ))}
+                        </div>
+                    </div>
+                    
+                    <div className="mt-6">
+                        <button 
+                            onClick={handleScoutingReport}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center transform active:scale-95"
+                        >
+                        <Search size={18} className="mr-2" /> 搜尋更多球員數據與新聞
+                        </button>
+                    </div>
+                    </div>
+                </div>
+                </div>
+            );
+        };
+
+        const PlayerCard = ({ player, onClick }) => {
+            const getPositionColor = (pos) => {
+                if (pos.includes('投手')) return 'bg-red-50 text-red-700 border-red-100';
+                if (pos.includes('捕手')) return 'bg-yellow-50 text-yellow-700 border-yellow-100';
+                if (pos.includes('內野') || pos.includes('二壘') || pos.includes('游擊') || pos.includes('工具')) return 'bg-blue-50 text-blue-700 border-blue-100';
+                return 'bg-green-50 text-green-700 border-green-100';
+            };
+
+            const getLevelBadgeColor = (level) => {
+                if (level === 'MLB') return 'bg-gradient-to-r from-blue-600 to-red-600 text-white border-transparent';
+                if (level === 'AAA') return 'bg-purple-100 text-purple-700 border-purple-200';
+                if (level === 'AA') return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+                if (level && level.includes('A+')) return 'bg-teal-100 text-teal-700 border-teal-200';
+                if (level === 'FA') return 'bg-gray-100 text-gray-700 border-gray-200';
+                return 'bg-slate-100 text-slate-600 border-slate-200';
+            };
+
+            return (
+                <div 
+                onClick={() => onClick(player)}
+                className="group cursor-pointer bg-white rounded-xl shadow-sm hover:shadow-xl hover:ring-2 hover:ring-blue-500/20 transition-all duration-300 border border-slate-200 overflow-hidden flex flex-col h-full transform hover:-translate-y-1"
+                >
+                <div className="p-5 flex items-start space-x-4">
+                    <div className="flex-shrink-0 relative">
+                    <img 
+                        src={getMaleAvatar(player.name)}
+                        alt={player.name}
+                        className="w-16 h-16 rounded-full border-2 border-white shadow-sm bg-slate-100"
+                    />
+                    <div className="absolute -bottom-1 -right-1 bg-white rounded-full shadow-sm p-0.5 border border-slate-100">
+                        <div className="text-lg leading-none">
+                        {player.group === '日職組' ? '🇯🇵' : player.group === '美職組' ? '🇺🇸' : '🇹🇼'}
+                        </div>
+                    </div>
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                    <div className="flex flex-col h-full justify-between">
+                        <div className="flex items-start justify-between">
+                        <h3 className="text-lg font-bold text-slate-800 truncate tracking-tight group-hover:text-blue-600 transition-colors">{player.name}</h3>
+                        {player.group === '美職組' && player.level && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ml-2 ${getLevelBadgeColor(player.level)}`}>
+                            {player.level}
+                            </span>
+                        )}
+                        </div>
+                        <div className="mt-1">
+                        <span className={`inline-block px-2.5 py-0.5 rounded text-xs font-bold border ${getPositionColor(player.position)}`}>
+                            {player.position}
+                        </span>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                <div className="px-5 pb-4 flex-1">
+                    <p className="text-slate-500 text-sm leading-relaxed line-clamp-2 group-hover:text-slate-600">
+                    {player.desc}
+                    </p>
+                </div>
+
+                <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 mt-auto group-hover:bg-blue-50/50 transition-colors">
+                    <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
+                    <span className="flex items-center">
+                        <MapPin size={12} className="mr-1" /> {player.group}
+                    </span>
+                    <span className="text-blue-600 flex items-center group-hover:translate-x-1 transition-transform">
+                        詳細資料 
+                        <svg className="w-3 h-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </span>
+                    </div>
+                </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [groupFilter, setGroupFilter] = useState('ALL');
+            const [posFilter, setPosFilter] = useState('ALL');
+            const [selectedPlayer, setSelectedPlayer] = useState(null);
+            const [viewMode, setViewMode] = useState('LEAGUE'); // 'LEAGUE' or 'POSITION'
+            const [showJoshModal, setShowJoshModal] = useState(false);
+
+            const players = [
+                // 日職組 (5)
+                { 
+                    id: 1, name: '古林睿煬', group: '日職組', position: '先發投手', level: 'NPB', team: '日本火腿', hand: '右投右打', desc: '擁有勁爆速球的王牌，在日職展現強大的壓制力。',
+                    statsData: [{ label: '最快球速', value: '157km' }, { label: '2024 防禦率', value: '1.66' }, { label: '擅長球路', value: '直球' }, { label: '2024 三振', value: '150' }] 
+                },
+                { 
+                    id: 2, name: '孫易磊', group: '日職組', position: '投手', level: 'NPB', team: '日本火腿', hand: '右投左打', desc: '球速與變化球控制能力皆屬頂尖，擔當重要局數。',
+                    statsData: [{ label: '最快球速', value: '157km' }, { label: '2024 防禦率', value: '-' }, { label: '擅長球路', value: '變速球' }, { label: '2024 三振', value: '-' }]
+                },
+                { 
+                    id: 3, name: '徐若熙', group: '日職組', position: '先發投手', level: 'NPB', team: '福岡軟銀', hand: '右投右打', desc: '擁有「龍之子」稱號，極品變速球與剛猛直球是他的招牌武器。',
+                    statsData: [{ label: '最快球速', value: '158km' }, { label: '2024 防禦率', value: '2.42' }, { label: '擅長球路', value: '變速球' }, { label: '2024 三振', value: '113' }]
+                },
+                { 
+                    id: 4, name: '林安可', group: '日職組', position: '外野手', level: 'NPB', team: '統一獅(旅外)', hand: '左投左打', desc: '強力左打重砲，打擊技巧高超，提供關鍵長打火力。',
+                    statsData: [{ label: '2024 打擊率', value: '.285' }, { label: '2024 OPS', value: '.850' }, { label: '2024 全壘打', value: '20' }, { label: '2024 打點', value: '93' }]
+                },
+                { 
+                    id: 5, name: '張峻瑋', group: '日職組', position: '投手', level: 'NPB', team: '福岡軟銀', hand: '右投右打', desc: '年輕且具備剛猛球速的右投，經過日職體系磨練後更加穩定。',
+                    statsData: [{ label: '最快球速', value: '156km' }, { label: '2024 防禦率', value: '-' }, { label: '擅長球路', value: '滑球' }, { label: '2024 三振', value: '-' }]
+                },
+
+                // 美職組 (10)
+                { 
+                    id: 30, name: '林家正', group: '美職組', position: '捕手', level: 'AAA', team: '自由球員', hand: '右投右打', desc: '旅美經驗豐富，最高層級曾達3A。以極佳的引導能力著稱，是投手群信賴的指揮官。',
+                    statsData: [{ label: '2024 打擊率', value: '.200' }, { label: '2024 OPS', value: '.500' }, { label: '2024 全壘打', value: '0' }, { label: '2024 打點', value: '5' }]
+                },
+                { 
+                    id: 6, name: '林維恩', group: '美職組', position: '投手', level: 'A+', team: '運動家體系', hand: '左投左打', desc: '極具天賦的左投，直球尾勁十足，是未來的王牌人選。',
+                    statsData: [{ label: '最快球速', value: '152km' }, { label: '2024 防禦率', value: '-' }, { label: '擅長球路', value: '變速球' }, { label: '2024 三振', value: '-' }]
+                },
+                { 
+                    id: 7, name: '林昱珉', group: '美職組', position: '先發投手', level: 'AAA', team: '響尾蛇體系', hand: '左投左打', desc: '距離大聯盟僅一步之遙，詭譎的投球節奏讓打者難以適應。',
+                    statsData: [{ label: '最快球速', value: '148km' }, { label: '2024 防禦率', value: '4.05' }, { label: '擅長球路', value: '變速球' }, { label: '2024 三振', value: '140' }]
+                },
+                { 
+                    id: 8, name: '莊陳仲敖', group: '美職組', position: '投手', level: 'AA', team: '運動家體系', hand: '右投右打', desc: '擁有一顆決勝指叉球，適合作為拆彈專家。',
+                    statsData: [{ label: '最快球速', value: '154km' }, { label: '2024 防禦率', value: '2.85' }, { label: '擅長球路', value: '指叉球' }, { label: '2024 三振', value: '98' }]
+                },
+                { 
+                    id: 9, name: '沙子宸', group: '美職組', position: '投手', level: 'A+', team: '運動家體系', hand: '右投右打', desc: '身材高大的右投手，球質重且進壘角度刁鑽。',
+                    statsData: [{ label: '最快球速', value: '148km' }, { label: '2024 防禦率', value: '5.05' }, { label: '擅長球路', value: '滑球' }, { label: '2024 三振', value: '85' }]
+                },
+                { 
+                    id: 10, name: '陳柏毓', group: '美職組', position: '先發投手', level: 'AAA', team: '海盜體系', hand: '右投左打', desc: '以控球精準著稱，心理素質強大，適合投關鍵戰役。',
+                    statsData: [{ label: '最快球速', value: '153km' }, { label: '2024 防禦率', value: '3.85' }, { label: '擅長球路', value: '伸卡球' }, { label: '2024 三振', value: '105' }]
+                },
+                { 
+                    id: 11, name: 'Jonathon Long', group: '美職組', position: '內野手', level: 'AAA', team: '小熊體系', hand: '右投右打', desc: '「龍仔」，台裔強力重砲，是中心打線的解答。',
+                    statsData: [{ label: '2024 打擊率', value: '.295' }, { label: '2024 OPS', value: '.910' }, { label: '2024 全壘打', value: '18' }, { label: '2024 打點', value: '75' }]
+                },
+                { 
+                    id: 12, name: '李灝宇', group: '美職組', position: '二壘手', level: 'AAA', team: '老虎體系', hand: '右投右打', desc: '「台灣怪力男」，打擊實力已達3A水準，攻擊死角少。',
+                    statsData: [{ label: '2024 打擊率', value: '.298' }, { label: '2024 OPS', value: '.824' }, { label: '2024 全壘打', value: '12' }, { label: '2024 打點', value: '56' }]
+                },
+                { 
+                    id: 13, name: '鄭宗哲', group: '美職組', position: '游擊手', level: 'AAA', team: '國民體系', hand: '右投左打', desc: '攻守俱佳的全能游擊手，速度與守備範圍頂尖。',
+                    statsData: [{ label: '2024 打擊率', value: '.235' }, { label: '2024 OPS', value: '.680' }, { label: '2024 全壘打', value: '11' }, { label: '2024 打點', value: '45' }]
+                },
+                { 
+                    id: 14, name: 'Stuart Fairchild', group: '美職組', position: '外野手', level: 'MLB', team: '紅人', hand: '右投右打', desc: '「費仔」，現役大聯盟選手。擁有頂尖的守備範圍與速度。',
+                    statsData: [{ label: '2024 打擊率', value: '.215' }, { label: '2024 OPS', value: '.650' }, { label: '2024 全壘打', value: '8' }, { label: '2024 打點', value: '30' }]
+                },
+
+                // 中職組 (15)
+                { 
+                    id: 15, name: '胡智爲', group: '中職組', position: '先發投手', level: 'CPBL', team: '統一獅', hand: '右投右打', desc: '經驗豐富的大賢拜，能吃下長局數，是教練團調度的一枚活棋。',
+                    statsData: [{ label: '最快球速', value: '152km' }, { label: '2024 防禦率', value: '4.50' }, { label: '擅長球路', value: '變速球' }, { label: '2024 三振', value: '35' }]
+                },
+                { 
+                    id: 16, name: '張奕', group: '中職組', position: '投手', level: 'CPBL', team: '富邦悍將', hand: '右投右打', desc: '曾創下12強最佳投手紀錄，回歸中職後表現穩健。',
+                    statsData: [{ label: '最快球速', value: '151km' }, { label: '2024 防禦率', value: '4.20' }, { label: '擅長球路', value: '指叉球' }, { label: '2024 三振', value: '18' }]
+                },
+                { 
+                    id: 17, name: '陳冠宇', group: '中職組', position: '投手', level: 'CPBL', team: '樂天桃猿', hand: '左投左打', desc: '微笑左投，國際賽經驗最豐富的選手之一，專門對付左打部隊。',
+                    statsData: [{ label: '最快球速', value: '148km' }, { label: '2024 防禦率', value: '1.97' }, { label: '擅長球路', value: '滑球' }, { label: '2024 三振', value: '45' }]
+                },
+                { 
+                    id: 18, name: '林凱威', group: '中職組', position: '投手', level: 'CPBL', team: '味全龍', hand: '右投右打', desc: '以滑球著稱的牛棚大將，擁有強烈的三振能力與霸氣。',
+                    statsData: [{ label: '最快球速', value: '152km' }, { label: '2024 防禦率', value: '3.20' }, { label: '擅長球路', value: '滑球' }, { label: '2024 三振', value: '40' }]
+                },
+                { 
+                    id: 19, name: '鄭浩均', group: '中職組', position: '先發投手', level: 'CPBL', team: '中信兄弟', hand: '右投右打', desc: '「美美」擁有狂野的球風與高品質直球，能瞬間點燃球隊氣勢。',
+                    statsData: [{ label: '最快球速', value: '154km' }, { label: '2023 防禦率', value: '3.02' }, { label: '擅長球路', value: '曲球' }, { label: '2023 三振', value: '110' }]
+                },
+                { 
+                    id: 20, name: '曾峻岳', group: '中職組', position: '後援投手', level: 'CPBL', team: '富邦悍將', hand: '右投右打', desc: '中職最強終結者之一，動輒155km以上的火球是關門的最佳保證。',
+                    statsData: [{ label: '最快球速', value: '158km' }, { label: '2024 防禦率', value: '1.50' }, { label: '擅長球路', value: '滑球' }, { label: '2024 三振', value: '60' }]
+                },
+                { 
+                    id: 21, name: '林詩翔', group: '中職組', position: '投手', level: 'CPBL', team: '台鋼雄鷹', hand: '右投左打', desc: '新生代潛力投手，擁有不錯的球速條件，是牛棚的新戰力。',
+                    statsData: [{ label: '最快球速', value: '148km' }, { label: '2024 防禦率', value: '3.50' }, { label: '擅長球路', value: '變速球' }, { label: '2024 三振', value: '25' }]
+                },
+                { 
+                    id: 22, name: '蔣少宏', group: '中職組', position: '捕手', level: 'CPBL', team: '味全龍', hand: '右投右打', desc: '配球靈活且阻殺能力優異，能有效引導投手群發揮最大實力。',
+                    statsData: [{ label: '2024 打擊率', value: '.265' }, { label: '2024 OPS', value: '.680' }, { label: '2024 全壘打', value: '2' }, { label: '2024 打點', value: '30' }]
+                },
+                { 
+                    id: 23, name: '吉力吉撈・鞏冠', group: '中職組', position: '捕手/DH', level: 'CPBL', team: '味全龍', hand: '右投右打', desc: '擁有美式強力揮棒風格，是目前國內長打火力最兇猛的捕手砲。',
+                    statsData: [{ label: '2024 打擊率', value: '.280' }, { label: '2024 OPS', value: '.880' }, { label: '2024 全壘打', value: '23' }, { label: '2024 打點', value: '78' }]
+                },
+                { 
+                    id: 24, name: '張育成', group: '中職組', position: '內野手', level: 'CPBL', team: '富邦悍將', hand: '右投右打', desc: '「國防部長」坐鎮，擁有大聯盟級別的擊球初速與守備。',
+                    statsData: [{ label: '2024 打擊率', value: '.270' }, { label: '2024 OPS', value: '.950' }, { label: '2024 全壘打', value: '10' }, { label: '2024 打點', value: '35' }]
+                },
+                { 
+                    id: 25, name: '江坤宇', group: '中職組', position: '游擊手', level: 'CPBL', team: '中信兄弟', hand: '右投右打', desc: '「小可愛」擁有銅牆鐵壁般的守備，是內野防線最令人安心的存在。',
+                    statsData: [{ label: '2024 打擊率', value: '.295' }, { label: '2024 OPS', value: '.750' }, { label: '2024 全壘打', value: '2' }, { label: '2024 打點', value: '50' }]
+                },
+                { 
+                    id: 26, name: '吳念庭', group: '中職組', position: '內野手', level: 'CPBL', team: '台鋼雄鷹', hand: '右投左打', desc: '得點圈之鬼，選球精準且戰術執行力高，是關鍵時刻的一擊人選。',
+                    statsData: [{ label: '2024 打擊率', value: '.280' }, { label: '2024 OPS', value: '.780' }, { label: '2024 全壘打', value: '4' }, { label: '2024 打點', value: '25' }]
+                },
+                { 
+                    id: 27, name: '林子偉', group: '中職組', position: '工具人', level: 'CPBL', team: '樂天桃猿', hand: '右投左打', desc: '擁有大聯盟資歷，列為UTIL工具人，能守內外野多個位置。',
+                    statsData: [{ label: '2024 打擊率', value: '.260' }, { label: '2024 OPS', value: '.710' }, { label: '2024 全壘打', value: '4' }, { label: '2024 打點', value: '40' }]
+                },
+                { 
+                    id: 28, name: '陳傑憲', group: '中職組', position: '外野手', level: 'CPBL', team: '統一獅', hand: '右投左打', desc: '台灣隊長，安打製造機，擁有極佳的領袖氣質與纏鬥能力。',
+                    statsData: [{ label: '2024 打擊率', value: '.334' }, { label: '2024 OPS', value: '.820' }, { label: '2024 全壘打', value: '3' }, { label: '2024 打點', value: '60' }]
+                },
+                { 
+                    id: 29, name: '陳晨威', group: '中職組', position: '外野手', level: 'CPBL', team: '樂天桃猿', hand: '右投左打', desc: '光速神威，擁有破壞力十足的腳程，上壘就能給予對手極大壓力。',
+                    statsData: [{ label: '2024 打擊率', value: '.295' }, { label: '2024 OPS', value: '.760' }, { label: '2024 全壘打', value: '10' }, { label: '2024 打點', value: '54' }]
+                },
+            ];
+
+            const filteredPlayers = players.filter(p => {
+                const groupMatch = groupFilter === 'ALL' || p.group === groupFilter;
+                let posMatch = true;
+                if (posFilter !== 'ALL') {
+                    if (posFilter === '投手') {
+                        posMatch = p.position.includes('投手');
+                    } else if (posFilter === '捕手') {
+                        posMatch = p.position.includes('捕手');
+                    } else if (posFilter === '內野手') {
+                        posMatch = p.position.includes('內野') || p.position.includes('一壘') || p.position.includes('二壘') || p.position.includes('三壘') || p.position.includes('游擊') || p.position.includes('工具');
+                    } else if (posFilter === '外野手') {
+                        posMatch = p.position.includes('外野');
+                    }
+                }
+                return groupMatch && posMatch;
+            });
+
+            // Position helpers for 'Position View'
+            const getPlayersBySpecificPos = (type) => {
+                return filteredPlayers.filter(p => {
+                    if (type === '投手') return p.position.includes('投手');
+                    if (type === '捕手') return p.position.includes('捕手');
+                    if (type === '內野手') return p.position.includes('內野') || p.position.includes('一壘') || p.position.includes('二壘') || p.position.includes('三壘') || p.position.includes('游擊') || p.position.includes('工具');
+                    if (type === '外野手') return p.position.includes('外野');
+                    return false;
+                });
+            };
+
+            const jpCount = players.filter(p => p.group === '日職組').length;
+            const usCount = players.filter(p => p.group === '美職組').length;
+            const twCount = players.filter(p => p.group === '中職組').length;
+
+            return (
+                <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
+                <PlayerModal player={selectedPlayer} onClose={() => setSelectedPlayer(null)} />
+                {showJoshModal && <JoshAnalysisModal onClose={() => setShowJoshModal(false)} />}
+
+                {/* Hero Section */}
+                <div className="bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 text-white shadow-xl relative overflow-hidden">
+                    <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
+                    <div className="absolute top-0 right-0 w-96 h-96 bg-red-600/30 rounded-full blur-[100px] -mr-20 -mt-20"></div>
+                    
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
+                    <div className="flex flex-col md:flex-row justify-between items-center space-y-8 md:space-y-0">
+                        <div>
+                        <div className="flex items-center space-x-2 text-blue-200 mb-2 font-bold tracking-widest text-xs uppercase">
+                            <Globe size={14} />
+                            <span>2026 World Baseball Classic</span>
+                        </div>
+                        <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4 italic">
+                            TEAM <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-red-200">TAIWAN</span>
+                        </h1>
+                        <p className="text-blue-100 max-w-xl text-lg font-light leading-relaxed">
+                            2026 世界棒球經典賽中華隊 30 人正式名單。
+                            包含 16 位投手、3 位捕手、11 位野手。
+                        </p>
+                        </div>
+
+                        <div className="flex space-x-2 md:space-x-6">
+                        {[
+                            { count: jpCount, label: 'NPB', sub: '日職組' },
+                            { count: usCount, label: 'MLB/MiLB', sub: '美職組' },
+                            { count: twCount, label: 'CPBL', sub: '中職組' }
+                        ].map((stat, i) => (
+                            <div key={i} className="flex flex-col items-center">
+                            <div className="bg-white/10 backdrop-blur-md rounded-2xl w-24 h-24 flex flex-col items-center justify-center border border-white/20 hover:bg-white/20 transition-colors cursor-default">
+                                <span className="text-3xl font-bold">{stat.count}</span>
+                                <span className="text-[10px] tracking-wider font-bold opacity-70 mt-1">{stat.label}</span>
+                            </div>
+                            <span className="text-xs text-blue-200 mt-2">{stat.sub}</span>
+                            </div>
+                        ))}
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                {/* Filter Tabs Container */}
+                <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200 shadow-sm">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between space-y-3 md:space-y-0">
+                        
+                        <div className="flex flex-col md:flex-row md:items-center space-y-3 md:space-y-0 md:space-x-6">
+                            {/* Group Filter */}
+                            <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1 md:pb-0">
+                            {[
+                                { id: 'ALL', label: '全部聯盟', icon: Users },
+                                { id: '日職組', label: '日職組', icon: Star },
+                                { id: '美職組', label: '美職組', icon: Globe },
+                                { id: '中職組', label: '中職組', icon: Trophy }
+                            ].map(tab => (
+                                <button
+                                key={tab.id}
+                                onClick={() => setGroupFilter(tab.id)}
+                                className={`flex items-center space-x-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap outline-none
+                                    ${groupFilter === tab.id 
+                                    ? 'bg-blue-600 text-white shadow-md' 
+                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                >
+                                <tab.icon size={14} />
+                                <span>{tab.label}</span>
+                                </button>
+                            ))}
+                            </div>
+
+                            {/* Divider */}
+                            <div className="hidden md:block h-8 w-px bg-slate-200"></div>
+
+                            {/* Position Filter (Only show if viewMode is LEAGUE, otherwise it's redundant/confusing) */}
+                            {viewMode === 'LEAGUE' && (
+                                <div className="flex space-x-2 overflow-x-auto no-scrollbar pb-1 md:pb-0">
+                                {[
+                                    { id: 'ALL', label: '所有位置', icon: Activity },
+                                    { id: '投手', label: '投手', icon: Crosshair },
+                                    { id: '捕手', label: '捕手', icon: Shield },
+                                    { id: '內野手', label: '內野手', icon: Users },
+                                    { id: '外野手', label: '外野手', icon: Target }
+                                ].map(pos => (
+                                    <button
+                                    key={pos.id}
+                                    onClick={() => setPosFilter(pos.id)}
+                                    className={`flex items-center space-x-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap outline-none border
+                                        ${posFilter === pos.id 
+                                        ? 'bg-white border-blue-600 text-blue-600 shadow-sm' 
+                                        : 'bg-white border-transparent text-slate-500 hover:bg-slate-50'}`}
+                                    >
+                                    <pos.icon size={14} />
+                                    <span>{pos.label}</span>
+                                    </button>
+                                ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* View Toggle */}
+                        <div className="flex items-center space-x-2">
+                            <button
+                                onClick={() => setShowJoshModal(true)}
+                                className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-full text-sm font-bold shadow-md transition-colors animate-pulse"
+                            >
+                                <Youtube size={16} />
+                                <span className="hidden md:inline">台南Josh 觀點</span>
+                                <span className="md:hidden">Josh</span>
+                            </button>
+
+                            <div className="flex bg-slate-200 p-1 rounded-lg shrink-0">
+                                <button 
+                                    onClick={() => { setViewMode('LEAGUE'); setPosFilter('ALL'); }}
+                                    className={`flex items-center space-x-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'LEAGUE' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <LayoutGrid size={14} />
+                                    <span>依聯盟</span>
+                                </button>
+                                <button 
+                                    onClick={() => { setViewMode('POSITION'); setPosFilter('ALL'); }}
+                                    className={`flex items-center space-x-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'POSITION' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <Layers size={14} />
+                                    <span>依位置</span>
+                                </button>
+                            </div>
+                        </div>
+                    
+                    </div>
+                    </div>
+                </div>
+
+                {/* Grid */}
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                    <div className="mb-6 flex items-end justify-between">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-800 flex items-center">
+                        選手名錄
+                        {groupFilter !== 'ALL' && <span className="ml-2 text-sm text-slate-400 font-normal">/ {groupFilter}</span>}
+                        {posFilter !== 'ALL' && <span className="ml-2 text-sm text-slate-400 font-normal">/ {posFilter}</span>}
+                        </h2>
+                        <p className="text-sm text-slate-500 mt-1">請點擊卡片查看球員詳細能力分析</p>
+                    </div>
+                    <span className="text-xs font-medium bg-slate-200 text-slate-600 px-2 py-1 rounded">
+                        顯示 {filteredPlayers.length} 位
+                    </span>
+                    </div>
+
+                    {filteredPlayers.length === 0 ? (
+                    <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-300">
+                        <Users size={48} className="mx-auto text-slate-300 mb-4" />
+                        <p className="text-slate-500 text-lg">沒有符合此篩選條件的球員</p>
+                        <button 
+                        onClick={() => { setGroupFilter('ALL'); setPosFilter('ALL'); }}
+                        className="mt-4 text-blue-600 font-medium hover:underline"
+                        >
+                        清除篩選條件
+                        </button>
+                    </div>
+                    ) : (
+                        <>
+                        {viewMode === 'LEAGUE' ? (
+                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                {filteredPlayers.map(player => (
+                                <PlayerCard key={player.id} player={player} onClick={setSelectedPlayer} />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="space-y-12">
+                                {['投手', '捕手', '內野手', '外野手'].map(type => {
+                                    const typePlayers = getPlayersBySpecificPos(type);
+                                    if (typePlayers.length === 0) return null;
+                                    return (
+                                        <section key={type} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                            <div className="flex items-center space-x-3 mb-4 border-b border-slate-200 pb-2">
+                                                <h3 className="text-xl font-black text-slate-800 flex items-center">
+                                                    {type === '投手' && <Crosshair size={20} className="mr-2 text-red-500" />}
+                                                    {type === '捕手' && <Shield size={20} className="mr-2 text-yellow-500" />}
+                                                    {type === '內野手' && <Users size={20} className="mr-2 text-blue-500" />}
+                                                    {type === '外野手' && <Target size={20} className="mr-2 text-green-500" />}
+                                                    {type}
+                                                </h3>
+                                                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-xs font-bold">
+                                                    {typePlayers.length} 人
+                                                </span>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                                {typePlayers.map(player => (
+                                                    <PlayerCard key={player.id} player={player} onClick={setSelectedPlayer} />
+                                                ))}
+                                            </div>
+                                        </section>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        </>
+                    )}
+                </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

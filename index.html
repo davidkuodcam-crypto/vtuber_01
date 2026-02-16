@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<title>AI VTuber - Mobile Optimized</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden; /* 禁止捲動 */
+        background-color: #f0f4f8;
+        font-family: "Noto Sans TC", sans-serif;
+        /* 防止 iOS 橡皮筋捲動效果 */
+        overscroll-behavior: none; 
+        width: 100vw;
+        height: 100vh;
+        height: -webkit-fill-available; /* 解決 iOS Safari 網址列高度問題 */
+    }
+    
+    /* 讀取畫面 */
+    #loading-screen {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(255, 255, 255, 0.95);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 999;
+        transition: opacity 0.5s ease;
+    }
+    
+    .loader {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 40px; height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 15px;
+    }
+
+    .loading-text { color: #555; font-size: 1rem; font-weight: bold; }
+
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* API 狀態 (右上角) */
+    #api-status {
+        position: absolute;
+        top: 15px; right: 15px; /* 手機版邊距縮小 */
+        padding: 6px 12px;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(4px);
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: bold;
+        color: #666;
+        display: flex; align-items: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        z-index: 100;
+        transition: all 0.3s;
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #ccc; margin-right: 6px; }
+    .status-connected { background-color: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
+    .status-error { background-color: #e74c3c; box-shadow: 0 0 5px #e74c3c; }
+    .status-preview { background-color: #f39c12; box-shadow: 0 0 5px #f39c12; }
+
+    /* 檔案讀取狀態面板 (左上角) */
+    #file-status {
+        position: absolute;
+        top: 15px; left: 15px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(4px);
+        border-radius: 12px;
+        font-size: 12px;
+        color: #333;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        z-index: 100;
+        max-width: 180px;
+        transition: opacity 0.5s;
+        pointer-events: none;
+    }
+    .file-status-item { 
+        margin-bottom: 4px; 
+        display: flex; 
+        align-items: center; 
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .file-status-item:last-child { margin-bottom: 0; }
+    .icon-ok { color: #27ae60; margin-right: 6px; font-weight: bold; }
+    .icon-fail { color: #e74c3c; margin-right: 6px; font-weight: bold; }
+    .icon-loading { color: #3498db; margin-right: 6px; animation: pulse 1s infinite; }
+    
+    @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+
+    /* 對話介面 */
+    #chat-container {
+        position: absolute; 
+        bottom: 20px; /* 預設 Desktop */
+        left: 50%; 
+        transform: translateX(-50%);
+        width: 90%; 
+        max-width: 600px;
+        display: flex; 
+        flex-direction: column; 
+        gap: 8px;
+        z-index: 100;
+        transition: bottom 0.3s;
+    }
+
+    /* 手機版直立優化 */
+    @media (max-width: 600px) {
+        #chat-container {
+            width: 95%; /* 手機版更寬 */
+            bottom: 30px; /* 留出底部操作條空間 */
+        }
+        #file-status, #api-status {
+            top: 10px;
+            transform: scale(0.9); /* 稍微縮小狀態列 */
+            transform-origin: top;
+        }
+        #file-status { left: 10px; }
+        #api-status { right: 10px; }
+    }
+
+    #chat-display {
+        background: rgba(0, 0, 0, 0.4); /* 更通透一點 */
+        padding: 12px; 
+        border-radius: 16px;
+        height: 140px; /* 稍微增高以容納更多對話 */
+        overflow-y: auto;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255,255,255,0.15);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        /* 隱藏卷軸但保留功能 */
+        scrollbar-width: none; 
+        -ms-overflow-style: none;
+    }
+    #chat-display::-webkit-scrollbar { display: none; }
+
+    .message {
+        padding: 8px 12px;
+        border-radius: 12px;
+        max-width: 85%;
+        word-wrap: break-word;
+        font-size: 14px;
+        line-height: 1.5;
+        color: white;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    }
+
+    .message-user { align-self: flex-end; background-color: rgba(52, 152, 219, 0.9); border-bottom-right-radius: 2px; }
+    .message-ai { align-self: flex-start; background-color: rgba(255, 255, 255, 0.25); border-bottom-left-radius: 2px; }
+    .message-system { align-self: center; background: transparent; color: #ddd; font-size: 12px; font-style: italic; text-shadow: none; text-align: center;}
+
+    .message a { color: #82cfff; text-decoration: none; border-bottom: 1px dotted #82cfff; }
+    .message-user a { color: #cceeff; }
+
+    #input-area { display: flex; gap: 8px; align-items: center; }
+    
+    #user-input {
+        flex: 1; 
+        padding: 12px 16px; 
+        border-radius: 25px; 
+        border: 1px solid rgba(255,255,255,0.3);
+        outline: none;
+        background: rgba(255, 255, 255, 0.95); 
+        font-size: 16px; /* 16px 防止 iOS 輸入時放大 */
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        color: #333;
+    }
+    #user-input::placeholder { color: #999; }
+
+    #send-btn {
+        padding: 0 20px; 
+        height: 44px; /* 加大觸控區域 */
+        border-radius: 22px; border: none;
+        background: #3498db; color: white; font-weight: bold; cursor: pointer;
+        transition: background 0.2s;
+        box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3);
+        flex-shrink: 0;
+    }
+    #send-btn:active { transform: scale(0.95); }
+    #send-btn:disabled { background: #bdc3c7; box-shadow: none; cursor: not-allowed; }
+
+    #mute-btn {
+        width: 44px; height: 44px; border-radius: 50%; border: none;
+        background: rgba(255, 255, 255, 0.95); font-size: 20px; cursor: pointer;
+        display: flex; justify-content: center; align-items: center;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        flex-shrink: 0;
+    }
+    #mute-btn.muted { background: #e74c3c; color: white; }
+    
+    #emotion-debug {
+        position: absolute; top: 60px; right: 15px;
+        font-size: 10px; color: #777;
+        background: rgba(255,255,255,0.7);
+        padding: 4px 8px; border-radius: 6px;
+        pointer-events: none;
+        backdrop-filter: blur(2px);
+        text-align: right;
+        line-height: 1.3;
+        opacity: 0.6; /* 淡化顯示 */
+    }
+
+</style>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+        "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js"
+    }
+}
+</script>
+</head>
+
+<body>
+
+    <div id="loading-screen">
+        <div class="loader"></div>
+        <div class="loading-text" id="status-text">初始化系統中...</div>
+    </div>
+
+    <div id="file-status">
+        <div class="file-status-item"><span class="icon-loading">●</span> 系統啟動...</div>
+    </div>
+
+    <div id="api-status">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-msg">連線中...</span>
+    </div>
+    
+    <div id="emotion-debug">
+        情緒: Neutral<br>
+        動作: None
+    </div>
+
+    <div id="chat-container">
+        <div id="chat-display">
+            <div class="message message-ai">
+                Hello! 我準備好了。<br>
+                在手機上請直立觀看，我會自動調整位置喔！
+            </div>
+        </div>
+        <div id="input-area">
+            <button id="mute-btn" title="切換聲音">🔊</button>
+            <input type="text" id="user-input" placeholder="輸入訊息..." disabled>
+            <button id="send-btn" disabled>Send</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+
+        const API_URL = "/api/chat"; 
+        const VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm';
+
+        let currentVrm = undefined;
+        let chatHistory = [];
+        let isSpeaking = false;
+        let currentEmotion = 'neutral';
+        let isMuted = false;
+        
+        let externalSystemPrompt = ""; 
+        let externalKnowledge = "";
+
+        const isPreviewEnv = window.location.protocol === 'blob:' || window.location.protocol === 'file:';
+
+        // --- 場景初始化 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f4f8); // 柔和背景色
+        
+        // 增加一個霧效果，讓地板與背景融合，視覺更無限延伸
+        scene.fog = new THREE.Fog(0xf0f4f8, 5, 15);
+        
+        scene.add(new THREE.GridHelper(20, 20, 0xccd6e0, 0xeef2f6)); // 淡化網格
+
+        const camera = new THREE.PerspectiveCamera(30.0, window.innerWidth / window.innerHeight, 0.1, 20.0);
+        
+        // **相機位置邏輯：這部分是重點**
+        function updateCameraPosition() {
+            const aspect = window.innerWidth / window.innerHeight;
+            if (aspect < 0.8) {
+                // 手機直立模式：相機拉遠、稍微放低，讓人像在畫面中段
+                camera.position.set(0.0, 1.3, 5.5); 
+                if(currentVrm) {
+                    // 確保 OrbitControls 的目標點也微調
+                    controls.target.set(0.0, 1.1, 0.0);
+                }
+            } else {
+                // 桌面寬螢幕模式
+                camera.position.set(0.0, 1.4, 3.5);
+                if(currentVrm) {
+                    controls.target.set(0.0, 1.3, 0.0); // 專注在頭部附近
+                }
+            }
+            camera.updateProjectionMatrix();
+            controls.update();
+        }
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制最高 2x 像素比以節省手機效能
+        document.body.appendChild(renderer.domElement);
+
+        // 燈光優化：更立體的光影
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        directionalLight.position.set(-1.0, 2.0, 1.0).normalize();
+        scene.add(directionalLight);
+        
+        // 補光
+        const fillLight = new THREE.DirectionalLight(0xeeeeff, 0.5);
+        fillLight.position.set(1.0, 1.0, 1.0).normalize();
+        scene.add(fillLight);
+        
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enablePan = false; // 手機上禁止平移，避免誤觸
+        controls.enableDamping = true; // 滑動更有質感
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 2.0;
+        controls.maxDistance = 8.0;
+        // 限制垂直旋轉角度，避免看到裙底或頭頂太過分
+        controls.maxPolarAngle = Math.PI / 2 + 0.1; 
+        controls.minPolarAngle = Math.PI / 3;
+
+        updateCameraPosition(); // 初始化呼叫一次
+
+        // --- 檔案讀取 (左上角狀態) ---
+        async function loadExternalData() {
+            const statusText = document.getElementById('status-text');
+            const fileStatusDiv = document.getElementById('file-status');
+            
+            let promptStatusHTML = '<span class="icon-loading">●</span> Prompt';
+            let kbStatusHTML = '<span class="icon-loading">●</span> KB';
+
+            const renderStatus = () => {
+                fileStatusDiv.innerHTML = `
+                    <div class="file-status-item">${promptStatusHTML}</div>
+                    <div class="file-status-item">${kbStatusHTML}</div>
+                `;
+            };
+            
+            renderStatus();
+
+            try {
+                statusText.innerText = "讀取角色設定...";
+                const res = await fetch(`./Prompt.txt?t=${Date.now()}`);
+                if (res.ok) {
+                    externalSystemPrompt = await res.text();
+                    promptStatusHTML = '<span class="icon-ok">✓</span> Prompt OK';
+                } else {
+                    promptStatusHTML = '<span class="icon-fail">✗</span> Prompt Def';
+                }
+            } catch (e) {
+                promptStatusHTML = '<span class="icon-fail">✗</span> Prompt Err';
+            }
+            renderStatus();
+
+            statusText.innerText = "讀取雲端知識庫...";
+            let fileIndex = 1;
+            let keepLoading = true;
+            let loadedCount = 0;
+            
+            while (keepLoading) {
+                const fileNameRoot = `KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
+                const fileNameFolder = `KnowledgeBase/KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
+                
+                kbStatusHTML = `<span class="icon-loading">●</span> 掃描 KB${String(fileIndex).padStart(2,'0')}...`;
+                renderStatus();
+
+                try {
+                    let res = await fetch(`./${fileNameFolder}?t=${Date.now()}`);
+                    let usedPath = fileNameFolder;
+                    
+                    if (!res.ok) {
+                         res = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
+                         usedPath = fileNameRoot;
+                    }
+
+                    if (res.ok) {
+                        const text = await res.text();
+                        if (text.trim().length > 0) {
+                            externalKnowledge += `\n\n【KB: ${usedPath}】\n${text}`;
+                            loadedCount++;
+                            fileIndex++;
+                        } else {
+                            fileIndex++;
+                        }
+                    } else {
+                        keepLoading = false;
+                    }
+                } catch (e) {
+                    keepLoading = false;
+                }
+            }
+
+            if (loadedCount > 0) {
+                kbStatusHTML = `<span class="icon-ok">✓</span> KB x${loadedCount}`;
+            } else {
+                kbStatusHTML = `<span class="icon-fail">✗</span> No KB`;
+            }
+            renderStatus();
+            statusText.innerText = "系統就緒！";
+        }
+
+        // --- VRM 載入 ---
+        const loader = new GLTFLoader();
+        loader.crossOrigin = 'anonymous';
+        loader.register((parser) => new VRMLoaderPlugin(parser));
+
+        Promise.all([
+            new Promise((resolve) => {
+                loader.load(VRM_URL, (gltf) => {
+                    const vrm = gltf.userData.vrm;
+                    VRMUtils.rotateVRM0(vrm);
+                    scene.add(vrm.scene);
+                    currentVrm = vrm;
+                    
+                    const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+                    const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+                    if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
+                    if (rightUpperArm) { rightUpperArm.rotation.z = 1.1; rightUpperArm.rotation.x = 0.15; }
+
+                    updateCameraPosition(); // 模型載入後再次確認視角
+                    startBlinking();
+                    resolve();
+                },
+                (progress) => {
+                    const percent = Math.round(100.0 * (progress.loaded / progress.total));
+                    document.getElementById('status-text').innerText = `下載模型... ${percent}%`;
+                }, (e) => resolve());
+            }),
+            loadExternalData()
+        ]).then(() => {
+            setTimeout(() => {
+                document.getElementById('loading-screen').style.opacity = 0;
+                setTimeout(() => document.getElementById('loading-screen').style.display = 'none', 500);
+                testApiConnection();
+            }, 800);
+        });
+
+        // --- 動畫 ---
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const deltaTime = clock.getDelta();
+            const elapsedTime = clock.elapsedTime;
+
+            if (currentVrm) {
+                currentVrm.update(deltaTime);
+                const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
+                if (spine) {
+                    spine.rotation.x = Math.sin(elapsedTime * 1.5) * 0.02;
+                    spine.rotation.y = Math.sin(elapsedTime * 0.8) * 0.02;
+                }
+                if (isSpeaking && !isMuted) {
+                    const s = Math.sin(elapsedTime * 18); // 說話速度微調
+                    currentVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
+                } else {
+                    const currentVal = currentVrm.expressionManager.getValue('aa');
+                    currentVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(currentVal, 0, 0.2));
+                }
+            }
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        function startBlinking() {
+            if(!currentVrm) return;
+            const blinkLoop = () => {
+                if (!window.actionActive) {
+                    setTimeout(() => {
+                        currentVrm.expressionManager.setValue('blink', 1);
+                        setTimeout(() => {
+                            currentVrm.expressionManager.setValue('blink', 0);
+                            blinkLoop();
+                        }, 120);
+                    }, Math.random() * 3000 + 2000);
+                } else {
+                    setTimeout(blinkLoop, 1000);
+                }
+            };
+            blinkLoop();
+        }
+
+        // --- 情緒控制 ---
+        const VALID_EMOTIONS = ['neutral', 'happy', 'angry', 'sad', 'relaxed', 'surprised'];
+        function setEmotion(emotionName) {
+            if (!currentVrm) return;
+            if (emotionName === 'joy') emotionName = 'happy';
+            if (emotionName === 'sorrow') emotionName = 'sad';
+            if (emotionName === 'fun') emotionName = 'relaxed';
+            if (!VALID_EMOTIONS.includes(emotionName)) emotionName = 'neutral';
+            
+            updateDebugDisplay(emotionName, null);
+            VALID_EMOTIONS.forEach(emo => currentVrm.expressionManager.setValue(emo, 0));
+            if (emotionName !== 'neutral') currentVrm.expressionManager.setValue(emotionName, 0.8);
+        }
+
+        window.actionActive = false;
+        function triggerAction(actionName, duration) {
+            if (!currentVrm || actionName === 'none') return;
+            updateDebugDisplay(null, `${actionName}`);
+            let shapeName = actionName === 'blink_left' ? 'blinkLeft' : (actionName === 'blink_right' ? 'blinkRight' : 'blink');
+            window.actionActive = true;
+            currentVrm.expressionManager.setValue(shapeName, 1.0);
+            setTimeout(() => {
+                currentVrm.expressionManager.setValue(shapeName, 0);
+                window.actionActive = false;
+                updateDebugDisplay(null, 'Done');
+            }, duration);
+        }
+
+        function updateDebugDisplay(emo, act) {
+            const debugDiv = document.getElementById('emotion-debug');
+            if(emo) debugDiv.innerHTML = debugDiv.innerHTML.replace(/情緒: .*/, `情緒: ${emo}`);
+            if(act) debugDiv.innerHTML = debugDiv.innerHTML.replace(/動作: .*/, `動作: ${act}`);
+        }
+
+        function addMessage(text, type) {
+            const chatDisplay = document.getElementById('chat-display');
+            const div = document.createElement('div');
+            div.className = `message message-${type}`;
+            
+            let safeText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+            safeText = safeText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+            
+            div.innerHTML = safeText;
+            chatDisplay.appendChild(div);
+            // 平滑捲動到底部
+            chatDisplay.scrollTo({ top: chatDisplay.scrollHeight, behavior: 'smooth' });
+            return div;
+        }
+
+        function removeMessage(el) { if(el && el.parentNode) el.parentNode.removeChild(el); }
+
+        // --- API 連線檢查 (右上角) ---
+        const statusDot = document.getElementById('status-dot');
+        const statusMsg = document.getElementById('status-msg');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const muteBtn = document.getElementById('mute-btn');
+
+        async function testApiConnection() {
+            if (isPreviewEnv) {
+                statusDot.classList.add('status-preview');
+                statusMsg.innerText = "預覽模式";
+                userInput.disabled = false; sendBtn.disabled = false;
+                return;
+            }
+
+            statusMsg.innerText = "連線測試...";
+            statusDot.className = 'status-dot'; 
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: "Test" }] }] })
+                });
+
+                if (response.ok) {
+                    statusDot.classList.add('status-connected');
+                    statusMsg.innerText = "系統連線正常";
+                    userInput.disabled = false; 
+                    sendBtn.disabled = false;
+                } else {
+                    throw new Error("API Response Error");
+                }
+            } catch (e) {
+                statusDot.classList.add('status-error');
+                statusMsg.innerText = "連線失敗";
+                console.error("API Test Failed:", e);
+            }
+        }
+
+        // --- 訊息發送與處理 ---
+        muteBtn.addEventListener('click', () => {
+            isMuted = !isMuted;
+            muteBtn.classList.toggle('muted', isMuted);
+            muteBtn.innerText = isMuted ? '🔇' : '🔊';
+            if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
+        });
+
+        async function handleSendMessage() {
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
+            addMessage(text, 'user');
+            
+            if (isPreviewEnv) {
+                addMessage("【提示】預覽模式無法連接 AI，請部署至 Vercel。", 'system');
+                userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
+                return;
+            }
+
+            const loadingMsg = addMessage("Thinking...", 'system');
+            
+            chatHistory.push({ role: "user", parts: [{ text: text }] });
+
+            let finalSystemInstruction = "";
+            if (externalSystemPrompt) finalSystemInstruction += externalSystemPrompt;
+            else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none" }`;
+
+            if (externalKnowledge) {
+                finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
+            }
+
+            finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.`;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: chatHistory,
+                        systemInstruction: { parts: [{ text: finalSystemInstruction }] },
+                    })
+                });
+
+                if (!response.ok) throw new Error("Server Error");
+
+                const data = await response.json();
+                removeMessage(loadingMsg);
+                
+                let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
+                let result = { text: rawText, emotion: 'neutral' };
+
+                try {
+                    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+                } catch(e) {}
+
+                if(!result.text) result.text = rawText;
+
+                if(result.emotion === 'neutral') {
+                    if(result.text.match(/(開心|快樂|happy)/)) result.emotion = 'happy';
+                    if(result.text.match(/(難過|悲傷|sad)/)) result.emotion = 'sad';
+                }
+
+                chatHistory.push({ role: "model", parts: [{ text: result.text }] });
+                addMessage(result.text, 'ai');
+                setEmotion(result.emotion);
+                if(result.action) triggerAction(result.action, 2000);
+                speak(result.text);
+
+            } catch (error) {
+                console.error(error);
+                removeMessage(loadingMsg);
+                addMessage("連線發生錯誤。", 'system');
+            } finally {
+                userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
+            }
+        }
+
+        function speak(text) {
+            if (isMuted) return;
+            const cleanText = text.replace(/\[.*?\]\(.*?\)/g, '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?]/g, '');
+            if(!cleanText) return;
+            
+            window.speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance(cleanText);
+            u.lang = 'zh-TW';
+            u.rate = 1.0; // 語速正常
+            u.pitch = 1.0;
+            u.onstart = () => isSpeaking = true;
+            u.onend = () => { isSpeaking = false; if(currentVrm) currentVrm.expressionManager.setValue('aa', 0); };
+            window.speechSynthesis.speak(u);
+        }
+
+        sendBtn.addEventListener('click', handleSendMessage);
+        userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSendMessage(); });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            // 視窗改變大小時，重新檢查相機位置
+            updateCameraPosition();
+        });
+    </script>
+</body>
+</html>
