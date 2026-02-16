@@ -238,7 +238,7 @@
         const API_URL = "/api/chat"; 
         const VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm';
         
-        // *** 修改處：使用您提供的完整 GitHub Pages 網址 ***
+        // 使用絕對路徑
         const IDLE_ANIMATIONS = [
             'https://davidkuodcam-crypto.github.io/VTuber/Taunt_with_Skin.vrma',
             'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma'
@@ -354,7 +354,7 @@
             };
             updateStatus();
 
-            // 1. Prompt & KB (併發載入)
+            // 1. Prompt & KB
             statusText.innerText = "讀取知識庫...";
             try {
                 const res = await fetch(`./Prompt.txt?t=${Date.now()}`);
@@ -387,11 +387,15 @@
             // 2. VRM & Animations
             statusText.innerText = "載入模型與動作...";
             try {
-                // Load VRM
+                // VRM Loader
                 const loader = new GLTFLoader();
                 loader.crossOrigin = 'anonymous';
                 loader.register(parser => new VRMLoaderPlugin(parser));
-                loader.register(parser => new VRMAnimationLoaderPlugin(parser));
+                
+                // 動畫使用獨立 Loader 以避免衝突，並支援路徑 Fallback
+                const animLoader = new GLTFLoader();
+                animLoader.crossOrigin = 'anonymous';
+                animLoader.register(parser => new VRMAnimationLoaderPlugin(parser));
 
                 const vrmGltf = await new Promise((res, rej) => loader.load(VRM_URL, res, undefined, rej));
                 const vrm = vrmGltf.userData.vrm;
@@ -406,11 +410,22 @@
                 if(lArm) { lArm.rotation.z = -1.1; lArm.rotation.x = 0.15; }
                 if(rArm) { rArm.rotation.z = 1.1; rArm.rotation.x = 0.15; }
 
-                // Load Animations
+                // Load Animations with Fallback
                 let animSuccess = 0;
                 for (const url of IDLE_ANIMATIONS) {
                     try {
-                        const vrmaGltf = await new Promise((res, rej) => loader.load(url, res, undefined, rej));
+                        let vrmaGltf;
+                        try {
+                            // 嘗試原始 (絕對) 路徑
+                            vrmaGltf = await new Promise((res, rej) => animLoader.load(url, res, undefined, rej));
+                        } catch (err1) {
+                            console.warn(`Absolute path failed: ${url}, trying local...`);
+                            // 嘗試相對路徑 Fallback (取得檔名)
+                            const filename = url.split('/').pop();
+                            const localUrl = `./${filename}`;
+                            vrmaGltf = await new Promise((res, rej) => animLoader.load(localUrl, res, undefined, rej));
+                        }
+
                         const vrmAnim = vrmaGltf.userData.vrmAnimations?.[0];
                         if (vrmAnim) {
                             const clip = vrmAnim.createAnimationClip(currentVrm);
@@ -418,7 +433,7 @@
                             animSuccess++;
                         }
                     } catch(e) { 
-                        console.warn("Anim load failed:", url); 
+                        console.warn("Anim load failed:", url, e); 
                     }
                 }
                 
@@ -475,7 +490,6 @@
             const nextIndex = index % idleClips.length;
             const clip = idleClips[nextIndex];
             
-            // 如果有前一個動作，淡出
             if (idleAction) {
                 idleAction.fadeOut(0.5);
             }
@@ -499,7 +513,6 @@
                 idleAction.fadeOut(0.5);
                 setTimeout(() => { if(!isIdleMode && idleAction) idleAction.stop(); }, 500);
             }
-            // 恢復自然姿勢
             currentMixer.stopAllAction();
         }
 
@@ -515,7 +528,6 @@
                 startIdleAnimation();
             }
 
-            // Important: Update Mixer FIRST
             if (currentMixer) currentMixer.update(delta);
 
             if (currentVrm) {
@@ -536,12 +548,10 @@
                         currentVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(v, 0, 0.2));
                     }
                 } else {
-                    // 閒置時閉嘴
                     currentVrm.expressionManager.setValue('aa', 0);
                 }
             }
 
-            // Particles
             if (particlesMesh) {
                 particlesMesh.rotation.y += 0.001;
                 const pos = particlesMesh.geometry.attributes.position.array;
@@ -578,7 +588,6 @@
             blinkLoop();
         }
 
-        // ... (chat functions remain mostly same, just updating lastInteractionTime) ...
         function addMessage(text, type) {
             const div = document.createElement('div');
             div.className = `message message-${type}`;
@@ -617,7 +626,6 @@
             const text = input.value.trim();
             if(!text) return;
             
-            // iOS Unlock
             if(!isMuted) { window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(" ")); }
 
             input.value = ''; 
@@ -643,8 +651,8 @@
                 });
                 
                 if(!res.ok) throw new Error("Server Error");
-                const data = await response.json(); // Fix: response -> res logic (Wait, I used 'res' above)
-                const jsonData = await res.json(); // Corrected variable
+                const data = await response.json(); 
+                const jsonData = await res.json(); 
                 
                 removeMessage(loadMsg);
                 const raw = jsonData.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
@@ -665,7 +673,6 @@
             }
         }
 
-        // Trigger Action / Emotion / Speak helpers
         function triggerAction(act, dur) {
             if(!currentVrm || act==='none') return;
             window.actionActive = true;
