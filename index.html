@@ -2,13 +2,14 @@
 <html lang="zh-TW">
 <head>
 <meta charset="utf-8">
-<title>AI VTuber - Idle Animations Fixed</title>
+<title>AI VTuber - Idle Animations Removed</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <style>
     body {
         margin: 0;
         padding: 0;
         overflow: hidden; 
+        /* 維持亮金色漸層背景 */
         background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 50%, #ffe0b2 100%);
         font-family: "Noto Sans TC", sans-serif;
         overscroll-behavior: none; 
@@ -31,30 +32,29 @@
     
     .loader {
         border: 4px solid #fff3e0;
-        border-top: 4px solid #d32f2f;
+        border-top: 4px solid #3498db; /* 改回藍色 */
         border-radius: 50%;
         width: 40px; height: 40px;
         animation: spin 1s linear infinite;
         margin-bottom: 15px;
     }
 
-    .loading-text { color: #d32f2f; font-size: 1rem; font-weight: bold; margin-bottom: 20px; }
+    .loading-text { color: #555; font-size: 1rem; font-weight: bold; margin-bottom: 20px; }
 
     #start-btn {
         padding: 12px 30px;
         font-size: 1.1rem;
-        background: linear-gradient(to right, #d32f2f, #f44336);
-        color: #ffd700;
-        border: 2px solid #ffd700;
+        background: #3498db; /* 改回藍色 */
+        color: white;
+        border: none;
         border-radius: 50px;
         cursor: pointer;
         display: none;
-        box-shadow: 0 4px 15px rgba(211, 47, 47, 0.3);
+        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
         transition: transform 0.2s, background 0.2s;
         font-weight: bold;
-        text-shadow: 0 1px 2px rgba(0,0,0,0.2);
     }
-    #start-btn:active { transform: scale(0.95); background: #b71c1c; }
+    #start-btn:active { transform: scale(0.95); background: #2980b9; }
 
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
@@ -67,12 +67,12 @@
         border-radius: 20px;
         font-size: 12px;
         font-weight: bold;
-        color: #bf360c;
+        color: #333; /* 改回黑色 */
         display: flex; align-items: center;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         z-index: 100;
         transition: all 0.3s;
-        border: 1px solid #ffcc80;
+        border: 1px solid #ddd;
     }
     .status-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #ccc; margin-right: 6px; }
     .status-connected { background-color: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
@@ -93,7 +93,7 @@
         max-width: 200px;
         transition: opacity 0.5s;
         pointer-events: none;
-        border: 1px solid #ffcc80;
+        border: 1px solid #ddd;
     }
     .file-status-item { 
         margin-bottom: 4px; 
@@ -157,7 +157,7 @@
         text-shadow: 0 1px 1px rgba(0,0,0,0.1);
     }
 
-    .message-user { align-self: flex-end; background-color: rgba(211, 47, 47, 0.9); border-bottom-right-radius: 2px; color: #fff; }
+    .message-user { align-self: flex-end; background-color: rgba(52, 152, 219, 0.9); border-bottom-right-radius: 2px; color: #fff; } /* 藍色 */
     .message-ai { align-self: flex-start; background-color: rgba(255, 255, 255, 0.9); border-bottom-left-radius: 2px; color: #333; text-shadow: none; border: 1px solid #ffd700; }
     .message-system { align-self: center; background: transparent; color: #e65100; font-size: 12px; font-style: italic; text-shadow: none; text-align: center;}
     .message a { color: #1e88e5; text-decoration: none; border-bottom: 1px dotted #1e88e5; }
@@ -166,10 +166,24 @@
     #input-area { display: flex; gap: 8px; align-items: center; }
     #user-input { flex: 1; padding: 12px 16px; border-radius: 25px; border: 1px solid rgba(255, 215, 0, 0.6); outline: none; background: rgba(255, 255, 255, 0.95); font-size: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); color: #5d4037; }
     #user-input::placeholder { color: #999; }
-    #send-btn { padding: 0 20px; height: 44px; border-radius: 22px; border: none; background: linear-gradient(to right, #d32f2f, #c62828); color: #ffd700; font-weight: bold; cursor: pointer; transition: background 0.2s; box-shadow: 0 4px 10px rgba(198, 40, 40, 0.3); flex-shrink: 0; border: 1px solid #ffd700; }
+    
+    #send-btn { 
+        padding: 0 20px; 
+        height: 44px; 
+        border-radius: 22px; 
+        border: none; 
+        background: #3498db; /* 改回藍色 */
+        color: white; 
+        font-weight: bold; 
+        cursor: pointer; 
+        transition: background 0.2s; 
+        box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3); 
+        flex-shrink: 0; 
+    }
     #send-btn:active { transform: scale(0.95); }
-    #send-btn:disabled { background: #bdbdbd; box-shadow: none; cursor: not-allowed; border: none; color: #fff;}
-    #mute-btn { width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.95); font-size: 20px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); flex-shrink: 0; border: 1px solid #ffd700; color: #d32f2f; }
+    #send-btn:disabled { background: #bdbdbd; box-shadow: none; cursor: not-allowed; color: #fff;}
+    
+    #mute-btn { width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.95); font-size: 20px; cursor: pointer; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.1); flex-shrink: 0; border: 1px solid #ffd700; color: #3498db; }
     #mute-btn.muted { background: #e74c3c; color: white; border: none; }
     
     #emotion-debug {
@@ -190,8 +204,7 @@
     "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
-        "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js",
-        "@pixiv/three-vrm-animation": "https://unpkg.com/@pixiv/three-vrm-animation@3.0.0/lib/three-vrm-animation.module.js"
+        "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js"
     }
 }
 </script>
@@ -202,7 +215,7 @@
     <div id="loading-screen">
         <div class="loader" id="loader"></div>
         <div class="loading-text" id="status-text">初始化新年系統...</div>
-        <button id="start-btn">開始新年對話</button>
+        <button id="start-btn">開始對話</button>
     </div>
 
     <div id="file-status">
@@ -223,7 +236,7 @@
         <div id="chat-display"></div>
         <div id="input-area">
             <button id="mute-btn" title="切換聲音">🔊</button>
-            <input type="text" id="user-input" placeholder="輸入新年祝福..." disabled>
+            <input type="text" id="user-input" placeholder="輸入訊息..." disabled>
             <button id="send-btn" disabled>發送</button>
         </div>
     </div>
@@ -233,27 +246,11 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
-        import { VRMAnimationLoaderPlugin } from '@pixiv/three-vrm-animation';
 
         const API_URL = "/api/chat"; 
         const VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm';
         
-        // 使用絕對路徑
-        const IDLE_ANIMATIONS = [
-            'https://davidkuodcam-crypto.github.io/VTuber/Taunt_with_Skin.vrma',
-            'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma'
-        ];
-        const IDLE_TIMEOUT_MS = 10000; // 10秒
-
         let currentVrm = undefined;
-        let currentMixer = undefined;
-        let idleClips = [];
-        let idleAction = undefined;
-        let lastInteractionTime = Date.now();
-        let isIdleMode = false;
-        let currentIdleIndex = 0;
-        let idleInterval = null;
-
         let chatHistory = [];
         let isSpeaking = false;
         let isMuted = false;
@@ -273,24 +270,13 @@
         
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
-            if (isIdleMode) {
-                // 閒置全身視角
-                if (aspect < 0.8) {
-                    camera.position.set(0.0, 1.0, 5.0);
-                    if (currentVrm) controls.target.set(0.0, 0.9, 0.0);
-                } else {
-                    camera.position.set(0.0, 1.0, 4.5);
-                    if (currentVrm) controls.target.set(0.0, 0.9, 0.0);
-                }
+            // 對話特寫視角
+            if (aspect < 0.8) {
+                camera.position.set(0.0, 1.35, 2.2); 
+                if(currentVrm) controls.target.set(0.0, 1.35, 0.0);
             } else {
-                // 對話特寫視角
-                if (aspect < 0.8) {
-                    camera.position.set(0.0, 1.35, 2.2); 
-                    if(currentVrm) controls.target.set(0.0, 1.35, 0.0);
-                } else {
-                    camera.position.set(0.0, 1.4, 3.5);
-                    if(currentVrm) controls.target.set(0.0, 1.3, 0.0); 
-                }
+                camera.position.set(0.0, 1.4, 3.5);
+                if(currentVrm) controls.target.set(0.0, 1.3, 0.0); 
             }
             camera.updateProjectionMatrix();
             controls.update();
@@ -336,20 +322,18 @@
         controls.maxPolarAngle = Math.PI / 2 + 0.1; controls.minPolarAngle = Math.PI / 3;
         updateCameraPosition(); 
 
-        // --- 載入外部檔案與動畫 ---
+        // --- 載入外部檔案與模型 ---
         async function loadData() {
             const statusText = document.getElementById('status-text');
             const fileStatusDiv = document.getElementById('file-status');
             
             let promptStatus = '<span class="icon-loading">●</span> Prompt';
             let kbStatus = '<span class="icon-loading">●</span> KB';
-            let animStatus = '<span class="icon-loading">●</span> Anim';
 
             const updateStatus = () => {
                 fileStatusDiv.innerHTML = `
                     <div class="file-status-item">${promptStatus}</div>
                     <div class="file-status-item">${kbStatus}</div>
-                    <div class="file-status-item">${animStatus}</div>
                 `;
             };
             updateStatus();
@@ -384,62 +368,25 @@
             else kbStatus = `<span class="icon-fail">✗</span> No KB`;
             updateStatus();
 
-            // 2. VRM & Animations
-            statusText.innerText = "載入模型與動作...";
+            // 2. VRM
+            statusText.innerText = "載入模型...";
             try {
                 // VRM Loader
                 const loader = new GLTFLoader();
                 loader.crossOrigin = 'anonymous';
                 loader.register(parser => new VRMLoaderPlugin(parser));
                 
-                // 動畫使用獨立 Loader 以避免衝突，並支援路徑 Fallback
-                const animLoader = new GLTFLoader();
-                animLoader.crossOrigin = 'anonymous';
-                animLoader.register(parser => new VRMAnimationLoaderPlugin(parser));
-
                 const vrmGltf = await new Promise((res, rej) => loader.load(VRM_URL, res, undefined, rej));
                 const vrm = vrmGltf.userData.vrm;
                 VRMUtils.rotateVRM0(vrm);
                 scene.add(vrm.scene);
                 currentVrm = vrm;
-                currentMixer = new THREE.AnimationMixer(currentVrm.scene);
 
                 // Arm Fix
                 const lArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
                 const rArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
                 if(lArm) { lArm.rotation.z = -1.1; lArm.rotation.x = 0.15; }
                 if(rArm) { rArm.rotation.z = 1.1; rArm.rotation.x = 0.15; }
-
-                // Load Animations with Fallback
-                let animSuccess = 0;
-                for (const url of IDLE_ANIMATIONS) {
-                    try {
-                        let vrmaGltf;
-                        try {
-                            // 嘗試原始 (絕對) 路徑
-                            vrmaGltf = await new Promise((res, rej) => animLoader.load(url, res, undefined, rej));
-                        } catch (err1) {
-                            console.warn(`Absolute path failed: ${url}, trying local...`);
-                            // 嘗試相對路徑 Fallback (取得檔名)
-                            const filename = url.split('/').pop();
-                            const localUrl = `./${filename}`;
-                            vrmaGltf = await new Promise((res, rej) => animLoader.load(localUrl, res, undefined, rej));
-                        }
-
-                        const vrmAnim = vrmaGltf.userData.vrmAnimations?.[0];
-                        if (vrmAnim) {
-                            const clip = vrmAnim.createAnimationClip(currentVrm);
-                            idleClips.push(clip);
-                            animSuccess++;
-                        }
-                    } catch(e) { 
-                        console.warn("Anim load failed:", url, e); 
-                    }
-                }
-                
-                if(animSuccess > 0) animStatus = `<span class="icon-ok">✓</span> Anim x${animSuccess}`;
-                else animStatus = `<span class="icon-fail">✗</span> 動作檔遺失`; 
-                updateStatus();
 
                 updateCameraPosition();
                 startBlinking();
@@ -456,7 +403,6 @@
         }
 
         document.getElementById('start-btn').addEventListener('click', () => {
-            lastInteractionTime = Date.now();
             if(!isMuted) {
                 window.speechSynthesis.cancel();
                 window.speechSynthesis.speak(new SpeechSynthesisUtterance(" "));
@@ -470,52 +416,6 @@
             testApiConnection();
         });
 
-        // --- 閒置系統 ---
-        function startIdleAnimation() {
-            if (isIdleMode || idleClips.length === 0) return;
-            isIdleMode = true;
-            updateCameraPosition();
-            playIdleClip(0);
-            
-            // 啟動輪播計時器
-            if(idleInterval) clearInterval(idleInterval);
-            idleInterval = setInterval(() => {
-                if(isIdleMode) playIdleClip(currentIdleIndex + 1);
-            }, 12000);
-        }
-
-        function playIdleClip(index) {
-            if (!isIdleMode || !currentMixer) return;
-            
-            const nextIndex = index % idleClips.length;
-            const clip = idleClips[nextIndex];
-            
-            if (idleAction) {
-                idleAction.fadeOut(0.5);
-            }
-            
-            const newAction = currentMixer.clipAction(clip);
-            newAction.reset();
-            newAction.fadeIn(0.5);
-            newAction.play();
-            
-            idleAction = newAction;
-            currentIdleIndex = nextIndex;
-        }
-
-        function stopIdleAnimation() {
-            if (!isIdleMode) return;
-            isIdleMode = false;
-            if(idleInterval) clearInterval(idleInterval);
-            updateCameraPosition();
-            
-            if (idleAction) {
-                idleAction.fadeOut(0.5);
-                setTimeout(() => { if(!isIdleMode && idleAction) idleAction.stop(); }, 500);
-            }
-            currentMixer.stopAllAction();
-        }
-
         // --- Animation Loop ---
         const clock = new THREE.Clock();
         function animate() {
@@ -523,32 +423,21 @@
             const delta = clock.getDelta();
             const elapsed = clock.elapsedTime;
 
-            // Idle Check
-            if (!isIdleMode && Date.now() - lastInteractionTime > IDLE_TIMEOUT_MS) {
-                startIdleAnimation();
-            }
-
-            if (currentMixer) currentMixer.update(delta);
-
             if (currentVrm) {
                 currentVrm.update(delta);
                 
-                // 只有在非閒置時才有呼吸和說話嘴型
-                if (!isIdleMode) {
-                    const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
-                    if (spine) {
-                        spine.rotation.x = Math.sin(elapsed * 1.5) * 0.02;
-                        spine.rotation.y = Math.sin(elapsed * 0.8) * 0.02;
-                    }
-                    if (isSpeaking && !isMuted) {
-                        const s = Math.sin(elapsed * 18); 
-                        currentVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
-                    } else {
-                        const v = currentVrm.expressionManager.getValue('aa');
-                        currentVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(v, 0, 0.2));
-                    }
+                // 呼吸和說話嘴型
+                const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
+                if (spine) {
+                    spine.rotation.x = Math.sin(elapsed * 1.5) * 0.02;
+                    spine.rotation.y = Math.sin(elapsed * 0.8) * 0.02;
+                }
+                if (isSpeaking && !isMuted) {
+                    const s = Math.sin(elapsed * 18); 
+                    currentVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
                 } else {
-                    currentVrm.expressionManager.setValue('aa', 0);
+                    const v = currentVrm.expressionManager.getValue('aa');
+                    currentVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(v, 0, 0.2));
                 }
             }
 
@@ -573,7 +462,7 @@
         function startBlinking() {
             if(!currentVrm) return;
             const blinkLoop = () => {
-                if (!window.actionActive && !isIdleMode) {
+                if (!window.actionActive) {
                     setTimeout(() => {
                         currentVrm.expressionManager.setValue('blink', 1);
                         setTimeout(() => {
@@ -619,9 +508,6 @@
         document.getElementById('send-btn').addEventListener('click', handleSendMessage);
         
         async function handleSendMessage() {
-            stopIdleAnimation(); 
-            lastInteractionTime = Date.now();
-            
             const input = document.getElementById('user-input');
             const text = input.value.trim();
             if(!text) return;
@@ -668,8 +554,6 @@
             } catch(e) {
                 removeMessage(loadMsg);
                 addMessage("連線錯誤", 'system');
-            } finally {
-                lastInteractionTime = Date.now();
             }
         }
 
@@ -692,7 +576,7 @@
             const u = new SpeechSynthesisUtterance(text.replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?]/g, ''));
             u.lang = 'zh-TW';
             u.onstart = () => isSpeaking = true;
-            u.onend = () => { isSpeaking = false; if(currentVrm && !isIdleMode) currentVrm.expressionManager.setValue('aa', 0); };
+            u.onend = () => { isSpeaking = false; if(currentVrm) currentVrm.expressionManager.setValue('aa', 0); };
             window.speechSynthesis.speak(u);
         }
 
