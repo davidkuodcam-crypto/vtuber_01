@@ -580,12 +580,20 @@
                     userInput.disabled = false; 
                     sendBtn.disabled = false;
                 } else {
-                    throw new Error("API Response Error");
+                    // 嘗試讀取後端回傳的錯誤訊息
+                    let errMsg = "API Response Error";
+                    try {
+                        const errData = await response.json();
+                        if (errData.error) errMsg = errData.error;
+                    } catch(e) {}
+                    throw new Error(errMsg);
                 }
             } catch (e) {
                 statusDot.classList.add('status-error');
                 statusMsg.innerText = "連線失敗";
                 console.error("API Test Failed:", e);
+                // 顯示錯誤在對話框，方便除錯
+                addMessage(`連線測試失敗: ${e.message}`, 'system');
             }
         }
 
@@ -634,7 +642,14 @@
                     })
                 });
 
-                if (!response.ok) throw new Error("Server Error");
+                if (!response.ok) {
+                    let errMsg = "Server Error";
+                    try {
+                         const errData = await response.json();
+                         if (errData.error) errMsg = errData.error;
+                    } catch(e) {}
+                    throw new Error(errMsg);
+                }
 
                 const data = await response.json();
                 removeMessage(loadingMsg);
@@ -663,7 +678,7 @@
             } catch (error) {
                 console.error(error);
                 removeMessage(loadingMsg);
-                addMessage("連線發生錯誤。", 'system');
+                addMessage(`錯誤: ${error.message}`, 'system');
             } finally {
                 userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
             }
