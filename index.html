@@ -2,14 +2,14 @@
 <html lang="zh-TW">
 <head>
 <meta charset="utf-8">
-<title>AI VTuber - Golden New Year</title>
+<title>AI VTuber - Idle Animations</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <style>
     body {
         margin: 0;
         padding: 0;
-        overflow: hidden; /* 禁止捲動 */
-        /* 修改：改為亮金色漸層背景，突顯黑色衣服 */
+        overflow: hidden; 
+        /* 亮金色漸層背景 */
         background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 50%, #ffe0b2 100%);
         font-family: "Noto Sans TC", sans-serif;
         overscroll-behavior: none; 
@@ -70,7 +70,7 @@
         border-radius: 20px;
         font-size: 12px;
         font-weight: bold;
-        color: #bf360c; /* 深橘紅色文字 */
+        color: #bf360c;
         display: flex; align-items: center;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         z-index: 100;
@@ -112,8 +112,6 @@
     .icon-fail { color: #c62828; margin-right: 6px; font-weight: bold; }
     .icon-loading { color: #ef6c00; margin-right: 6px; animation: pulse 1s infinite; }
     
-    @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
-
     /* 對話介面 */
     #chat-container {
         position: absolute; 
@@ -144,7 +142,7 @@
     }
 
     #chat-display {
-        background: rgba(255, 255, 255, 0.4); /* 更亮更通透 */
+        background: rgba(255, 255, 255, 0.4); 
         padding: 12px; 
         border-radius: 16px;
         height: 140px; 
@@ -173,7 +171,7 @@
 
     .message-user { 
         align-self: flex-end; 
-        background-color: rgba(211, 47, 47, 0.9); /* 深紅色 */
+        background-color: rgba(211, 47, 47, 0.9); 
         border-bottom-right-radius: 2px; 
         color: #fff;
     }
@@ -249,7 +247,8 @@
     "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
-        "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js"
+        "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js",
+        "@pixiv/three-vrm-animation": "https://unpkg.com/@pixiv/three-vrm-animation@3.0.0/lib/three-vrm-animation.module.js"
     }
 }
 </script>
@@ -293,11 +292,26 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+        import { VRMAnimationLoaderPlugin } from '@pixiv/three-vrm-animation';
 
         const API_URL = "/api/chat"; 
         const VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm';
+        
+        // --- 閒置動畫設定 ---
+        const IDLE_ANIMATIONS = [
+            './Taunt_with_Skin.vrma',
+            './Breakdance_Freeze_Var_3.vrma'
+        ];
+        const IDLE_TIMEOUT_MS = 10000; // 10秒
 
         let currentVrm = undefined;
+        let currentMixer = undefined; // 動畫混合器
+        let idleClips = []; // 儲存載入的動畫片段
+        let idleAction = undefined; // 當前播放的動畫動作
+        let lastInteractionTime = Date.now();
+        let isIdleMode = false;
+        let currentIdleIndex = 0;
+
         let chatHistory = [];
         let isSpeaking = false;
         let currentEmotion = 'neutral';
@@ -305,37 +319,43 @@
         
         let externalSystemPrompt = ""; 
         let externalKnowledge = "";
-        let openingRemark = ""; // 儲存開場白
+        let openingRemark = ""; 
 
         const isPreviewEnv = window.location.protocol === 'blob:' || window.location.protocol === 'file:';
 
         // --- 場景初始化 ---
         const scene = new THREE.Scene();
-        // 修改：改為暖米黃色背景，與 CSS 亮金背景呼應
         scene.background = new THREE.Color(0xfff8e1); 
-        
-        // 霧氣改為暖米色
         scene.fog = new THREE.Fog(0xfff8e1, 5, 15);
-        
-        // 修改：網格線改為亮紅色 (Red) 和 深橘色 (Deep Orange)，在亮地板上清晰可見
         scene.add(new THREE.GridHelper(20, 20, 0xd32f2f, 0xffcc80)); 
 
         const camera = new THREE.PerspectiveCamera(30.0, window.innerWidth / window.innerHeight, 0.1, 20.0);
         
-        // **相機位置邏輯**
+        // **相機位置邏輯 (支援閒置全身模式)**
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
-            if (aspect < 0.8) {
-                // 手機直立模式：初始特寫
-                camera.position.set(0.0, 1.35, 2.2); 
-                if(currentVrm) {
-                    controls.target.set(0.0, 1.35, 0.0);
+            
+            if (isIdleMode) {
+                // --- 閒置模式：全身視角 ---
+                if (aspect < 0.8) {
+                    // 手機直立：拉遠以顯示全身
+                    camera.position.set(0.0, 1.0, 5.0);
+                    if (currentVrm) controls.target.set(0.0, 0.9, 0.0);
+                } else {
+                    // 電腦寬螢幕
+                    camera.position.set(0.0, 1.0, 4.5);
+                    if (currentVrm) controls.target.set(0.0, 0.9, 0.0);
                 }
             } else {
-                // 桌面寬螢幕模式
-                camera.position.set(0.0, 1.4, 3.5);
-                if(currentVrm) {
-                    controls.target.set(0.0, 1.3, 0.0); 
+                // --- 正常對話模式：半身/特寫視角 ---
+                if (aspect < 0.8) {
+                    // 手機直立：特寫
+                    camera.position.set(0.0, 1.35, 2.2); 
+                    if(currentVrm) controls.target.set(0.0, 1.35, 0.0);
+                } else {
+                    // 電腦寬螢幕
+                    camera.position.set(0.0, 1.4, 3.5);
+                    if(currentVrm) controls.target.set(0.0, 1.3, 0.0); 
                 }
             }
             camera.updateProjectionMatrix();
@@ -347,43 +367,33 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
         document.body.appendChild(renderer.domElement);
 
-        // 燈光優化：暖色光
-        const directionalLight = new THREE.DirectionalLight(0xffedd5, 1.5); // 暖白光
+        const directionalLight = new THREE.DirectionalLight(0xffedd5, 1.5); 
         directionalLight.position.set(-1.0, 2.0, 1.0).normalize();
         scene.add(directionalLight);
         
-        // 補光 (金色)
         const fillLight = new THREE.DirectionalLight(0xffd700, 0.6);
         fillLight.position.set(1.0, 1.0, 1.0).normalize();
         scene.add(fillLight);
         
         scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-        // --- 新年特效：飄落金粉/紅紙屑 ---
+        // --- 新年特效 ---
         let particlesMesh;
-        const particlesCount = 300; // 粒子數量
+        const particlesCount = 300; 
         function createFestiveParticles() {
             const geometry = new THREE.BufferGeometry();
             const posArray = new Float32Array(particlesCount * 3);
             const colorArray = new Float32Array(particlesCount * 3);
             
             for(let i = 0; i < particlesCount * 3; i+=3) {
-                // 隨機位置
-                posArray[i] = (Math.random() - 0.5) * 15; // X
-                posArray[i+1] = Math.random() * 10;       // Y
-                posArray[i+2] = (Math.random() - 0.5) * 15; // Z
+                posArray[i] = (Math.random() - 0.5) * 15; 
+                posArray[i+1] = Math.random() * 10;       
+                posArray[i+2] = (Math.random() - 0.5) * 15; 
 
-                // 修改：顏色對比度調整
                 if (Math.random() > 0.5) {
-                    // 正紅色 (在淺色背景很明顯)
-                    colorArray[i] = 0.9;
-                    colorArray[i+1] = 0.1;
-                    colorArray[i+2] = 0.1;
+                    colorArray[i] = 0.9; colorArray[i+1] = 0.1; colorArray[i+2] = 0.1;
                 } else {
-                    // 深金色 (避免太亮看不見)
-                    colorArray[i] = 0.8;
-                    colorArray[i+1] = 0.6;
-                    colorArray[i+2] = 0.0;
+                    colorArray[i] = 0.8; colorArray[i+1] = 0.6; colorArray[i+2] = 0.0;
                 }
             }
             
@@ -391,11 +401,10 @@
             geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
             
             const material = new THREE.PointsMaterial({
-                size: 0.15, // 稍微加大粒子
+                size: 0.15, 
                 vertexColors: true,
                 transparent: true,
                 opacity: 0.8,
-                // blending: THREE.AdditiveBlending // 在淺色背景取消 Additive，不然會變白
             });
             
             particlesMesh = new THREE.Points(geometry, material);
@@ -403,7 +412,6 @@
         }
         createFestiveParticles();
 
-        // --- 控制器設定 (OrbitControls) ---
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enablePan = true; 
         controls.screenSpacePanning = true; 
@@ -416,8 +424,9 @@
 
         updateCameraPosition(); 
 
-        // --- 檔案讀取 (左上角狀態) ---
+        // --- 載入外部檔案與動畫 ---
         async function loadExternalData() {
+            // ... (同前，略過重複程式碼，但加入動畫載入) ...
             const statusText = document.getElementById('status-text');
             const fileStatusDiv = document.getElementById('file-status');
             
@@ -430,9 +439,9 @@
                     <div class="file-status-item">${kbStatusHTML}</div>
                 `;
             };
-            
             renderStatus();
 
+            // 1. 讀取 Prompt
             try {
                 statusText.innerText = "讀取角色設定...";
                 const res = await fetch(`./Prompt.txt?t=${Date.now()}`);
@@ -447,6 +456,7 @@
             }
             renderStatus();
 
+            // 2. 讀取 KB
             statusText.innerText = "讀取雲端知識庫...";
             let fileIndex = 1;
             let keepLoading = true;
@@ -462,7 +472,6 @@
                 try {
                     let res = await fetch(`./${fileNameFolder}?t=${Date.now()}`);
                     let usedPath = fileNameFolder;
-                    
                     if (!res.ok) {
                          res = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
                          usedPath = fileNameRoot;
@@ -471,9 +480,7 @@
                     if (res.ok) {
                         const text = await res.text();
                         if (text.trim().length > 0) {
-                            if (fileIndex === 1) {
-                                openingRemark = text;
-                            }
+                            if (fileIndex === 1) openingRemark = text;
                             externalKnowledge += `\n\n【KB: ${usedPath}】\n${text}`;
                             loadedCount++;
                             fileIndex++;
@@ -487,43 +494,82 @@
                     keepLoading = false;
                 }
             }
-
-            if (loadedCount > 0) {
-                kbStatusHTML = `<span class="icon-ok">✓</span> KB x${loadedCount}`;
-            } else {
-                kbStatusHTML = `<span class="icon-fail">✗</span> No KB`;
-            }
+            
+            if (loadedCount > 0) kbStatusHTML = `<span class="icon-ok">✓</span> KB x${loadedCount}`;
+            else kbStatusHTML = `<span class="icon-fail">✗</span> No KB`;
             renderStatus();
+
+            // 3. 預載動畫檔案
+            statusText.innerText = "載入動作檔案...";
+            // 這裡我們只載入檔案，綁定到 VRM 會在 VRM 載入後進行
+            for (const url of IDLE_ANIMATIONS) {
+                try {
+                    // 我們使用主 loader 來載入 vrma
+                    // 這裡先不執行，等待 loader 初始化
+                } catch (e) {
+                    console.error("Failed to load animation", url, e);
+                }
+            }
             statusText.innerText = "系統就緒！";
         }
 
-        // --- VRM 載入 ---
+        // --- VRM & 動畫載入 ---
         const loader = new GLTFLoader();
         loader.crossOrigin = 'anonymous';
+        
+        // 註冊插件
         loader.register((parser) => new VRMLoaderPlugin(parser));
+        loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+
+        async function loadVRMAndAnimations() {
+            // 1. 載入本體
+            const vrmGltf = await new Promise((resolve, reject) => {
+                loader.load(VRM_URL, resolve, 
+                    (progress) => {
+                        const percent = Math.round(100.0 * (progress.loaded / progress.total));
+                        document.getElementById('status-text').innerText = `下載模型... ${percent}%`;
+                    }, 
+                    reject
+                );
+            });
+            
+            const vrm = vrmGltf.userData.vrm;
+            VRMUtils.rotateVRM0(vrm);
+            scene.add(vrm.scene);
+            currentVrm = vrm;
+            
+            // 初始化動畫混合器
+            currentMixer = new THREE.AnimationMixer(currentVrm.scene);
+
+            // 修正手臂
+            const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+            const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+            if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
+            if (rightUpperArm) { rightUpperArm.rotation.z = 1.1; rightUpperArm.rotation.x = 0.15; }
+
+            // 2. 載入動畫並綁定到此 VRM
+            for (const url of IDLE_ANIMATIONS) {
+                try {
+                    const vrmaGltf = await new Promise((resolve, reject) => {
+                        loader.load(url, resolve, undefined, reject);
+                    });
+                    
+                    const vrmAnimation = vrmaGltf.userData.vrmAnimations[0];
+                    if (vrmAnimation) {
+                        const clip = vrmAnimation.createAnimationClip(currentVrm);
+                        idleClips.push(clip);
+                    }
+                } catch (e) {
+                    console.warn(`無法載入動畫: ${url}`, e);
+                }
+            }
+
+            updateCameraPosition();
+            startBlinking();
+        }
 
         Promise.all([
-            new Promise((resolve) => {
-                loader.load(VRM_URL, (gltf) => {
-                    const vrm = gltf.userData.vrm;
-                    VRMUtils.rotateVRM0(vrm);
-                    scene.add(vrm.scene);
-                    currentVrm = vrm;
-                    
-                    const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
-                    const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
-                    if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
-                    if (rightUpperArm) { rightUpperArm.rotation.z = 1.1; rightUpperArm.rotation.x = 0.15; }
-
-                    updateCameraPosition(); 
-                    startBlinking();
-                    resolve();
-                },
-                (progress) => {
-                    const percent = Math.round(100.0 * (progress.loaded / progress.total));
-                    document.getElementById('status-text').innerText = `下載模型... ${percent}%`;
-                }, (e) => resolve());
-            }),
+            loadVRMAndAnimations(),
             loadExternalData()
         ]).then(() => {
             const loaderEl = document.getElementById('loader');
@@ -535,6 +581,9 @@
             startBtn.style.display = 'block';
 
             startBtn.addEventListener('click', () => {
+                // 互動開始，重置時間
+                lastInteractionTime = Date.now();
+
                 if (!isMuted) {
                     window.speechSynthesis.cancel();
                     const silent = new SpeechSynthesisUtterance(" ");
@@ -548,14 +597,68 @@
 
                 const introText = openingRemark || "（未讀取到 KnowledgeBase01.txt，請檢查檔案）";
                 addMessage(introText, 'ai');
-                
                 chatHistory.push({ role: "model", parts: [{ text: introText }] });
-                
                 speak(introText);
-                
                 testApiConnection();
             });
         });
+
+        // --- 閒置邏輯 ---
+        function startIdleAnimation() {
+            if (isIdleMode || idleClips.length === 0) return;
+            isIdleMode = true;
+            updateCameraPosition(); // 切換到全身視角
+            
+            // 播放第一個動畫
+            playIdleClip(0);
+        }
+
+        function playIdleClip(index) {
+            if (!isIdleMode) return;
+            
+            // 停止當前動作
+            if (idleAction) idleAction.fadeOut(0.5);
+            
+            const clip = idleClips[index % idleClips.length];
+            idleAction = currentMixer.clipAction(clip);
+            idleAction.reset();
+            idleAction.fadeIn(0.5);
+            idleAction.play();
+            
+            // 監聽動畫結束，播放下一個 (loop)
+            // 需注意：如果是 loop 動畫，可能需要手動監聽時間或設定 loop once
+            // 假設 vrma 是循環的，我們設定其 loop 模式
+            // 若要輪播，我們可以讓每個動作播一次然後換下一個
+            // 但通常 idle 動作是 Loop 的，這裡我們設定播完一次換下一個，或者播一段時間
+            
+            // 這裡簡單實作：監聽單次播放結束 (若動畫非 Loop)
+            // 若動畫預設是 Loop，則我們可以用 setTimeout 強制切換
+            
+            currentIdleIndex = index;
+        }
+        
+        // 監聽動畫循環/結束事件來切換動作
+        // 為了簡單輪播，我們每 10 秒切換一次動作，或者監聽 finished
+        // 由於 AnimationMixer 的 finished 只有在非 Loop 時觸發
+        // 我們這裡採用簡單的 Timer 切換，讓每個動作展示一陣子
+        setInterval(() => {
+            if (isIdleMode && idleClips.length > 1) {
+                playIdleClip(currentIdleIndex + 1);
+            }
+        }, 12000); // 每 12 秒換一個動作
+
+        function stopIdleAnimation() {
+            if (!isIdleMode) return;
+            isIdleMode = false;
+            updateCameraPosition(); // 切回特寫
+            
+            if (idleAction) {
+                idleAction.fadeOut(0.5);
+                idleAction = undefined;
+            }
+            // 讓 mixer 回到初始狀態
+            currentMixer.stopAllAction();
+        }
 
         // --- 動畫 ---
         const clock = new THREE.Clock();
@@ -564,33 +667,48 @@
             const deltaTime = clock.getDelta();
             const elapsedTime = clock.elapsedTime;
 
-            // 粒子動畫 (緩緩飄落)
+            // 檢查閒置
+            if (!isIdleMode && Date.now() - lastInteractionTime > IDLE_TIMEOUT_MS) {
+                startIdleAnimation();
+            }
+
+            // 更新混合器 (處理 vrma 動作)
+            if (currentMixer) {
+                currentMixer.update(deltaTime);
+            }
+
+            // 粒子動畫
             if (particlesMesh) {
-                particlesMesh.rotation.y += 0.001; // 整體旋轉
+                particlesMesh.rotation.y += 0.001; 
                 const positions = particlesMesh.geometry.attributes.position.array;
                 for(let i = 1; i < particlesCount * 3; i+=3) {
-                    positions[i] -= 0.015; // 向下飄落
-                    // 如果掉到地板以下，重置到上方隨機位置
-                    if (positions[i] < 0) {
-                        positions[i] = 10;
-                    }
+                    positions[i] -= 0.015; 
+                    if (positions[i] < 0) positions[i] = 10;
                 }
                 particlesMesh.geometry.attributes.position.needsUpdate = true;
             }
 
             if (currentVrm) {
                 currentVrm.update(deltaTime);
-                const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
-                if (spine) {
-                    spine.rotation.x = Math.sin(elapsedTime * 1.5) * 0.02;
-                    spine.rotation.y = Math.sin(elapsedTime * 0.8) * 0.02;
-                }
-                if (isSpeaking && !isMuted) {
-                    const s = Math.sin(elapsedTime * 18); // 說話速度微調
-                    currentVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
+                
+                // 只有在非閒置模式 (沒播全身動作) 時，才加入呼吸與說話嘴型
+                // 避免與 vrma 動作衝突
+                if (!isIdleMode) {
+                    const spine = currentVrm.humanoid.getNormalizedBoneNode('spine');
+                    if (spine) {
+                        spine.rotation.x = Math.sin(elapsedTime * 1.5) * 0.02;
+                        spine.rotation.y = Math.sin(elapsedTime * 0.8) * 0.02;
+                    }
+                    if (isSpeaking && !isMuted) {
+                        const s = Math.sin(elapsedTime * 18); 
+                        currentVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
+                    } else {
+                        const currentVal = currentVrm.expressionManager.getValue('aa');
+                        currentVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(currentVal, 0, 0.2));
+                    }
                 } else {
-                    const currentVal = currentVrm.expressionManager.getValue('aa');
-                    currentVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(currentVal, 0, 0.2));
+                    // 閒置模式下，嘴巴閉上 (除非 vrma 有表情)
+                    currentVrm.expressionManager.setValue('aa', 0);
                 }
             }
             controls.update();
@@ -601,7 +719,7 @@
         function startBlinking() {
             if(!currentVrm) return;
             const blinkLoop = () => {
-                if (!window.actionActive) {
+                if (!window.actionActive && !isIdleMode) { // 閒置時也暫停眨眼以免衝突
                     setTimeout(() => {
                         currentVrm.expressionManager.setValue('blink', 1);
                         setTimeout(() => {
@@ -616,7 +734,7 @@
             blinkLoop();
         }
 
-        // --- 情緒控制 ---
+        // --- 情緒控制 (略，保持不變) ---
         const VALID_EMOTIONS = ['neutral', 'happy', 'angry', 'sad', 'relaxed', 'surprised'];
         function setEmotion(emotionName) {
             if (!currentVrm) return;
@@ -666,7 +784,7 @@
 
         function removeMessage(el) { if(el && el.parentNode) el.parentNode.removeChild(el); }
 
-        // --- API 連線檢查 (右上角) ---
+        // --- API 連線檢查 (略) ---
         const statusDot = document.getElementById('status-dot');
         const statusMsg = document.getElementById('status-msg');
         const userInput = document.getElementById('user-input');
@@ -680,29 +798,21 @@
                 userInput.disabled = false; sendBtn.disabled = false;
                 return;
             }
-
             statusMsg.innerText = "連線測試...";
             statusDot.className = 'status-dot'; 
-            
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ contents: [{ parts: [{ text: "Test" }] }] })
                 });
-
                 if (response.ok) {
                     statusDot.classList.add('status-connected');
                     statusMsg.innerText = "系統連線正常";
                     userInput.disabled = false; 
                     sendBtn.disabled = false;
                 } else {
-                    let errMsg = "API Response Error";
-                    try {
-                        const errData = await response.json();
-                        if (errData.error) errMsg = errData.error;
-                    } catch(e) {}
-                    throw new Error(errMsg);
+                    throw new Error("API Response Error");
                 }
             } catch (e) {
                 statusDot.classList.add('status-error');
@@ -721,14 +831,17 @@
         });
 
         async function handleSendMessage() {
+            // *** 喚醒：使用者發送訊息，停止閒置動作 ***
+            stopIdleAnimation();
+            lastInteractionTime = Date.now();
+
             const text = userInput.value.trim();
             if (!text) return;
 
             if (!isMuted) {
                 window.speechSynthesis.cancel();
                 const silent = new SpeechSynthesisUtterance(" ");
-                silent.volume = 0; // 靜音
-                silent.rate = 10;  // 快速播放結束
+                silent.volume = 0; silent.rate = 10;
                 window.speechSynthesis.speak(silent);
             }
 
@@ -742,7 +855,6 @@
             }
 
             const loadingMsg = addMessage("Thinking...", 'system');
-            
             chatHistory.push({ role: "user", parts: [{ text: text }] });
 
             let finalSystemInstruction = "";
@@ -752,7 +864,6 @@
             if (externalKnowledge) {
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
-
             finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.`;
 
             try {
@@ -765,14 +876,7 @@
                     })
                 });
 
-                if (!response.ok) {
-                    let errMsg = "Server Error";
-                    try {
-                         const errData = await response.json();
-                         if (errData.error) errMsg = errData.error;
-                    } catch(e) {}
-                    throw new Error(errMsg);
-                }
+                if (!response.ok) throw new Error("Server Error");
 
                 const data = await response.json();
                 removeMessage(loadingMsg);
@@ -804,6 +908,8 @@
                 addMessage(`錯誤: ${error.message}`, 'system');
             } finally {
                 userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
+                // 再次更新互動時間，確保對話結束後 10 秒才開始閒置
+                lastInteractionTime = Date.now();
             }
         }
 
@@ -815,7 +921,7 @@
             window.speechSynthesis.cancel();
             const u = new SpeechSynthesisUtterance(cleanText);
             u.lang = 'zh-TW';
-            u.rate = 1.0; // 語速正常
+            u.rate = 1.0; 
             u.pitch = 1.0;
             u.onstart = () => isSpeaking = true;
             u.onend = () => { isSpeaking = false; if(currentVrm) currentVrm.expressionManager.setValue('aa', 0); };
@@ -829,7 +935,6 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            // 視窗改變大小時，重新檢查相機位置
             updateCameraPosition();
         });
     </script>
