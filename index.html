@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="utf-8">
-<title>AI VTuber - Mobile Optimized</title>
+<title>AI VTuber - Touch Enabled</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <style>
     body {
@@ -248,7 +248,8 @@
         <div id="chat-display">
             <div class="message message-ai">
                 Hello! 我準備好了。<br>
-                在手機上請直立觀看，我會自動調整位置喔！
+                你可以用手指移動、旋轉或縮放畫面喔！<br>
+                (單指旋轉，雙指移動/縮放)
             </div>
         </div>
         <div id="input-area">
@@ -289,21 +290,23 @@
 
         const camera = new THREE.PerspectiveCamera(30.0, window.innerWidth / window.innerHeight, 0.1, 20.0);
         
-        // **相機位置邏輯：這部分是重點**
+        // **相機位置邏輯**
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
+            // 只有在還沒載入 VRM 或初次載入時設定，避免使用者移動後被強制重置
+            // 但為了適配手機旋轉，我們還是做適度調整
+            
             if (aspect < 0.8) {
-                // 手機直立模式：相機拉遠、稍微放低，讓人像在畫面中段
-                camera.position.set(0.0, 1.3, 5.5); 
+                // 手機直立模式：初始特寫
+                camera.position.set(0.0, 1.35, 2.2); 
                 if(currentVrm) {
-                    // 確保 OrbitControls 的目標點也微調
-                    controls.target.set(0.0, 1.1, 0.0);
+                    controls.target.set(0.0, 1.35, 0.0);
                 }
             } else {
                 // 桌面寬螢幕模式
                 camera.position.set(0.0, 1.4, 3.5);
                 if(currentVrm) {
-                    controls.target.set(0.0, 1.3, 0.0); // 專注在頭部附近
+                    controls.target.set(0.0, 1.3, 0.0); 
                 }
             }
             camera.updateProjectionMatrix();
@@ -327,13 +330,21 @@
         
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
 
+        // --- 控制器設定 (OrbitControls) ---
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enablePan = false; // 手機上禁止平移，避免誤觸
+        
+        // *** 觸控功能開啟 ***
+        controls.enablePan = true; // 啟用平移 (雙指拖曳可移動位置)
+        controls.screenSpacePanning = true; // 平移方向為螢幕上下左右，而非地面
+        
         controls.enableDamping = true; // 滑動更有質感
         controls.dampingFactor = 0.05;
-        controls.minDistance = 2.0;
+        
+        // 縮放限制
+        controls.minDistance = 1.0; 
         controls.maxDistance = 8.0;
-        // 限制垂直旋轉角度，避免看到裙底或頭頂太過分
+        
+        // 旋轉限制 (避免看到奇怪角度)
         controls.maxPolarAngle = Math.PI / 2 + 0.1; 
         controls.minPolarAngle = Math.PI / 3;
 
