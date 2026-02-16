@@ -474,6 +474,13 @@
             'https://davidkuodcam-crypto.github.io/VTuber/Hip_Hop_Dancing.vrma',
             'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_1.vrma'
         ];
+        
+        // --- BGM 設定 ---
+        const BGM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Happy_new_year.mp3';
+        const bgm = new Audio(BGM_URL);
+        bgm.loop = true; // 循環播放
+        bgm.volume = 0.5; // 音量適中
+        
         let danceActionsMap = []; // 儲存所有舞步的 Action，結構: [ [VRM1_Dance1, VRM2_Dance1], [VRM1_Dance2, VRM2_Dance2]... ]
         
         // ⭐⭐⭐ 新增：回合制與隨機邏輯變數 ⭐⭐⭐
@@ -999,6 +1006,11 @@
             
             // 觸發動態運鏡
             updateCameraPosition();
+            
+            // 播放 BGM
+            bgm.currentTime = 0;
+            bgm.muted = isMuted;
+            bgm.play().catch(e => console.error("BGM error:", e));
 
             // 重置狀態到第 1 回合
             danceRound = 1;
@@ -1086,6 +1098,10 @@
             
             isDancing = false;
             danceBtn.classList.remove('active');
+            
+            // 停止 BGM
+            bgm.pause();
+            bgm.currentTime = 0;
             
             // 停止所有動作
             danceActionsMap.forEach(group => {
@@ -1238,6 +1254,8 @@
             muteBtn.classList.toggle('muted', isMuted);
             muteBtn.innerText = isMuted ? '🔇' : '🔊';
             if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
+            // 連動背景音樂靜音
+            bgm.muted = isMuted;
         });
 
         // 解鎖語音函式 (Android 必須)
