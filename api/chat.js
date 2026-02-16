@@ -25,7 +25,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const GEMINI_MODEL = "gemini-2.0-flash-exp"; 
+    // *** 修改處：將模型更新為 Gemini 2.5 Flash ***
+    const GEMINI_MODEL = "gemini-2.5-flash"; 
     const GOOGLE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
     const requestBody = req.body;
