@@ -321,6 +321,11 @@
 
         const API_URL = "/api/chat"; 
         
+        // --- 偵測作業系統 ---
+        // 用來區分 Android 與 iOS 的處理邏輯
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
         // --- 隨機角色選擇邏輯 ---
         const VRM_MODELS = [
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm', // 角色 C
@@ -341,7 +346,7 @@
         // Android 語音優化：預先儲存偏好語音
         let preferredVoice = null;
         
-        // 取得並過濾語音
+        // 取得並過濾語音 (僅供 Android 使用)
         function updateVoices() {
             if (!window.speechSynthesis) return;
             const voices = window.speechSynthesis.getVoices();
@@ -352,8 +357,6 @@
                                  voices.find(v => v.lang.includes('zh-HK')) ||
                                  voices.find(v => v.lang.includes('zh-CN')) ||
                                  voices.find(v => v.lang.includes('zh'));
-                
-                // console.log("Selected Voice:", preferredVoice ? preferredVoice.name : "System Default");
             }
         }
         
@@ -810,9 +813,9 @@
             const text = userInput.value.trim();
             if (!text) return;
 
-            // Android 音訊解鎖優化：
+            // Android 音訊解鎖優化 (只針對 Android 做這個 Hack)
             // 嘗試播放一個極短的非空字符，確保音訊 Context 被激活
-            if (!isMuted) {
+            if (!isMuted && isAndroid) {
                 try {
                     window.speechSynthesis.cancel();
                     // 使用 "阿" 或 "."，有些引擎忽略空白
@@ -919,11 +922,17 @@
                 window.speechSynthesis.cancel();
                 const u = new SpeechSynthesisUtterance(cleanText);
                 
-                // 強制指定 Android 找到的最佳語音
-                if (preferredVoice) {
-                    u.voice = preferredVoice;
-                    u.lang = preferredVoice.lang;
+                if (isAndroid) {
+                    // Android 邏輯：強制指定找到的最佳語音，解決無聲問題
+                    if (preferredVoice) {
+                        u.voice = preferredVoice;
+                        u.lang = preferredVoice.lang;
+                    } else {
+                        u.lang = 'zh-TW';
+                    }
                 } else {
+                    // iOS / PC 邏輯：完全不指定 voice 物件，只設定語言
+                    // 讓 iOS 自動使用預設高品質女聲 (Siri/Mei-Jia)
                     u.lang = 'zh-TW';
                 }
                 
