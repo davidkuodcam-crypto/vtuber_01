@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="utf-8">
-<title>AI VTuber - Touch Enabled</title>
+<title>AI VTuber - Intro & Touch</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <style>
     body {
@@ -40,7 +40,22 @@
         margin-bottom: 15px;
     }
 
-    .loading-text { color: #555; font-size: 1rem; font-weight: bold; }
+    .loading-text { color: #555; font-size: 1rem; font-weight: bold; margin-bottom: 20px; }
+
+    #start-btn {
+        padding: 12px 30px;
+        font-size: 1.1rem;
+        background: #3498db;
+        color: white;
+        border: none;
+        border-radius: 50px;
+        cursor: pointer;
+        display: none; /* 一開始隱藏，載入完才顯示 */
+        box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+        transition: transform 0.2s, background 0.2s;
+        font-weight: bold;
+    }
+    #start-btn:active { transform: scale(0.95); background: #2980b9; }
 
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
@@ -226,8 +241,9 @@
 <body>
 
     <div id="loading-screen">
-        <div class="loader"></div>
+        <div class="loader" id="loader"></div>
         <div class="loading-text" id="status-text">初始化系統中...</div>
+        <button id="start-btn">點擊開始對話</button>
     </div>
 
     <div id="file-status">
@@ -246,11 +262,7 @@
 
     <div id="chat-container">
         <div id="chat-display">
-            <div class="message message-ai">
-                Hello! 我準備好了。<br>
-                你可以用手指移動、旋轉或縮放畫面喔！<br>
-                (單指旋轉，雙指移動/縮放)
-            </div>
+            <!-- 訊息將由 JavaScript 動態加入 -->
         </div>
         <div id="input-area">
             <button id="mute-btn" title="切換聲音">🔊</button>
@@ -276,6 +288,7 @@
         
         let externalSystemPrompt = ""; 
         let externalKnowledge = "";
+        let openingRemark = ""; // 儲存開場白
 
         const isPreviewEnv = window.location.protocol === 'blob:' || window.location.protocol === 'file:';
 
@@ -293,9 +306,6 @@
         // **相機位置邏輯**
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
-            // 只有在還沒載入 VRM 或初次載入時設定，避免使用者移動後被強制重置
-            // 但為了適配手機旋轉，我們還是做適度調整
-            
             if (aspect < 0.8) {
                 // 手機直立模式：初始特寫
                 camera.position.set(0.0, 1.35, 2.2); 
@@ -334,17 +344,12 @@
         const controls = new OrbitControls(camera, renderer.domElement);
         
         // *** 觸控功能開啟 ***
-        controls.enablePan = true; // 啟用平移 (雙指拖曳可移動位置)
-        controls.screenSpacePanning = true; // 平移方向為螢幕上下左右，而非地面
-        
-        controls.enableDamping = true; // 滑動更有質感
+        controls.enablePan = true; 
+        controls.screenSpacePanning = true; 
+        controls.enableDamping = true;
         controls.dampingFactor = 0.05;
-        
-        // 縮放限制
         controls.minDistance = 1.0; 
         controls.maxDistance = 8.0;
-        
-        // 旋轉限制 (避免看到奇怪角度)
         controls.maxPolarAngle = Math.PI / 2 + 0.1; 
         controls.minPolarAngle = Math.PI / 3;
 
@@ -405,6 +410,10 @@
                     if (res.ok) {
                         const text = await res.text();
                         if (text.trim().length > 0) {
+                            // **修正：特別抓取第一份知識庫作為開場白**
+                            if (fileIndex === 1) {
+                                openingRemark = text;
+                            }
                             externalKnowledge += `\n\n【KB: ${usedPath}】\n${text}`;
                             loadedCount++;
                             fileIndex++;
@@ -446,7 +455,7 @@
                     if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
                     if (rightUpperArm) { rightUpperArm.rotation.z = 1.1; rightUpperArm.rotation.x = 0.15; }
 
-                    updateCameraPosition(); // 模型載入後再次確認視角
+                    updateCameraPosition(); 
                     startBlinking();
                     resolve();
                 },
@@ -457,11 +466,42 @@
             }),
             loadExternalData()
         ]).then(() => {
-            setTimeout(() => {
-                document.getElementById('loading-screen').style.opacity = 0;
-                setTimeout(() => document.getElementById('loading-screen').style.display = 'none', 500);
+            // *** 修改處：準備就緒後，不直接關閉 Loading，而是顯示「開始按鈕」 ***
+            const loaderEl = document.getElementById('loader');
+            const statusText = document.getElementById('status-text');
+            const startBtn = document.getElementById('start-btn');
+            
+            loaderEl.style.display = 'none';
+            statusText.innerText = "準備完成";
+            startBtn.style.display = 'block';
+
+            // 綁定按鈕點擊事件
+            startBtn.addEventListener('click', () => {
+                // 1. 解除 iOS 音訊封鎖 (Priming)
+                if (!isMuted) {
+                    window.speechSynthesis.cancel();
+                    const silent = new SpeechSynthesisUtterance(" ");
+                    silent.volume = 0; silent.rate = 10;
+                    window.speechSynthesis.speak(silent);
+                }
+
+                // 2. 隱藏載入畫面
+                const loadingScreen = document.getElementById('loading-screen');
+                loadingScreen.style.opacity = 0;
+                setTimeout(() => loadingScreen.style.display = 'none', 500);
+
+                // 3. 顯示開場白並朗讀
+                const introText = openingRemark || "Hello! 我準備好了。";
+                addMessage(introText, 'ai');
+                
+                // 為了讓 AI 知道它已經說過這句話（避免重複），我們也可以加入歷史紀錄
+                chatHistory.push({ role: "model", parts: [{ text: introText }] });
+                
+                speak(introText);
+                
+                // 4. 連線測試
                 testApiConnection();
-            }, 800);
+            });
         });
 
         // --- 動畫 ---
@@ -621,8 +661,6 @@
             if (!text) return;
 
             // *** iOS 語音修正 (Priming) ***
-            // iOS Safari 禁止非同步後的自動播放，所以必須在按鈕點擊的當下 (User Gesture)
-            // 先播放一個無聲的片段來「解鎖」語音合成引擎。
             if (!isMuted) {
                 window.speechSynthesis.cancel();
                 const silent = new SpeechSynthesisUtterance(" ");
