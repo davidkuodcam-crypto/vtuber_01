@@ -136,7 +136,7 @@
         overflow-y: auto;
         z-index: 9999;
         pointer-events: none; /* 點擊穿透 */
-        display: none; /* 預設隱藏，JS 偵測到 Android 才開啟 */
+        display: none; /* 預設隱藏 */
         border: 2px solid #00ff00;
         line-height: 1.4;
         white-space: pre-wrap;
@@ -395,7 +395,7 @@
         
         // 修正：如果偵測到是 Android，立刻顯示面板並寫入第一行 Log
         if (isAndroid) {
-            ttsDebug.style.display = 'block';
+            // ttsDebug.style.display = 'block'; // 修改：隱藏除錯面板
             ttsDebug.innerHTML = "=== Android Debug Log (Init) ===<br>";
         }
 
