@@ -295,7 +295,17 @@
         import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
         const API_URL = "/api/chat"; 
-        const VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm';
+        
+        // --- 隨機角色選擇邏輯 ---
+        const VRM_MODELS = [
+            'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm', // 角色 C
+            'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm'  // 角色 W
+        ];
+        
+        // 從陣列中隨機挑選一個 URL
+        const VRM_URL = VRM_MODELS[Math.floor(Math.random() * VRM_MODELS.length)];
+        
+        console.log(`Loading Avatar: ${VRM_URL}`); // 在 Console 顯示載入哪隻角色
 
         let currentVrm = undefined;
         let chatHistory = [];
