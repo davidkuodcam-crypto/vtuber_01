@@ -385,7 +385,7 @@
         </div>
         <div id="input-area">
             <!-- 修改：跳舞按鈕 -->
-            <button id="dance-btn" class="control-btn" title="跳舞模式">💃</button>
+            <button id="dance-btn" class="control-btn" title="熱舞組曲">💃</button>
             <button id="mute-btn" class="control-btn" title="切換聲音">🔊</button>
             <!-- 修改：提示文字改為 請輸入訊息... -->
             <input type="text" id="user-input" placeholder="請輸入訊息..." disabled>
@@ -466,7 +466,20 @@
         let currentVrms = []; // 改為陣列
         let mixers = [];      // 動畫混合器陣列
         let isDancing = false;
-        let danceActions = []; // 儲存所有角色的跳舞動作
+        
+        // --- 舞步清單 ---
+        const DANCE_URLS = [
+            'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma',
+            'https://davidkuodcam-crypto.github.io/VTuber/Flair.vrma',
+            'https://davidkuodcam-crypto.github.io/VTuber/Hip_Hop_Dancing.vrma',
+            'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_1.vrma'
+        ];
+        let danceActionsMap = []; // 儲存所有舞步的 Action，結構: [ [VRM1_Dance1, VRM2_Dance1], [VRM1_Dance2, VRM2_Dance2]... ]
+        
+        // ⭐⭐⭐ 新增：回合制與隨機邏輯變數 ⭐⭐⭐
+        let danceRound = 1;        // 目前回合數 (1, 2, 3...)
+        let danceStepIndex = 0;    // 目前跳到該回合的第幾個動作 (0~3)
+        let vrmDanceSequences = []; // 儲存每個 VRM 在該回合的動作順序 [VRM1_Seq, VRM2_Seq]
 
         let chatHistory = [];
         let isSpeaking = false;
@@ -752,6 +765,17 @@
                     if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
                     if (rightUpperArm) { rightUpperArm.rotation.z = 1.1; rightUpperArm.rotation.x = 0.15; }
 
+                    // --- 重要修改：為每個角色預先建立 Mixer，避免重複建立 ---
+                    const mixer = new THREE.AnimationMixer(vrm.scene);
+                    
+                    // ⭐ FIX: 確保 userData 存在，避免崩潰 ⭐
+                    if (!vrm.userData) {
+                        vrm.userData = {};
+                    }
+                    vrm.userData.mixer = mixer;
+                    
+                    mixers.push(mixer); // 加入全域 mixers 以便 update
+
                     currentVrms.push(vrm); // 加入陣列
                     startBlinking(vrm);    // 個別啟動眨眼
                     resolve();
@@ -829,7 +853,7 @@
                 particlesMesh.geometry.attributes.position.needsUpdate = true;
             }
 
-            // 更新所有跳舞動畫混合器
+            // 更新所有動畫混合器
             mixers.forEach(mixer => mixer.update(deltaTime));
 
             // 更新所有 VRM 角色
@@ -879,19 +903,199 @@
             blinkLoop();
         }
 
-        // --- 跳舞邏輯 (修改：支援切換模式與循環播放) ---
+        // --- 跳舞邏輯 (回合制：奇數回合齊舞，偶數回合 Battle) ---
         const danceBtn = document.getElementById('dance-btn');
-        const danceURL = 'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma';
         
-        // 停止跳舞的函式
+        // 輔助函式：陣列洗牌
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // 核心邏輯：產生該回合的動作順序
+        function generateSequences(round) {
+            vrmDanceSequences = [];
+            const baseSequence = [0, 1, 2, 3]; // 對應 DANCE_URLS 的索引
+            
+            // 為每個角色產生動作表
+            currentVrms.forEach(() => {
+                if (round % 2 !== 0) {
+                    // 奇數回合：固定順序，齊舞
+                    vrmDanceSequences.push([...baseSequence]);
+                } else {
+                    // 偶數回合：隨機順序，Battle
+                    vrmDanceSequences.push(shuffleArray([...baseSequence]));
+                }
+            });
+            
+            // Debug: 顯示該回合模式
+            const mode = round % 2 !== 0 ? "齊舞 (Sync)" : "Battle (Random)";
+            console.log(`[Round ${round}] ${mode}`, vrmDanceSequences);
+        }
+
+        // 載入所有舞步並開始
+        function loadAndPlayDance() {
+            if (currentVrms.length === 0) return; 
+
+            // 如果已經載入過動畫，直接開始
+            if (danceActionsMap.length > 0) {
+                startDance();
+                return;
+            }
+
+            addMessage("準備熱舞組曲...", "system");
+            
+            // 使用 Promise.all 一次載入所有舞步
+            const promises = DANCE_URLS.map(url => new Promise((resolve, reject) => {
+                loader.load(url, (gltf) => {
+                     const vrmAnimations = gltf.userData.vrmAnimations;
+                     if (vrmAnimations && vrmAnimations.length > 0) {
+                         resolve(vrmAnimations[0]);
+                     } else {
+                         resolve(null);
+                     }
+                }, undefined, (e) => {
+                    console.error("Dance Load Error:", url, e);
+                    resolve(null); // 錯誤時回傳 null，避免卡死
+                });
+            }));
+
+            Promise.all(promises).then(animationClips => {
+                // 過濾掉載入失敗的
+                const validClips = animationClips.filter(c => c);
+                
+                if (validClips.length === 0) {
+                    addMessage("舞蹈載入失敗", "system");
+                    return;
+                }
+
+                // 為每個舞步、每個角色建立 Action
+                validClips.forEach(clipData => {
+                    const actionsForThisDance = [];
+                    currentVrms.forEach(vrm => {
+                        // FIX: 安全讀取 userData
+                        if (!vrm.userData || !vrm.userData.mixer) return;
+                        
+                        // 建立 Clip 與 Action
+                        const clip = createVRMAnimationClip(clipData, vrm);
+                        const action = vrm.userData.mixer.clipAction(clip);
+                        actionsForThisDance.push(action);
+                    });
+                    danceActionsMap.push(actionsForThisDance);
+                });
+                
+                addMessage("舞步載入完成，Let's Dance!", "system");
+                startDance();
+            });
+        }
+
+        // 開始跳舞流程
+        function startDance() {
+            isDancing = true;
+            danceBtn.classList.add('active'); 
+            
+            // 觸發動態運鏡
+            updateCameraPosition();
+
+            // 重置狀態到第 1 回合
+            danceRound = 1;
+            danceStepIndex = 0;
+
+            // 產生第 1 回合的動作表
+            generateSequences(danceRound);
+
+            // 開始播放
+            playCurrentStep();
+        }
+
+        // 播放目前回合、目前步驟的動作
+        function playCurrentStep() {
+            if (!isDancing) return;
+
+            // 移除舊的監聽器 (防止重複綁定) - 以第一個角色的 Mixer 為主時鐘
+            if (currentVrms[0]?.userData?.mixer) {
+                currentVrms[0].userData.mixer.removeEventListener('finished', onDanceFinished);
+            }
+
+            // 對每個角色播放其對應的動作
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm.userData.mixer) return;
+
+                // 取得該角色在本回合、本步驟應該跳的動作索引
+                const moveIndex = vrmDanceSequences[vrmIndex][danceStepIndex];
+                
+                // 從 Action Map 找出對應的 Action
+                const action = danceActionsMap[moveIndex]?.[vrmIndex];
+
+                if (action) {
+                    action.reset();
+                    action.setLoop(THREE.LoopOnce); // 設定只播放一次
+                    action.clampWhenFinished = true; // 播完停在最後一幀
+                    action.fadeIn(0.5); 
+                    action.play();
+                }
+            });
+
+            // 監聽第一個角色的 Mixer，當他的動作結束時，觸發下一步
+            // 注意：若兩人動作長度不同，會以第一人為準，第二人會被淡出切換 (比乾等好)
+            if (currentVrms[0]?.userData?.mixer) {
+                currentVrms[0].userData.mixer.addEventListener('finished', onDanceFinished);
+            }
+        }
+
+        // 當一個舞步結束時的回呼函式
+        function onDanceFinished() {
+            if (!isDancing) return;
+
+            // 淡出目前所有角色的動作
+            currentVrms.forEach((vrm, vrmIndex) => {
+                const moveIndex = vrmDanceSequences[vrmIndex][danceStepIndex];
+                const action = danceActionsMap[moveIndex]?.[vrmIndex];
+                if (action) action.fadeOut(0.5);
+            });
+
+            // 前進到下一步
+            danceStepIndex++;
+            
+            // 檢查是否該回合結束 (4個動作都跳完了)
+            if (danceStepIndex >= 4) {
+                danceStepIndex = 0;
+                danceRound++;
+                
+                // 產生新回合的動作表 (奇數齊舞，偶數 Battle)
+                generateSequences(danceRound);
+                
+                // 顯示回合提示 (可選，避免洗版僅顯示特定回合)
+                if (danceRound % 2 === 0) {
+                    addMessage(`Round ${danceRound}: Battle Mode!`, "system");
+                } else {
+                    addMessage(`Round ${danceRound}: Sync Mode!`, "system");
+                }
+            }
+            
+            // 播放
+            playCurrentStep();
+        }
+
+        // 停止跳舞
         function stopDance() {
             if (!isDancing) return;
             
-            // 淡出動畫
-            danceActions.forEach(action => action.fadeOut(0.5));
-            
             isDancing = false;
-            danceBtn.classList.remove('active'); // 移除按鈕啟用樣式
+            danceBtn.classList.remove('active');
+            
+            // 停止所有動作
+            danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            // 移除監聽器
+            if (currentVrms[0]?.userData?.mixer) {
+                currentVrms[0].userData.mixer.removeEventListener('finished', onDanceFinished);
+            }
             
             // 重置相機
             setTimeout(() => {
@@ -899,66 +1103,12 @@
             }, 500);
         }
 
-        // 切換跳舞狀態
         function toggleDance() {
             if (isDancing) {
                 stopDance();
             } else {
                 loadAndPlayDance();
             }
-        }
-        
-        // 載入並播放動畫的函式
-        function loadAndPlayDance() {
-            if (currentVrms.length === 0) return; 
-
-            // 如果已經載入過動畫 action，直接播放
-            if (danceActions.length > 0) {
-                startDance();
-                return;
-            }
-
-            addMessage("準備跳舞...", "system");
-            
-            // 讀取 VRMA 檔案 (讀一次就好)
-            loader.load(danceURL, (gltf) => {
-                const vrmAnimations = gltf.userData.vrmAnimations;
-                if (!vrmAnimations || vrmAnimations.length === 0) return;
-
-                // 為每一個角色創建獨立的動畫剪輯與混合器
-                currentVrms.forEach(vrm => {
-                    // 重要：必須為每個 VRM 實例重新綁定動畫
-                    const clip = createVRMAnimationClip(vrmAnimations[0], vrm);
-                    const mixer = new THREE.AnimationMixer(vrm.scene);
-                    const action = mixer.clipAction(clip);
-                    
-                    mixers.push(mixer);
-                    danceActions.push(action);
-                });
-                
-                startDance();
-
-            }, undefined, (e) => {
-                console.error("Dance Load Error:", e);
-                addMessage("舞蹈載入失敗", "system");
-            });
-        }
-
-        function startDance() {
-            isDancing = true;
-            danceBtn.classList.add('active'); // 設定按鈕為啟用樣式
-            
-            // ⭐ 觸發動態運鏡
-            updateCameraPosition();
-
-            // 讓所有角色同時開始跳舞 (循環播放)
-            danceActions.forEach((action) => {
-                action.reset();
-                action.setLoop(THREE.LoopRepeat); // 設定為無限循環
-                action.clampWhenFinished = false; 
-                action.fadeIn(0.5); 
-                action.play();
-            });
         }
 
         danceBtn.addEventListener('click', toggleDance);
