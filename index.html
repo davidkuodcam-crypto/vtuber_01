@@ -268,6 +268,9 @@
 
 </style>
 
+<!-- ⭐ 新增: ES Module Shims，確保 importmap 在所有瀏覽器都能正常運作 -->
+<script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+
 <script type="importmap">
 {
     "imports": {
@@ -814,6 +817,23 @@
             if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
         });
 
+        // 解鎖語音函式 (Android 必須)
+        async function unlockTTS() {
+            return new Promise(resolve => {
+                try {
+                    const u = new SpeechSynthesisUtterance(" ");
+                    u.volume = 0; // 靜音
+                    u.rate = 10; // 超快
+                    u.onend = resolve;
+                    //有些瀏覽器 onend 不會觸發如果 volume 是 0，加個 timeout 保險
+                    setTimeout(resolve, 200); 
+                    speechSynthesis.speak(u);
+                } catch(e) {
+                    resolve();
+                }
+            });
+        }
+
         async function handleSendMessage() {
             // 防止重複點擊
             if (userInput.disabled || sendBtn.disabled) return;
@@ -821,19 +841,13 @@
             const text = userInput.value.trim();
             if (!text) return;
 
-            // **Android 終極修正：佔線機制**
-            // 在您點擊的瞬間，先讓語音引擎播放一個「空白」，保持連線狀態
-            // 這樣瀏覽器就會認為「聲音已經在播放了」，後面的 AI 回答就不會被擋
-            if (!isMuted && isAndroid) {
-                try {
-                    window.speechSynthesis.cancel(); // 清空之前的
-                    const keepAlive = new SpeechSynthesisUtterance(" "); // 播放空白
-                    keepAlive.volume = 0.1; // 極小聲，但不是 0 (有些瀏覽器會忽略 0)
-                    keepAlive.rate = 2; // 快速播完
-                    if (preferredVoice) keepAlive.voice = preferredVoice;
-                    window.speechSynthesis.speak(keepAlive);
-                    // 注意：這裡不設定 isSpeaking = true，避免嘴巴亂動
-                } catch (e) { console.warn("Audio wake-up failed", e); }
+            // ⭐⭐⭐ 每次發送訊息前都重新解鎖語音（Android 必須）
+            if (!isMuted && window.speechSynthesis) {
+                // 用 race 避免 unlock 卡死
+                await Promise.race([
+                    unlockTTS(),
+                    new Promise(r => setTimeout(r, 300))
+                ]);
             }
 
             userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
@@ -921,44 +935,69 @@
             }
         }
 
-        function speak(text) {
+        async function speak(text) {
             if (isMuted) return;
-            // Android 修正：放寬正則表達式，保留更多中文與符號，避免因為全是符號而被清空
-            const cleanText = text.replace(/\[.*?\]\(.*?\)/g, '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?！。，、…~]/g, '');
-            if(!cleanText || cleanText.length === 0) return;
-            
+            if (!window.speechSynthesis) return;
+
+            // 移除網址與符號，避免 Android TTS 當掉
+            const cleanText = text
+                .replace(/\[.*?\]\(.*?\)/g, '')
+                .replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?！。，、…~]/g, '');
+
+            if (!cleanText || cleanText.length === 0) return;
+
             try {
-                // 如果是 Android，不要 cancel()，因為我們前面可能正在播放「佔線音訊」
-                // 直接 speak() 會自動排隊或插播
-                if (!isAndroid) window.speechSynthesis.cancel();
-                
+                // ⭐⭐⭐ 等待 voices 載入（Android 超重要）
+                if (speechSynthesis.getVoices().length === 0) {
+                    await new Promise(r => setTimeout(r, 300));
+                }
+
+                // ⭐⭐⭐ 每次說話前都先 cancel（避免卡住）
+                speechSynthesis.cancel();
+
                 const u = new SpeechSynthesisUtterance(cleanText);
-                
+
+                // ===== Android 專用強化 =====
                 if (isAndroid) {
-                    // Android 邏輯：嘗試重新尋找語音，避免一開始沒載入到
-                    if (!preferredVoice) updateVoices();
-                    
-                    if (preferredVoice) {
-                        u.voice = preferredVoice;
-                        u.lang = preferredVoice.lang;
+
+                    const voices = speechSynthesis.getVoices();
+
+                    // 依優先順序找中文語音
+                    const voice =
+                        voices.find(v => v.lang === 'zh-TW') ||
+                        voices.find(v => v.lang.includes('zh-TW')) ||
+                        voices.find(v => v.lang.includes('zh-HK')) ||
+                        voices.find(v => v.lang.includes('zh-CN')) ||
+                        voices.find(v => v.lang.includes('zh'));
+
+                    if (voice) {
+                        u.voice = voice;
+                        u.lang  = voice.lang;
                     } else {
-                        // 真的找不到，回退到 zh-CN (Android 預設多半有這個)，再沒有就 zh-TW
-                        u.lang = 'zh-CN'; 
+                        u.lang = 'zh-TW';
                     }
+
                 } else {
-                    // iOS / PC 邏輯：完全不指定 voice 物件，只設定語言
-                    // 讓 iOS 自動使用預設高品質女聲 (Siri/Mei-Jia)
+                    // iPhone / PC 保持簡單即可
                     u.lang = 'zh-TW';
                 }
-                
-                u.rate = 1.0; // 語速正常
+
+                u.rate  = 1.0;
                 u.pitch = 1.0;
+                u.volume = 1;
+
                 u.onstart = () => isSpeaking = true;
-                u.onend = () => { isSpeaking = false; if(currentVrm) currentVrm.expressionManager.setValue('aa', 0); };
-                u.onerror = (e) => console.error("TTS Error:", e); // 錯誤除錯
-                window.speechSynthesis.speak(u);
+                u.onend   = () => {
+                    isSpeaking = false;
+                    if(currentVrm) currentVrm.expressionManager.setValue('aa', 0);
+                };
+
+                u.onerror = (e) => console.error("TTS error:", e);
+
+                speechSynthesis.speak(u);
+
             } catch (err) {
-                console.error("SpeechSynthesis error:", err);
+                console.error("Speech error:", err);
             }
         }
 
