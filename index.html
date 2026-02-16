@@ -55,6 +55,9 @@
         transition: transform 0.2s, background 0.2s;
         font-weight: bold;
         text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        /* Android 觸控優化 */
+        touch-action: manipulation; 
+        -webkit-tap-highlight-color: transparent;
     }
     #start-btn:active { transform: scale(0.95); background: #b71c1c; }
 
@@ -546,26 +549,44 @@
             statusText.innerText = "準備完成";
             startBtn.style.display = 'block';
 
-            startBtn.addEventListener('click', () => {
-                if (!isMuted) {
-                    window.speechSynthesis.cancel();
-                    const silent = new SpeechSynthesisUtterance(" ");
-                    silent.volume = 0; silent.rate = 10;
-                    window.speechSynthesis.speak(silent);
-                }
-
+            // 修改：優化安卓點擊處理
+            const handleStart = (e) => {
+                // 1. UI First: 確保畫面先有反應
                 const loadingScreen = document.getElementById('loading-screen');
+                if (loadingScreen.style.opacity === '0') return; // 避免重複觸發
+
                 loadingScreen.style.opacity = 0;
+                loadingScreen.style.pointerEvents = 'none'; // 防止連點
                 setTimeout(() => loadingScreen.style.display = 'none', 500);
 
+                // 2. Audio Unlock (Wrapped in try-catch)
+                if (!isMuted && window.speechSynthesis) {
+                    try {
+                        window.speechSynthesis.cancel();
+                        const silent = new SpeechSynthesisUtterance(" ");
+                        silent.volume = 0; silent.rate = 10;
+                        window.speechSynthesis.speak(silent);
+                    } catch (err) {
+                        console.warn("Audio init warning:", err);
+                    }
+                }
+
+                // 3. Logic
                 const introText = openingRemark || "（未讀取到 KnowledgeBase01.txt，請檢查檔案）";
                 addMessage(introText, 'ai');
                 
                 chatHistory.push({ role: "model", parts: [{ text: introText }] });
                 
-                speak(introText);
+                // 4. Speak with slight delay
+                setTimeout(() => speak(introText), 500);
                 
                 testApiConnection();
+            };
+
+            startBtn.addEventListener('click', handleStart);
+            startBtn.addEventListener('touchend', (e) => {
+                e.preventDefault(); // 防止觸發 click 導致雙重觸發，並提高反應速度
+                handleStart(e);
             });
         });
 
