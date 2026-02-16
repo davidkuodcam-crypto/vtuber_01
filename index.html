@@ -620,6 +620,17 @@
             const text = userInput.value.trim();
             if (!text) return;
 
+            // *** iOS 語音修正 (Priming) ***
+            // iOS Safari 禁止非同步後的自動播放，所以必須在按鈕點擊的當下 (User Gesture)
+            // 先播放一個無聲的片段來「解鎖」語音合成引擎。
+            if (!isMuted) {
+                window.speechSynthesis.cancel();
+                const silent = new SpeechSynthesisUtterance(" ");
+                silent.volume = 0; // 靜音
+                silent.rate = 10;  // 快速播放結束
+                window.speechSynthesis.speak(silent);
+            }
+
             userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
             addMessage(text, 'user');
             
