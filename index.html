@@ -475,6 +475,19 @@
             'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_1.vrma'
         ];
         
+        // --- 動作設定 (說話 / 閒置) ---
+        // 修改：分離說話動作，C 使用 Breathing_Idle，W 使用 Talking_01
+        const TALK_ANIMATION_C_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Breathing_Idle.vrma';
+        const TALK_ANIMATION_W_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Talking_01.vrma';
+        
+        const IDLE_ANIMATION_C_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Taunt_with_Skin.vrma'; // C 的閒置動作
+        const IDLE_ANIMATION_W_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle_01.vrma'; // W 的閒置動作
+        
+        let talkingActionC = null; // C 的說話動作
+        let talkingActionW = null; // W 的說話動作
+        let idleActionC = null;    // C 的閒置動作 (Taunt)
+        let idleActionW = null;    // W 的閒置動作 (Idle_01)
+
         // --- BGM 設定 ---
         const BGM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Happy_new_year.mp3';
         const bgm = new Audio(BGM_URL);
@@ -783,7 +796,8 @@
                     
                     mixers.push(mixer); // 加入全域 mixers 以便 update
 
-                    currentVrms.push(vrm); // 加入陣列
+                    // 修改：依索引指定陣列位置，確保 C (index 0) 永遠是第一個
+                    currentVrms[index] = vrm; 
                     startBlinking(vrm);    // 個別啟動眨眼
                     resolve();
                 }, undefined, (e) => {
@@ -793,19 +807,84 @@
             });
         });
 
-        Promise.all([...loadPromises, loadExternalData()]).then(() => {
-            const loaderEl = document.getElementById('loader');
-            const statusText = document.getElementById('status-text');
-            const startBtn = document.getElementById('start-btn');
-            
-            loaderEl.style.display = 'none';
-            statusText.innerText = `準備完成 (${currentVrms.length} 人)`;
-            startBtn.style.display = 'block';
-            
-            // 更新相機以對準兩人中心
-            updateCameraPosition();
+        // 獨立載入說話動作
+        function loadTalkAnimations() {
+            // 載入 C 的說話動作 (Breathing_Idle)
+            const pC = new Promise((resolve) => {
+                loader.load(TALK_ANIMATION_C_URL, (gltf) => {
+                    const vrmAnimations = gltf.userData.vrmAnimations;
+                    if (vrmAnimations && vrmAnimations.length > 0 && currentVrms[0]) {
+                         const clip = createVRMAnimationClip(vrmAnimations[0], currentVrms[0]);
+                         talkingActionC = currentVrms[0].userData.mixer.clipAction(clip);
+                         talkingActionC.loop = THREE.LoopRepeat;
+                    }
+                    resolve();
+                }, undefined, (e) => {
+                    console.error("Talk C Anim Error:", e);
+                    resolve();
+                });
+            });
 
-            // 修改：優化安卓點擊處理
+            // 載入 W 的說話動作 (Talking_01)
+            const pW = new Promise((resolve) => {
+                loader.load(TALK_ANIMATION_W_URL, (gltf) => {
+                    const vrmAnimations = gltf.userData.vrmAnimations;
+                    if (vrmAnimations && vrmAnimations.length > 0 && currentVrms[1]) {
+                         const clip = createVRMAnimationClip(vrmAnimations[0], currentVrms[1]);
+                         talkingActionW = currentVrms[1].userData.mixer.clipAction(clip);
+                         talkingActionW.loop = THREE.LoopRepeat;
+                    }
+                    resolve();
+                }, undefined, (e) => {
+                    console.error("Talk W Anim Error:", e);
+                    resolve();
+                });
+            });
+
+            return Promise.all([pC, pW]);
+        }
+
+        // ⭐⭐⭐ 獨立載入閒置動作 (Taunt & Idle) ⭐⭐⭐
+        function loadIdleAnimations() {
+            // 載入 C 的嘲諷動作
+            const pC = new Promise((resolve) => {
+                loader.load(IDLE_ANIMATION_C_URL, (gltf) => {
+                    const vrmAnimations = gltf.userData.vrmAnimations;
+                    if (vrmAnimations && vrmAnimations.length > 0 && currentVrms[0]) {
+                         const clip = createVRMAnimationClip(vrmAnimations[0], currentVrms[0]);
+                         idleActionC = currentVrms[0].userData.mixer.clipAction(clip);
+                         idleActionC.loop = THREE.LoopRepeat;
+                         idleActionC.play();
+                    }
+                    resolve();
+                }, undefined, (e) => {
+                    console.error("Idle C Anim Error:", e);
+                    resolve();
+                });
+            });
+
+            // 載入 W 的閒置動作 (Idle_01)
+            const pW = new Promise((resolve) => {
+                loader.load(IDLE_ANIMATION_W_URL, (gltf) => {
+                    const vrmAnimations = gltf.userData.vrmAnimations;
+                    if (vrmAnimations && vrmAnimations.length > 0 && currentVrms[1]) {
+                         const clip = createVRMAnimationClip(vrmAnimations[0], currentVrms[1]);
+                         idleActionW = currentVrms[1].userData.mixer.clipAction(clip);
+                         idleActionW.loop = THREE.LoopRepeat;
+                         idleActionW.play();
+                    }
+                    resolve();
+                }, undefined, (e) => {
+                    console.error("Idle W Anim Error:", e);
+                    resolve();
+                });
+            });
+
+            return Promise.all([pC, pW]);
+        }
+
+        Promise.all([...loadPromises, loadExternalData()]).then(() => {
+            // 定義啟動函式
             const handleStart = (e) => {
                 // 1. UI First: 確保畫面先有反應
                 const loadingScreen = document.getElementById('loading-screen');
@@ -832,10 +911,25 @@
                 testApiConnection();
             };
 
-            startBtn.addEventListener('click', handleStart);
-            startBtn.addEventListener('touchend', (e) => {
-                e.preventDefault(); // 防止觸發 click 導致雙重觸發，並提高反應速度
-                handleStart(e);
+            // 確保說話和閒置動作載入 (需等 C 角色載入完畢)
+            Promise.all([loadTalkAnimations(), loadIdleAnimations()]).then(() => {
+                const loaderEl = document.getElementById('loader');
+                const statusText = document.getElementById('status-text');
+                const startBtn = document.getElementById('start-btn');
+                
+                loaderEl.style.display = 'none';
+                statusText.innerText = `準備完成 (${currentVrms.length} 人)`;
+                startBtn.style.display = 'block';
+                
+                // 更新相機以對準兩人中心
+                updateCameraPosition();
+                
+                // 綁定事件：在這裡 startBtn 肯定已定義
+                startBtn.addEventListener('click', handleStart);
+                startBtn.addEventListener('touchend', (e) => {
+                    e.preventDefault(); // 防止觸發 click 導致雙重觸發，並提高反應速度
+                    handleStart(e);
+                });
             });
         });
 
@@ -864,15 +958,32 @@
             mixers.forEach(mixer => mixer.update(deltaTime));
 
             // 更新所有 VRM 角色
-            currentVrms.forEach(vrm => {
+            currentVrms.forEach((vrm, index) => {
+                if(!vrm) return; // 避免陣列有空洞
                 vrm.update(deltaTime);
                 
                 // 如果沒有在跳舞，才執行自然的呼吸動作
                 if (!isDancing) {
-                    const spine = vrm.humanoid.getNormalizedBoneNode('spine');
-                    if (spine) {
-                        spine.rotation.x = Math.sin(elapsedTime * 1.5) * 0.02;
-                        spine.rotation.y = Math.sin(elapsedTime * 0.8) * 0.02;
+                    const isC = (index === 0);
+                    const isW = (index === 1);
+                    let playBreathing = true;
+
+                    // C: 有閒置動作時不呼吸，有說話動作時不呼吸
+                    if (isC && (idleActionC || (isSpeaking && talkingActionC))) {
+                        playBreathing = false;
+                    }
+                    
+                    // W: 有閒置動作時不呼吸，有說話動作時不呼吸
+                    if (isW && (idleActionW || (isSpeaking && talkingActionW))) {
+                        playBreathing = false;
+                    }
+
+                    if (playBreathing) {
+                        const spine = vrm.humanoid.getNormalizedBoneNode('spine');
+                        if (spine) {
+                            spine.rotation.x = Math.sin(elapsedTime * 1.5) * 0.02;
+                            spine.rotation.y = Math.sin(elapsedTime * 0.8) * 0.02;
+                        }
                     }
                 }
 
@@ -984,7 +1095,7 @@
                     const actionsForThisDance = [];
                     currentVrms.forEach(vrm => {
                         // FIX: 安全讀取 userData
-                        if (!vrm.userData || !vrm.userData.mixer) return;
+                        if (!vrm || !vrm.userData || !vrm.userData.mixer) return;
                         
                         // 建立 Clip 與 Action
                         const clip = createVRMAnimationClip(clipData, vrm);
@@ -1006,6 +1117,10 @@
             
             // 觸發動態運鏡
             updateCameraPosition();
+            
+            // 停止閒置動作
+            if (idleActionC) idleActionC.fadeOut(0.5);
+            if (idleActionW) idleActionW.fadeOut(0.5); // New for W
             
             // 播放 BGM
             bgm.currentTime = 0;
@@ -1034,7 +1149,7 @@
 
             // 對每個角色播放其對應的動作
             currentVrms.forEach((vrm, vrmIndex) => {
-                if (!vrm.userData.mixer) return;
+                if (!vrm || !vrm.userData.mixer) return;
 
                 // 取得該角色在本回合、本步驟應該跳的動作索引
                 const moveIndex = vrmDanceSequences[vrmIndex][danceStepIndex];
@@ -1117,6 +1232,16 @@
             setTimeout(() => {
                 updateCameraPosition();
             }, 500);
+            
+            // 恢復閒置動作
+            if (idleActionC) {
+                idleActionC.reset();
+                idleActionC.fadeIn(0.5).play();
+            }
+            if (idleActionW) {
+                idleActionW.reset();
+                idleActionW.fadeIn(0.5).play();
+            }
         }
 
         function toggleDance() {
@@ -1146,6 +1271,7 @@
             
             // 套用到所有角色
             currentVrms.forEach(vrm => {
+                if(!vrm) return;
                 VALID_EMOTIONS.forEach(emo => vrm.expressionManager.setValue(emo, 0));
                 if (emotionName !== 'neutral') vrm.expressionManager.setValue(emotionName, 0.8);
             });
@@ -1158,10 +1284,14 @@
             let shapeName = actionName === 'blink_left' ? 'blinkLeft' : (actionName === 'blink_right' ? 'blinkRight' : 'blink');
             window.actionActive = true;
             
-            currentVrms.forEach(vrm => vrm.expressionManager.setValue(shapeName, 1.0));
+            currentVrms.forEach(vrm => {
+                if(vrm) vrm.expressionManager.setValue(shapeName, 1.0);
+            });
             
             setTimeout(() => {
-                currentVrms.forEach(vrm => vrm.expressionManager.setValue(shapeName, 0));
+                currentVrms.forEach(vrm => {
+                    if(vrm) vrm.expressionManager.setValue(shapeName, 0);
+                });
                 window.actionActive = false;
                 updateDebugDisplay(null, 'Done');
             }, duration);
@@ -1443,19 +1573,51 @@
                     u.lang = 'zh-TW';
                 }
 
-                u.rate  = 1.0;
-                u.pitch = 1.0;
                 u.volume = 1;
 
                 u.onstart = () => {
                     isSpeaking = true;
                     logTTS("開始播放 (onstart)");
+                    // ⭐⭐⭐ 新增：只有在沒有跳舞，且有專屬動作時才播放 ⭐⭐⭐
+                    if (!isDancing) {
+                        // 淡出閒置
+                        if (idleActionC) idleActionC.fadeOut(0.2);
+                        if (idleActionW) idleActionW.fadeOut(0.2); // New for W
+                        // 淡入說話 (C)
+                        if (talkingActionC) {
+                            talkingActionC.reset();
+                            talkingActionC.fadeIn(0.2).play();
+                        }
+                        // 淡入說話 (W) - NEW
+                        if (talkingActionW) {
+                            talkingActionW.reset();
+                            talkingActionW.fadeIn(0.2).play();
+                        }
+                    }
                 };
                 u.onend   = () => {
                     isSpeaking = false;
                     logTTS("播放結束 (onend)");
                     // 結束時讓所有角色閉嘴
-                    currentVrms.forEach(vrm => vrm.expressionManager.setValue('aa', 0));
+                    currentVrms.forEach(vrm => {
+                        if(vrm) vrm.expressionManager.setValue('aa', 0);
+                    });
+                    
+                    // ⭐⭐⭐ 新增：停止說話動作，淡出回原本狀態 ⭐⭐⭐
+                    if (talkingActionC) talkingActionC.fadeOut(0.5);
+                    if (talkingActionW) talkingActionW.fadeOut(0.5); // NEW
+                    
+                    // 恢復閒置
+                    if (!isDancing) {
+                        if (idleActionC) {
+                            idleActionC.reset(); // 或許不需要 reset，視乎動作銜接
+                            idleActionC.fadeIn(0.5).play();
+                        }
+                        if (idleActionW) {
+                            idleActionW.reset(); 
+                            idleActionW.fadeIn(0.5).play();
+                        }
+                    }
                 };
 
                 u.onerror = (e) => {
