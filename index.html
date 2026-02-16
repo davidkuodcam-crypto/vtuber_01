@@ -70,7 +70,7 @@
         border-radius: 20px;
         font-size: 12px;
         font-weight: bold;
-        color: #bf360c; /* 深橘紅色文字 */
+        color: #333; /* 修改：改為一般黑色/深灰色 */
         display: flex; align-items: center;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         z-index: 100;
@@ -173,7 +173,7 @@
 
     .message-user { 
         align-self: flex-end; 
-        background-color: rgba(211, 47, 47, 0.9); /* 深紅色 */
+        background-color: rgba(30, 136, 229, 0.9); /* 修改：藍底 */
         border-bottom-right-radius: 2px; 
         color: #fff;
     }
@@ -188,7 +188,7 @@
     .message-system { align-self: center; background: transparent; color: #e65100; font-size: 12px; font-style: italic; text-shadow: none; text-align: center;}
 
     .message a { color: #1e88e5; text-decoration: none; border-bottom: 1px dotted #1e88e5; }
-    .message-user a { color: #ffe0b2; }
+    .message-user a { color: #bbdefb; } /* 修改：使用者訊息內的連結顏色 */
 
     #input-area { display: flex; gap: 8px; align-items: center; }
     
@@ -209,12 +209,13 @@
         padding: 0 20px; 
         height: 44px; 
         border-radius: 22px; border: none;
-        background: linear-gradient(to right, #d32f2f, #c62828);
-        color: #ffd700; font-weight: bold; cursor: pointer;
+        background: linear-gradient(to right, #1976d2, #1565c0); /* 修改：藍色漸層 */
+        color: #fff; /* 修改：文字白色 */
+        font-weight: bold; cursor: pointer;
         transition: background 0.2s;
-        box-shadow: 0 4px 10px rgba(198, 40, 40, 0.3);
+        box-shadow: 0 4px 10px rgba(21, 101, 192, 0.3); /* 修改：藍色陰影 */
         flex-shrink: 0;
-        border: 1px solid #ffd700;
+        border: 1px solid #90caf9; /* 修改：邊框顏色 */
     }
     #send-btn:active { transform: scale(0.95); }
     #send-btn:disabled { background: #bdbdbd; box-shadow: none; cursor: not-allowed; border: none; color: #fff;}
@@ -283,7 +284,8 @@
         </div>
         <div id="input-area">
             <button id="mute-btn" title="切換聲音">🔊</button>
-            <input type="text" id="user-input" placeholder="輸入新年祝福..." disabled>
+            <!-- 修改：提示文字改為 請輸入訊息... -->
+            <input type="text" id="user-input" placeholder="請輸入訊息..." disabled>
             <button id="send-btn" disabled>發送</button>
         </div>
     </div>
