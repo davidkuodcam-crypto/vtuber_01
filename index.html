@@ -322,7 +322,6 @@
         const API_URL = "/api/chat"; 
         
         // --- 偵測作業系統 ---
-        // 用來區分 Android 與 iOS 的處理邏輯
         const isAndroid = /Android/i.test(navigator.userAgent);
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
@@ -343,26 +342,35 @@
         let currentEmotion = 'neutral';
         let isMuted = false;
         
-        // Android 語音優化：預先儲存偏好語音
+        // Android 語音優化
         let preferredVoice = null;
         
-        // 取得並過濾語音 (僅供 Android 使用)
         function updateVoices() {
             if (!window.speechSynthesis) return;
             const voices = window.speechSynthesis.getVoices();
+            // console.log("Voices loaded:", voices.length); // Debug
             if (voices.length > 0) {
-                // 優先順序：台灣繁中 -> 香港粵語 -> 中國普通話 -> 任何中文
-                preferredVoice = voices.find(v => v.lang === 'zh-TW') ||
-                                 voices.find(v => v.lang.includes('zh-TW')) ||
-                                 voices.find(v => v.lang.includes('zh-HK')) ||
-                                 voices.find(v => v.lang.includes('zh-CN')) ||
+                // Android 優先策略：
+                // 1. 本地 (localService) 的繁體中文
+                // 2. 任何繁體中文 (zh-TW)
+                // 3. 任何中文 (zh) - 避免無聲
+                preferredVoice = voices.find(v => (v.lang === 'zh-TW' || v.lang.includes('zh-TW')) && v.localService) ||
+                                 voices.find(v => v.lang === 'zh-TW' || v.lang.includes('zh-TW')) ||
                                  voices.find(v => v.lang.includes('zh'));
             }
         }
         
+        // 確保語音列表載入 (Android 需要重試)
         if (window.speechSynthesis) {
             window.speechSynthesis.onvoiceschanged = updateVoices;
-            updateVoices(); // 嘗試初始載入
+            updateVoices(); 
+            // 強制重試機制，每秒檢查一次，直到抓到語音或過了 5 秒
+            let voiceRetryCount = 0;
+            const voiceInterval = setInterval(() => {
+                updateVoices();
+                voiceRetryCount++;
+                if (preferredVoice || voiceRetryCount > 5) clearInterval(voiceInterval);
+            }, 1000);
         }
 
         let externalSystemPrompt = ""; 
@@ -813,18 +821,19 @@
             const text = userInput.value.trim();
             if (!text) return;
 
-            // Android 音訊解鎖優化 (只針對 Android 做這個 Hack)
-            // 嘗試播放一個極短的非空字符，確保音訊 Context 被激活
+            // **Android 終極修正：佔線機制**
+            // 在您點擊的瞬間，先讓語音引擎播放一個「空白」，保持連線狀態
+            // 這樣瀏覽器就會認為「聲音已經在播放了」，後面的 AI 回答就不會被擋
             if (!isMuted && isAndroid) {
                 try {
-                    window.speechSynthesis.cancel();
-                    // 使用 "阿" 或 "."，有些引擎忽略空白
-                    const silent = new SpeechSynthesisUtterance("阿"); 
-                    silent.volume = 0.01; // 極低音量
-                    silent.rate = 10;
-                    if (preferredVoice) silent.voice = preferredVoice;
-                    window.speechSynthesis.speak(silent);
-                } catch (e) { console.warn("Audio init failed", e); }
+                    window.speechSynthesis.cancel(); // 清空之前的
+                    const keepAlive = new SpeechSynthesisUtterance(" "); // 播放空白
+                    keepAlive.volume = 0.1; // 極小聲，但不是 0 (有些瀏覽器會忽略 0)
+                    keepAlive.rate = 2; // 快速播完
+                    if (preferredVoice) keepAlive.voice = preferredVoice;
+                    window.speechSynthesis.speak(keepAlive);
+                    // 注意：這裡不設定 isSpeaking = true，避免嘴巴亂動
+                } catch (e) { console.warn("Audio wake-up failed", e); }
             }
 
             userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
@@ -919,16 +928,22 @@
             if(!cleanText || cleanText.length === 0) return;
             
             try {
-                window.speechSynthesis.cancel();
+                // 如果是 Android，不要 cancel()，因為我們前面可能正在播放「佔線音訊」
+                // 直接 speak() 會自動排隊或插播
+                if (!isAndroid) window.speechSynthesis.cancel();
+                
                 const u = new SpeechSynthesisUtterance(cleanText);
                 
                 if (isAndroid) {
-                    // Android 邏輯：強制指定找到的最佳語音，解決無聲問題
+                    // Android 邏輯：嘗試重新尋找語音，避免一開始沒載入到
+                    if (!preferredVoice) updateVoices();
+                    
                     if (preferredVoice) {
                         u.voice = preferredVoice;
                         u.lang = preferredVoice.lang;
                     } else {
-                        u.lang = 'zh-TW';
+                        // 真的找不到，回退到 zh-CN (Android 預設多半有這個)，再沒有就 zh-TW
+                        u.lang = 'zh-CN'; 
                     }
                 } else {
                     // iOS / PC 邏輯：完全不指定 voice 物件，只設定語言
