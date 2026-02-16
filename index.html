@@ -5,6 +5,9 @@
 <title>AI VTuber - Golden New Year</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <style>
+    /* 全域設定：確保邊框計算不影響寬度 */
+    * { box-sizing: border-box; }
+
     body {
         margin: 0;
         padding: 0;
@@ -15,7 +18,8 @@
         overscroll-behavior: none; 
         width: 100vw;
         height: 100vh;
-        height: -webkit-fill-available;
+        /* 解決 Safari/Chrome Mobile 高度問題 */
+        height: 100dvh; 
     }
     
     /* 讀取畫面 */
@@ -58,6 +62,7 @@
         /* Android 觸控優化 */
         touch-action: manipulation; 
         -webkit-tap-highlight-color: transparent;
+        user-select: none;
     }
     #start-btn:active { transform: scale(0.95); background: #b71c1c; }
 
@@ -120,7 +125,9 @@
     /* 對話介面 */
     #chat-container {
         position: absolute; 
-        bottom: 20px; 
+        /* 修改：提高底部距離，並加入安全區域，防止被手機導覽列遮擋 */
+        bottom: 30px; 
+        bottom: calc(30px + env(safe-area-inset-bottom));
         left: 50%; 
         transform: translateX(-50%);
         width: 90%; 
@@ -135,7 +142,9 @@
     @media (max-width: 600px) {
         #chat-container {
             width: 95%; 
-            bottom: 30px; 
+            /* 手機版稍微再高一點 */
+            bottom: 40px; 
+            bottom: calc(40px + env(safe-area-inset-bottom));
         }
         #file-status, #api-status {
             top: 10px;
@@ -193,10 +202,17 @@
     .message a { color: #1e88e5; text-decoration: none; border-bottom: 1px dotted #1e88e5; }
     .message-user a { color: #bbdefb; } /* 修改：使用者訊息內的連結顏色 */
 
-    #input-area { display: flex; gap: 8px; align-items: center; }
+    #input-area { 
+        display: flex; 
+        gap: 8px; 
+        align-items: center; 
+        width: 100%; /* 確保滿版 */
+    }
     
     #user-input {
         flex: 1; 
+        /* 修改：防止 flex 子元素溢出 */
+        min-width: 0; 
         padding: 12px 16px; 
         border-radius: 25px; 
         border: 1px solid rgba(255, 215, 0, 0.6);
@@ -559,26 +575,16 @@
                 loadingScreen.style.pointerEvents = 'none'; // 防止連點
                 setTimeout(() => loadingScreen.style.display = 'none', 500);
 
-                // 2. Audio Unlock (Wrapped in try-catch)
-                if (!isMuted && window.speechSynthesis) {
-                    try {
-                        window.speechSynthesis.cancel();
-                        const silent = new SpeechSynthesisUtterance(" ");
-                        silent.volume = 0; silent.rate = 10;
-                        window.speechSynthesis.speak(silent);
-                    } catch (err) {
-                        console.warn("Audio init warning:", err);
-                    }
-                }
+                // 2. Audio Unlock (修正：直接在點擊事件中呼叫 speak，不使用 setTimeout，以符合瀏覽器自動播放策略)
+                const introText = openingRemark || "（未讀取到 KnowledgeBase01.txt，請檢查檔案）";
+                
+                // 直接播放，不要延遲，否則在行動裝置會被擋
+                speak(introText);
 
                 // 3. Logic
-                const introText = openingRemark || "（未讀取到 KnowledgeBase01.txt，請檢查檔案）";
                 addMessage(introText, 'ai');
                 
                 chatHistory.push({ role: "model", parts: [{ text: introText }] });
-                
-                // 4. Speak with slight delay
-                setTimeout(() => speak(introText), 500);
                 
                 testApiConnection();
             };
