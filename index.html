@@ -723,31 +723,44 @@
             statusMsg.innerText = "連線測試...";
             statusDot.className = 'status-dot'; 
             
+            // **關鍵修改**：強制在 1 秒後解鎖輸入框，不管連線測試結果如何
+            // 避免 Android 或網路慢時，使用者被卡住無法輸入
+            setTimeout(() => {
+                 if (userInput.disabled) {
+                     userInput.disabled = false; 
+                     sendBtn.disabled = false;
+                 }
+            }, 1000);
+
+            // Add Timeout to prevent hanging
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: "Test" }] }] })
+                    body: JSON.stringify({ contents: [{ parts: [{ text: "Test" }] }] }),
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
 
                 if (response.ok) {
                     statusDot.classList.add('status-connected');
                     statusMsg.innerText = "系統連線正常";
-                    userInput.disabled = false; 
-                    sendBtn.disabled = false;
                 } else {
-                    let errMsg = "API Response Error";
-                    try {
-                        const errData = await response.json();
-                        if (errData.error) errMsg = errData.error;
-                    } catch(e) {}
-                    throw new Error(errMsg);
+                    throw new Error("API Check Failed");
                 }
             } catch (e) {
                 statusDot.classList.add('status-error');
-                statusMsg.innerText = "連線失敗";
+                statusMsg.innerText = "連線失敗 (可離線輸入)"; // Inform user they can still type
                 console.error("API Test Failed:", e);
-                addMessage(`連線測試失敗: ${e.message}`, 'system');
+                // Don't spam the chat with system message immediately, maybe just log or small note
+                // addMessage(`連線測試失敗: ${e.message}`, 'system'); 
+            } finally {
+                // ALWAYS unlock inputs so user can try anyway
+                userInput.disabled = false; 
+                sendBtn.disabled = false;
             }
         }
 
@@ -851,14 +864,18 @@
             const cleanText = text.replace(/\[.*?\]\(.*?\)/g, '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?]/g, '');
             if(!cleanText) return;
             
-            window.speechSynthesis.cancel();
-            const u = new SpeechSynthesisUtterance(cleanText);
-            u.lang = 'zh-TW';
-            u.rate = 1.0; // 語速正常
-            u.pitch = 1.0;
-            u.onstart = () => isSpeaking = true;
-            u.onend = () => { isSpeaking = false; if(currentVrm) currentVrm.expressionManager.setValue('aa', 0); };
-            window.speechSynthesis.speak(u);
+            try {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(cleanText);
+                u.lang = 'zh-TW';
+                u.rate = 1.0; // 語速正常
+                u.pitch = 1.0;
+                u.onstart = () => isSpeaking = true;
+                u.onend = () => { isSpeaking = false; if(currentVrm) currentVrm.expressionManager.setValue('aa', 0); };
+                window.speechSynthesis.speak(u);
+            } catch (err) {
+                console.error("SpeechSynthesis error:", err);
+            }
         }
 
         sendBtn.addEventListener('click', handleSendMessage);
