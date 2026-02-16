@@ -120,6 +120,27 @@
     .icon-fail { color: #c62828; margin-right: 6px; font-weight: bold; }
     .icon-loading { color: #ef6c00; margin-right: 6px; animation: pulse 1s infinite; }
     
+    /* Android 除錯面板 */
+    #tts-debug {
+        position: absolute;
+        top: 120px; /* 位於其他狀態下方 */
+        left: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #00ff00; /* 駭客綠，方便閱讀 */
+        font-family: monospace;
+        font-size: 10px;
+        padding: 8px;
+        border-radius: 8px;
+        max-width: 250px;
+        max-height: 150px;
+        overflow-y: auto;
+        z-index: 200;
+        pointer-events: none; /* 點擊穿透 */
+        display: none; /* 預設隱藏，JS 偵測到 Android 才開啟 */
+        border: 1px solid #00ff00;
+        line-height: 1.2;
+    }
+
     @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
 
     /* 對話介面 */
@@ -299,6 +320,9 @@
         <span id="status-msg">連線中...</span>
     </div>
     
+    <!-- Android 語音診斷面板 -->
+    <div id="tts-debug">TTS 系統診斷中...</div>
+    
     <div id="emotion-debug">
         情緒: Neutral<br>
         動作: None
@@ -328,6 +352,18 @@
         const isAndroid = /Android/i.test(navigator.userAgent);
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
+        // Android Debug Logger
+        const ttsDebug = document.getElementById('tts-debug');
+        if (isAndroid) {
+            ttsDebug.style.display = 'block';
+        }
+
+        function logTTS(msg) {
+            if (!isAndroid) return;
+            const time = new Date().toTimeString().split(' ')[0];
+            ttsDebug.innerHTML = `[${time}] ${msg}<br>` + ttsDebug.innerHTML;
+        }
+
         // --- 隨機角色選擇邏輯 ---
         const VRM_MODELS = [
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm', // 角色 C
@@ -351,7 +387,8 @@
         function updateVoices() {
             if (!window.speechSynthesis) return;
             const voices = window.speechSynthesis.getVoices();
-            // console.log("Voices loaded:", voices.length); // Debug
+            logTTS(`載入語音包: ${voices.length} 個`);
+            
             if (voices.length > 0) {
                 // Android 優先策略：
                 // 1. 本地 (localService) 的繁體中文
@@ -360,6 +397,12 @@
                 preferredVoice = voices.find(v => (v.lang === 'zh-TW' || v.lang.includes('zh-TW')) && v.localService) ||
                                  voices.find(v => v.lang === 'zh-TW' || v.lang.includes('zh-TW')) ||
                                  voices.find(v => v.lang.includes('zh'));
+                
+                if (preferredVoice) {
+                    logTTS(`已選定語音: ${preferredVoice.name} (${preferredVoice.lang})`);
+                } else {
+                    logTTS(`警告: 找不到合適中文語音`);
+                }
             }
         }
         
@@ -819,16 +862,24 @@
 
         // 解鎖語音函式 (Android 必須)
         async function unlockTTS() {
+            logTTS("正在解鎖語音...");
             return new Promise(resolve => {
                 try {
                     const u = new SpeechSynthesisUtterance(" ");
                     u.volume = 0; // 靜音
                     u.rate = 10; // 超快
-                    u.onend = resolve;
+                    u.onend = () => {
+                        logTTS("語音解鎖完成 (onend)");
+                        resolve();
+                    };
                     //有些瀏覽器 onend 不會觸發如果 volume 是 0，加個 timeout 保險
-                    setTimeout(resolve, 200); 
+                    setTimeout(() => {
+                        logTTS("語音解鎖完成 (timeout)");
+                        resolve();
+                    }, 200); 
                     speechSynthesis.speak(u);
                 } catch(e) {
+                    logTTS(`語音解鎖失敗: ${e.message}`);
                     resolve();
                 }
             });
@@ -843,6 +894,7 @@
 
             // ⭐⭐⭐ 每次發送訊息前都重新解鎖語音（Android 必須）
             if (!isMuted && window.speechSynthesis) {
+                logTTS("開始訊息發送流程...");
                 // 用 race 避免 unlock 卡死
                 await Promise.race([
                     unlockTTS(),
@@ -946,9 +998,12 @@
 
             if (!cleanText || cleanText.length === 0) return;
 
+            logTTS(`準備說話: ${cleanText.substring(0, 10)}...`);
+
             try {
                 // ⭐⭐⭐ 等待 voices 載入（Android 超重要）
                 if (speechSynthesis.getVoices().length === 0) {
+                    logTTS("等待語音列表...");
                     await new Promise(r => setTimeout(r, 300));
                 }
 
@@ -973,8 +1028,10 @@
                     if (voice) {
                         u.voice = voice;
                         u.lang  = voice.lang;
+                        logTTS(`Android 使用語音: ${voice.name}`);
                     } else {
                         u.lang = 'zh-TW';
+                        logTTS("Android 使用預設 zh-TW");
                     }
 
                 } else {
@@ -986,18 +1043,26 @@
                 u.pitch = 1.0;
                 u.volume = 1;
 
-                u.onstart = () => isSpeaking = true;
+                u.onstart = () => {
+                    isSpeaking = true;
+                    logTTS("開始播放 (onstart)");
+                };
                 u.onend   = () => {
                     isSpeaking = false;
+                    logTTS("播放結束 (onend)");
                     if(currentVrm) currentVrm.expressionManager.setValue('aa', 0);
                 };
 
-                u.onerror = (e) => console.error("TTS error:", e);
+                u.onerror = (e) => {
+                    console.error("TTS error:", e);
+                    logTTS(`TTS 錯誤: ${e.error}`);
+                };
 
                 speechSynthesis.speak(u);
 
             } catch (err) {
                 console.error("Speech error:", err);
+                logTTS(`Speech 執行錯誤: ${err.message}`);
             }
         }
 
