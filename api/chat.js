@@ -25,11 +25,17 @@ export default async function handler(req, res) {
   }
 
   try {
-    // *** 修改處：將模型更新為 Gemini 2.5 Flash ***
     const GEMINI_MODEL = "gemini-2.5-flash"; 
     const GOOGLE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
     const requestBody = req.body;
+
+    // *** 新增功能：強制啟用 Google Search 工具 ***
+    // 確保 requestBody.tools 存在，並加入 google_search
+    // 這樣 AI 遇到不知道的問題或需要最新資訊時，就會自動去 Google 搜尋
+    if (!requestBody.tools) {
+        requestBody.tools = [{ google_search: {} }];
+    }
 
     const response = await fetch(GOOGLE_API_URL, {
       method: 'POST',
