@@ -500,6 +500,10 @@
         let danceRound = 1;        // 目前回合數 (1, 2, 3...)
         let danceStepIndex = 0;    // 目前跳到該回合的第幾個動作 (0~3)
         let vrmDanceSequences = []; // 儲存每個 VRM 在該回合的動作順序 [VRM1_Seq, VRM2_Seq]
+        
+        // ⭐⭐⭐ 新增：連續舞步播放佇列 ⭐⭐⭐
+        let currentDanceQueue = [];
+        let currentPlayingDanceIndex = -1;
 
         let chatHistory = [];
         let isSpeaking = false;
@@ -1240,7 +1244,13 @@
             // 移除監聽器
             if (currentVrms[0]?.userData?.mixer) {
                 currentVrms[0].userData.mixer.removeEventListener('finished', onDanceFinished);
+                // ⭐⭐⭐ 移除序列播放監聽器，防止繼續播放 ⭐⭐⭐
+                currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
             }
+            
+            // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
+            currentDanceQueue = [];
+            currentPlayingDanceIndex = -1;
             
             // 重置相機
             setTimeout(() => {
@@ -1266,10 +1276,26 @@
             }
         }
         
-        // ⭐⭐⭐ 新增：AI 指令觸發的隨機單次跳舞功能 (支援指定索引) ⭐⭐⭐
-        async function playSingleDance(targetIndex = -1) {
-            // 如果正在跳舞中，就不要打斷 (或你可以選擇強制打斷)
-            if (isDancing) return;
+        // ⭐⭐⭐ 定義序列播放監聽器 (Global Scope) ⭐⭐⭐
+        function onSequenceStepFinished() {
+             if (!isDancing) return;
+
+             // 淡出目前動作
+             if (currentPlayingDanceIndex !== -1) {
+                 currentVrms.forEach((vrm, vrmIndex) => {
+                    const action = danceActionsMap[currentPlayingDanceIndex]?.[vrmIndex];
+                    if(action) action.fadeOut(0.5);
+                 });
+             }
+
+             // 播放下一個
+             playNextDanceInQueue();
+        }
+
+        // ⭐⭐⭐ 新增：播放舞步序列的函式 ⭐⭐⭐
+        async function playDanceSequence(sequence) {
+            // 如果正在跳舞中，先停止
+            if (isDancing) stopDance();
             
             // 1. 確保動作已載入
             await loadDanceAssets();
@@ -1290,21 +1316,38 @@
             if (talkingActionC) talkingActionC.fadeOut(0.5);
             if (talkingActionW) talkingActionW.fadeOut(0.5);
 
-            // 3. 隨機選一個動作 (0~3) 或 使用指定動作
-            let randIndex;
-            if (targetIndex >= 0 && targetIndex < DANCE_URLS.length) {
-                randIndex = targetIndex; // 使用指定動作
-            } else {
-                randIndex = Math.floor(Math.random() * DANCE_URLS.length); // 隨機
+            // 3. 設定佇列並開始
+            currentDanceQueue = [...sequence];
+            console.log("AI 舞步序列:", currentDanceQueue);
+            playNextDanceInQueue();
+        }
+
+        // ⭐⭐⭐ 播放佇列中的下一個動作 ⭐⭐⭐
+        function playNextDanceInQueue() {
+            if (currentDanceQueue.length === 0) {
+                // 序列結束，自然恢復閒置 (不需使用 stopDance 強制中斷，避免 BGM 邏輯衝突)
+                // 這裡我們只是結束這個 AI 觸發的動作，讓它自然回到 Idle
+                isDancing = false;
+                setTimeout(() => updateCameraPosition(), 500);
+                if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
+                if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
+                return;
+            }
+
+            const nextIndex = currentDanceQueue.shift();
+            // 驗證索引
+            if (nextIndex < 0 || nextIndex >= DANCE_URLS.length) {
+                playNextDanceInQueue(); // 跳過無效索引
+                return;
             }
             
-            console.log("AI 單次跳舞展示, Index:", randIndex);
+            currentPlayingDanceIndex = nextIndex;
 
-            // 4. 播放動作
+            // 對每個角色播放動作
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
                 
-                const action = danceActionsMap[randIndex]?.[vrmIndex];
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
                 if (action) {
                     action.reset();
                     action.setLoop(THREE.LoopOnce);
@@ -1314,32 +1357,11 @@
                 }
             });
 
-            // 5. 監聽動作結束 (使用第一個角色當 Timer)
-            const mainMixer = currentVrms[0]?.userData?.mixer;
-            
-            // 定義結束時的清理函式
-            const onOneShotFinished = () => {
-                mainMixer.removeEventListener('finished', onOneShotFinished);
-                
-                // 淡出跳舞動作
-                currentVrms.forEach((vrm, vrmIndex) => {
-                    const action = danceActionsMap[randIndex]?.[vrmIndex];
-                    if (action) action.fadeOut(0.5);
-                });
-                
-                // 恢復狀態
-                isDancing = false;
-                
-                // 恢復相機
-                setTimeout(() => updateCameraPosition(), 500);
-                
-                // 恢復閒置
-                if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
-                if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
-            };
-            
-            if (mainMixer) {
-                mainMixer.addEventListener('finished', onOneShotFinished);
+            // 監聽動作結束 (使用第一個角色當 Timer)
+            if (currentVrms[0]?.userData?.mixer) {
+                // 移除舊的，綁定新的
+                currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
+                currentVrms[0].userData.mixer.addEventListener('finished', onSequenceStepFinished);
             }
         }
 
@@ -1547,8 +1569,8 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 修改 Prompt: 教導 AI 識別跳舞指令 ⭐⭐⭐
-            finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.\n4. Action Rules:\n- If user asks for "霹靂舞定格A" (Breakdance Freeze A), set action to "dance_0".\n- If user asks for "湯瑪斯迴旋" (Flair), set action to "dance_1".\n- If user asks for "嘻哈律動" (Hip Hop), set action to "dance_2".\n- If user asks for "霹靂舞定格B" (Breakdance Freeze B), set action to "dance_3".\n- If user asks to dance generally without specific name, set action to "dance_random".`;
+            // ⭐⭐⭐ 修改 Prompt: 教導 AI 識別跳舞指令 (支援連續舞步) ⭐⭐⭐
+            finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.\n4. Dance IDs: 0="霹靂舞定格A"(Breakdance A), 1="湯瑪斯迴旋"(Flair), 2="嘻哈律動"(Hip Hop), 3="霹靂舞定格B"(Breakdance B).\n5. Action Rules:\n- If user asks for a specific dance or sequence, set "action" to "dance_sequence" and "dance_list" to an array of IDs (e.g. [1, 2, 0]).\n- If user asks to dance generally (random), set "action" to "dance_random".\n- For non-dance actions, use specific keywords or "none".`;
 
             // Add AbortController for timeout
             const controller = new AbortController();
@@ -1599,15 +1621,14 @@
                 
                 // ⭐⭐⭐ 處理跳舞與其他動作 ⭐⭐⭐
                 if (result.action === 'dance_random') {
-                    playSingleDance(-1); // 隨機
-                } else if (result.action === 'dance_0') {
-                    playSingleDance(0);
-                } else if (result.action === 'dance_1') {
-                    playSingleDance(1);
-                } else if (result.action === 'dance_2') {
-                    playSingleDance(2);
-                } else if (result.action === 'dance_3') {
-                    playSingleDance(3);
+                    const r = Math.floor(Math.random() * DANCE_URLS.length);
+                    playDanceSequence([r]); // 隨機跳一個
+                } else if (result.action === 'dance_sequence' && Array.isArray(result.dance_list)) {
+                    playDanceSequence(result.dance_list); // 依序跳指定舞步
+                } else if (result.action && result.action.startsWith('dance_')) {
+                    // 相容舊版指令
+                    const idx = parseInt(result.action.split('_')[1]);
+                    if (!isNaN(idx)) playDanceSequence([idx]);
                 } else if(result.action) {
                     triggerAction(result.action, 2000);
                 }
