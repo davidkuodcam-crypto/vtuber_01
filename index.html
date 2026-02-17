@@ -460,6 +460,9 @@
         const isLineApp = /Line/i.test(navigator.userAgent);
         const isFbApp = /FBAN|FBAV/i.test(navigator.userAgent);
 
+        // Global flag for auto-resuming mic
+        window.shouldResumeMic = false;
+
         // Android Debug Logger Setup
         const ttsDebug = document.getElementById('tts-debug');
         
@@ -1804,6 +1807,9 @@
             // ⭐⭐⭐ 發送訊息時，如果正在錄音，暫時停止，以免系統把自己的話錄進去 ⭐⭐⭐
             if (isRecording) {
                 stopRecording(); 
+                window.shouldResumeMic = true; // 標記需要自動重啟
+            } else {
+                window.shouldResumeMic = false;
             }
 
             // ⭐ 若正在跳舞，先停止跳舞
@@ -1947,7 +1953,13 @@
                 .replace(/\[.*?\]\(.*?\)/g, '')
                 .replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?！。，、…~]/g, '');
 
-            if (!cleanText || cleanText.length === 0) return;
+            if (!cleanText || cleanText.length === 0) {
+                // 如果沒話說，但原本需要重啟麥克風，則延遲重啟
+                if (window.shouldResumeMic) {
+                     setTimeout(() => { if(!isRecording) startRecording(); }, 500);
+                }
+                return;
+            }
 
             logTTS(`準備說話: ${cleanText.substring(0, 10)}...`);
 
@@ -2041,6 +2053,13 @@
                             idleActionW.reset(); 
                             idleActionW.fadeIn(0.5).play();
                         }
+                    }
+
+                    // ⭐⭐⭐ Auto Resume Mic logic ⭐⭐⭐
+                    if (window.shouldResumeMic) {
+                        setTimeout(() => {
+                            if (!isRecording) startRecording();
+                        }, 500);
                     }
                 };
 
