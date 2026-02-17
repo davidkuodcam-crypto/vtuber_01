@@ -1065,14 +1065,17 @@
             console.log(`[Round ${round}] ${mode}`, vrmDanceSequences);
         }
 
-        // ⭐⭐⭐ 新增：獨立載入舞步資源的函式 (Return Promise) ⭐⭐⭐
-        function loadDanceAssets() {
-            // 如果已經載入過動畫，直接回傳 Resolved Promise
+        // 載入所有舞步並開始
+        function loadAndPlayDance() {
+            if (currentVrms.length === 0) return; 
+
+            // 如果已經載入過動畫，直接開始
             if (danceActionsMap.length > 0) {
-                return Promise.resolve();
+                startDance();
+                return;
             }
 
-            addMessage("正在下載舞步動作...", "system");
+            addMessage("準備熱舞組曲...", "system");
             
             // 使用 Promise.all 一次載入所有舞步
             const promises = DANCE_URLS.map(url => new Promise((resolve, reject) => {
@@ -1089,13 +1092,13 @@
                 });
             }));
 
-            return Promise.all(promises).then(animationClips => {
+            Promise.all(promises).then(animationClips => {
                 // 過濾掉載入失敗的
                 const validClips = animationClips.filter(c => c);
                 
                 if (validClips.length === 0) {
                     addMessage("舞蹈載入失敗", "system");
-                    throw new Error("No dance clips loaded");
+                    return;
                 }
 
                 // 為每個舞步、每個角色建立 Action
@@ -1113,15 +1116,6 @@
                     danceActionsMap.push(actionsForThisDance);
                 });
                 
-                console.log("舞步載入完成");
-            });
-        }
-
-        // 載入所有舞步並開始 (原本的按鈕邏輯)
-        function loadAndPlayDance() {
-            if (currentVrms.length === 0) return; 
-
-            loadDanceAssets().then(() => {
                 addMessage("舞步載入完成，Let's Dance!", "system");
                 startDance();
             });
@@ -1132,20 +1126,12 @@
             isDancing = true;
             danceBtn.classList.add('active'); 
             
-            // 1. 強制停止說話 (避免動作衝突)
-            if (isSpeaking) {
-                window.speechSynthesis.cancel();
-                isSpeaking = false;
-            }
-
             // 觸發動態運鏡
             updateCameraPosition();
             
-            // 停止閒置動作 & 說話動作 (修正浮空問題)
+            // 停止閒置動作
             if (idleActionC) idleActionC.fadeOut(0.5);
-            if (idleActionW) idleActionW.fadeOut(0.5); 
-            if (talkingActionC) talkingActionC.fadeOut(0.5);
-            if (talkingActionW) talkingActionW.fadeOut(0.5);
+            if (idleActionW) idleActionW.fadeOut(0.5); // New for W
             
             // 播放 BGM
             bgm.currentTime = 0;
@@ -1299,25 +1285,36 @@
              playNextDanceInQueue();
         }
 
-        // ⭐⭐⭐ 1️⃣ JSON 自動修復 + 解析器（超重要） ⭐⭐⭐
+        // ⭐⭐⭐ 1️⃣ JSON 修復 + 強化解析器（終極版） ⭐⭐⭐
         function safeParseAIJson(text) {
             try {
                 const match = text.match(/{[\s\S]*}/);
                 if (!match) return null;
                 let jsonStr = match[0];
-                // ⭐ 修復常見壞 JSON
+                // 修復常見壞 JSON
                 jsonStr = jsonStr
-                    // 修復 "dance_list":,
-                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],')
-                    // 修復單引號
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],' ) // 修復空值
                     .replace(/'/g, '"')
-                    // 移除最後多餘逗號
                     .replace(/,\s*}/g, '}')
                     .replace(/,\s*]/g, ']');
                 const result = JSON.parse(jsonStr);
-                // ⭐ 保底：確保 dance_list 一定存在
-                if (result.action === "dance_sequence" && !Array.isArray(result.dance_list)) {
-                    result.dance_list = [0];
+                // ⭐⭐⭐ 最重要：強制把 dance_list 轉成「陣列」
+                if (result.action === "dance_sequence") {
+                    // 數字 → 陣列
+                    if (typeof result.dance_list === "number") {
+                        result.dance_list = [result.dance_list];
+                    }
+                    // 字串 → 陣列 "1,2"
+                    if (typeof result.dance_list === "string") {
+                        result.dance_list = result.dance_list
+                            .split(",")
+                            .map(n => parseInt(n.trim()))
+                            .filter(n => !isNaN(n));
+                    }
+                    // 沒給 → 預設一支舞
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        result.dance_list = [0];
+                    }
                 }
                 return result;
             } catch (err) {
@@ -1326,14 +1323,15 @@
             }
         }
 
-        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（AI JSON 壞掉時救命） ⭐⭐⭐
+        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（JSON壞掉時救命） ⭐⭐⭐
         function guessDanceFromText(text) {
             if (!text) return null;
             const map = {
-                "霹靂舞定格a": 0, "定格a": 0, "breakdance a": 0, "霹靂": 0,
-                "湯瑪斯": 1, "迴旋": 1, "flair": 1,
-                "嘻哈": 2, "律動": 2, "hip hop": 2, "hiphop": 2, "可愛": 2,
-                "霹靂舞定格b": 3, "定格b": 3, "breakdance b": 3, "性感": 3,
+                "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1,
+                "可愛": 2, "愛心": 2, "嘻哈": 2, "律動": 2, "hip hop": 2,
+                "性感": 3, "走秀": 3,
+                "開心": 4, "happy": 4,
                 "跳舞": -1, "dance": -1 // Random
             };
             const lowerText = text.toLowerCase();
@@ -1345,49 +1343,37 @@
             return null;
         }
 
-        // ⭐⭐⭐ 3️⃣ 修正後的播放舞蹈序列（修正致命 bug） ⭐⭐⭐
+        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（可連跳多支） ⭐⭐⭐
         async function playDanceSequence(sequence) {
-            // 如果正在跳舞中，先停止
             if (isDancing) stopDance();
-            
-            // 1. 確保動作已載入
             await loadDanceAssets();
-            
-            // 2. 強制停止說話
             if (isSpeaking) {
                 window.speechSynthesis.cancel();
                 isSpeaking = false;
             }
-
             isDancing = true;
-            // 觸發動態運鏡 (拉遠)
             updateCameraPosition();
-
-            // 停止閒置動作 & 說話動作 (修正浮空問題)
             if (idleActionC) idleActionC.fadeOut(0.5);
             if (idleActionW) idleActionW.fadeOut(0.5);
             if (talkingActionC) talkingActionC.fadeOut(0.5);
             if (talkingActionW) talkingActionW.fadeOut(0.5);
-
-            // 3. 設定佇列並開始
-            // ⭐⭐ 正確寫法（原本錯在這）
+            
+            // ⭐⭐⭐ 修正致命 bug：正確複製佇列
             currentDanceQueue = Array.isArray(sequence) ? [...sequence] : [];
             
-            // 如果佇列包含 -1 (隨機)，替換為實際 ID
+            // 支援隨機舞蹈 -1
             currentDanceQueue = currentDanceQueue.map(id => {
                 if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length);
                 return id;
             });
-
-            console.log("AI 舞步序列:", currentDanceQueue);
+            console.log("AI 舞步序列 (Queue):", currentDanceQueue);
             playNextDanceInQueue();
         }
 
         // ⭐⭐⭐ 播放佇列中的下一個動作 ⭐⭐⭐
         function playNextDanceInQueue() {
             if (currentDanceQueue.length === 0) {
-                // 序列結束，自然恢復閒置 (不需使用 stopDance 強制中斷，避免 BGM 邏輯衝突)
-                // 這裡我們只是結束這個 AI 觸發的動作，讓它自然回到 Idle
+                // 序列結束，自然恢復閒置
                 isDancing = false;
                 setTimeout(() => updateCameraPosition(), 500);
                 if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
@@ -1717,20 +1703,11 @@
                 setEmotion(result.emotion);
                 
                 // ⭐⭐⭐ 處理跳舞與其他動作 ⭐⭐⭐
-                if (result.action === 'dance_random') {
+                if (result.action === 'dance_sequence') {
+                    playDanceSequence(result.dance_list);
+                } else if (result.action === 'dance_random') {
                     const r = Math.floor(Math.random() * DANCE_URLS.length);
-                    playDanceSequence([r]); 
-                } else if (result.action === 'dance_sequence') {
-                    // ⭐⭐⭐ 防呆：如果 AI 忘記給 dance_list，就隨機塞一個 ⭐⭐⭐
-                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
-                        console.warn("AI returned empty dance_list, inserting random dance.");
-                        result.dance_list = [Math.floor(Math.random() * DANCE_URLS.length)];
-                    }
-                    playDanceSequence(result.dance_list); 
-                } else if (result.action && result.action.startsWith('dance_')) {
-                    // 相容舊版單一指令
-                    const idx = parseInt(result.action.split('_')[1]);
-                    if (!isNaN(idx)) playDanceSequence([idx]);
+                    playDanceSequence([r]);
                 } else if(result.action && result.action !== 'none') {
                     triggerAction(result.action, 2000);
                 }
