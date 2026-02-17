@@ -1299,7 +1299,53 @@
              playNextDanceInQueue();
         }
 
-        // ⭐⭐⭐ 新增：播放舞步序列的函式 ⭐⭐⭐
+        // ⭐⭐⭐ 1️⃣ JSON 自動修復 + 解析器（超重要） ⭐⭐⭐
+        function safeParseAIJson(text) {
+            try {
+                const match = text.match(/{[\s\S]*}/);
+                if (!match) return null;
+                let jsonStr = match[0];
+                // ⭐ 修復常見壞 JSON
+                jsonStr = jsonStr
+                    // 修復 "dance_list":,
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],')
+                    // 修復單引號
+                    .replace(/'/g, '"')
+                    // 移除最後多餘逗號
+                    .replace(/,\s*}/g, '}')
+                    .replace(/,\s*]/g, ']');
+                const result = JSON.parse(jsonStr);
+                // ⭐ 保底：確保 dance_list 一定存在
+                if (result.action === "dance_sequence" && !Array.isArray(result.dance_list)) {
+                    result.dance_list = [0];
+                }
+                return result;
+            } catch (err) {
+                console.warn("JSON 修復失敗:", err);
+                return null;
+            }
+        }
+
+        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（AI JSON 壞掉時救命） ⭐⭐⭐
+        function guessDanceFromText(text) {
+            if (!text) return null;
+            const map = {
+                "霹靂舞定格a": 0, "定格a": 0, "breakdance a": 0, "霹靂": 0,
+                "湯瑪斯": 1, "迴旋": 1, "flair": 1,
+                "嘻哈": 2, "律動": 2, "hip hop": 2, "hiphop": 2, "可愛": 2,
+                "霹靂舞定格b": 3, "定格b": 3, "breakdance b": 3, "性感": 3,
+                "跳舞": -1, "dance": -1 // Random
+            };
+            const lowerText = text.toLowerCase();
+            for (const key in map) {
+                if (lowerText.includes(key)) {
+                    return [map[key]];
+                }
+            }
+            return null;
+        }
+
+        // ⭐⭐⭐ 3️⃣ 修正後的播放舞蹈序列（修正致命 bug） ⭐⭐⭐
         async function playDanceSequence(sequence) {
             // 如果正在跳舞中，先停止
             if (isDancing) stopDance();
@@ -1324,7 +1370,15 @@
             if (talkingActionW) talkingActionW.fadeOut(0.5);
 
             // 3. 設定佇列並開始
-            currentDanceQueue = [...sequence];
+            // ⭐⭐ 正確寫法（原本錯在這）
+            currentDanceQueue = Array.isArray(sequence) ? [...sequence] : [];
+            
+            // 如果佇列包含 -1 (隨機)，替換為實際 ID
+            currentDanceQueue = currentDanceQueue.map(id => {
+                if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length);
+                return id;
+            });
+
             console.log("AI 舞步序列:", currentDanceQueue);
             playNextDanceInQueue();
         }
@@ -1628,12 +1682,28 @@
                 removeMessage(loadingMsg);
                 
                 let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
-                let result = { text: rawText, emotion: 'neutral' };
-
-                try {
-                    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-                    if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-                } catch(e) {}
+                
+                // ⭐⭐⭐ 4️⃣ 修改 handleSendMessage() 接收 AI 回傳 ⭐⭐⭐
+                // 先嘗試解析 JSON
+                let result = safeParseAIJson(rawText);
+                
+                // ⭐ 如果 JSON 壞掉或沒有動作 → 嘗試用文字猜舞蹈 (Fallback)
+                if (!result || !result.action || result.action === 'none') {
+                    const guessDance = guessDanceFromText(rawText);
+                    if (guessDance) {
+                        console.log("JSON Parse Failed or No Action, but found dance in text:", guessDance);
+                        // 構造一個假的 result 物件
+                        result = {
+                            text: rawText,
+                            emotion: 'happy',
+                            action: 'dance_sequence',
+                            dance_list: guessDance
+                        };
+                    } else if (!result) {
+                        // 真的解析失敗且沒猜到
+                        result = { text: rawText, emotion: 'neutral' };
+                    }
+                }
 
                 if(!result.text) result.text = rawText;
 
@@ -1661,7 +1731,7 @@
                     // 相容舊版單一指令
                     const idx = parseInt(result.action.split('_')[1]);
                     if (!isNaN(idx)) playDanceSequence([idx]);
-                } else if(result.action) {
+                } else if(result.action && result.action !== 'none') {
                     triggerAction(result.action, 2000);
                 }
                 
