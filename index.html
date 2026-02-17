@@ -469,10 +469,10 @@
         
         // --- 舞步清單 ---
         const DANCE_URLS = [
-            'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma',
-            'https://davidkuodcam-crypto.github.io/VTuber/Flair.vrma',
-            'https://davidkuodcam-crypto.github.io/VTuber/Hip_Hop_Dancing.vrma',
-            'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_1.vrma'
+            'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma', // 0: 霹靂舞定格A
+            'https://davidkuodcam-crypto.github.io/VTuber/Flair.vrma',                   // 1: 湯瑪斯迴旋
+            'https://davidkuodcam-crypto.github.io/VTuber/Hip_Hop_Dancing.vrma',         // 2: 嘻哈律動
+            'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_1.vrma'  // 3: 霹靂舞定格B
         ];
         
         // --- 動作設定 (說話 / 閒置) ---
@@ -1054,17 +1054,14 @@
             console.log(`[Round ${round}] ${mode}`, vrmDanceSequences);
         }
 
-        // 載入所有舞步並開始
-        function loadAndPlayDance() {
-            if (currentVrms.length === 0) return; 
-
-            // 如果已經載入過動畫，直接開始
+        // ⭐⭐⭐ 新增：獨立載入舞步資源的函式 (Return Promise) ⭐⭐⭐
+        function loadDanceAssets() {
+            // 如果已經載入過動畫，直接回傳 Resolved Promise
             if (danceActionsMap.length > 0) {
-                startDance();
-                return;
+                return Promise.resolve();
             }
 
-            addMessage("準備熱舞組曲...", "system");
+            addMessage("正在下載舞步動作...", "system");
             
             // 使用 Promise.all 一次載入所有舞步
             const promises = DANCE_URLS.map(url => new Promise((resolve, reject) => {
@@ -1081,13 +1078,13 @@
                 });
             }));
 
-            Promise.all(promises).then(animationClips => {
+            return Promise.all(promises).then(animationClips => {
                 // 過濾掉載入失敗的
                 const validClips = animationClips.filter(c => c);
                 
                 if (validClips.length === 0) {
                     addMessage("舞蹈載入失敗", "system");
-                    return;
+                    throw new Error("No dance clips loaded");
                 }
 
                 // 為每個舞步、每個角色建立 Action
@@ -1105,6 +1102,15 @@
                     danceActionsMap.push(actionsForThisDance);
                 });
                 
+                console.log("舞步載入完成");
+            });
+        }
+
+        // 載入所有舞步並開始 (原本的按鈕邏輯)
+        function loadAndPlayDance() {
+            if (currentVrms.length === 0) return; 
+
+            loadDanceAssets().then(() => {
                 addMessage("舞步載入完成，Let's Dance!", "system");
                 startDance();
             });
@@ -1115,12 +1121,20 @@
             isDancing = true;
             danceBtn.classList.add('active'); 
             
+            // 1. 強制停止說話 (避免動作衝突)
+            if (isSpeaking) {
+                window.speechSynthesis.cancel();
+                isSpeaking = false;
+            }
+
             // 觸發動態運鏡
             updateCameraPosition();
             
-            // 停止閒置動作
+            // 停止閒置動作 & 說話動作 (修正浮空問題)
             if (idleActionC) idleActionC.fadeOut(0.5);
-            if (idleActionW) idleActionW.fadeOut(0.5); // New for W
+            if (idleActionW) idleActionW.fadeOut(0.5); 
+            if (talkingActionC) talkingActionC.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
             
             // 播放 BGM
             bgm.currentTime = 0;
@@ -1249,6 +1263,83 @@
                 stopDance();
             } else {
                 loadAndPlayDance();
+            }
+        }
+        
+        // ⭐⭐⭐ 新增：AI 指令觸發的隨機單次跳舞功能 (支援指定索引) ⭐⭐⭐
+        async function playSingleDance(targetIndex = -1) {
+            // 如果正在跳舞中，就不要打斷 (或你可以選擇強制打斷)
+            if (isDancing) return;
+            
+            // 1. 確保動作已載入
+            await loadDanceAssets();
+            
+            // 2. 強制停止說話
+            if (isSpeaking) {
+                window.speechSynthesis.cancel();
+                isSpeaking = false;
+            }
+
+            isDancing = true;
+            // 觸發動態運鏡 (拉遠)
+            updateCameraPosition();
+
+            // 停止閒置動作 & 說話動作 (修正浮空問題)
+            if (idleActionC) idleActionC.fadeOut(0.5);
+            if (idleActionW) idleActionW.fadeOut(0.5);
+            if (talkingActionC) talkingActionC.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
+
+            // 3. 隨機選一個動作 (0~3) 或 使用指定動作
+            let randIndex;
+            if (targetIndex >= 0 && targetIndex < DANCE_URLS.length) {
+                randIndex = targetIndex; // 使用指定動作
+            } else {
+                randIndex = Math.floor(Math.random() * DANCE_URLS.length); // 隨機
+            }
+            
+            console.log("AI 單次跳舞展示, Index:", randIndex);
+
+            // 4. 播放動作
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                const action = danceActionsMap[randIndex]?.[vrmIndex];
+                if (action) {
+                    action.reset();
+                    action.setLoop(THREE.LoopOnce);
+                    action.clampWhenFinished = true;
+                    action.fadeIn(0.5);
+                    action.play();
+                }
+            });
+
+            // 5. 監聽動作結束 (使用第一個角色當 Timer)
+            const mainMixer = currentVrms[0]?.userData?.mixer;
+            
+            // 定義結束時的清理函式
+            const onOneShotFinished = () => {
+                mainMixer.removeEventListener('finished', onOneShotFinished);
+                
+                // 淡出跳舞動作
+                currentVrms.forEach((vrm, vrmIndex) => {
+                    const action = danceActionsMap[randIndex]?.[vrmIndex];
+                    if (action) action.fadeOut(0.5);
+                });
+                
+                // 恢復狀態
+                isDancing = false;
+                
+                // 恢復相機
+                setTimeout(() => updateCameraPosition(), 500);
+                
+                // 恢復閒置
+                if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
+                if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
+            };
+            
+            if (mainMixer) {
+                mainMixer.addEventListener('finished', onOneShotFinished);
             }
         }
 
@@ -1394,6 +1485,8 @@
             return new Promise(resolve => {
                 try {
                     const u = new SpeechSynthesisUtterance(" ");
+                    // ⭐⭐⭐ 修復：防止 GC 回收 ⭐⭐⭐
+                    window.currentUtterance = u; 
                     u.volume = 0; // 靜音
                     u.rate = 10; // 超快
                     u.onend = () => {
@@ -1454,7 +1547,8 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.`;
+            // ⭐⭐⭐ 修改 Prompt: 教導 AI 識別跳舞指令 ⭐⭐⭐
+            finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.\n4. Action Rules:\n- If user asks for "霹靂舞定格A" (Breakdance Freeze A), set action to "dance_0".\n- If user asks for "湯瑪斯迴旋" (Flair), set action to "dance_1".\n- If user asks for "嘻哈律動" (Hip Hop), set action to "dance_2".\n- If user asks for "霹靂舞定格B" (Breakdance Freeze B), set action to "dance_3".\n- If user asks to dance generally without specific name, set action to "dance_random".`;
 
             // Add AbortController for timeout
             const controller = new AbortController();
@@ -1502,7 +1596,22 @@
                 chatHistory.push({ role: "model", parts: [{ text: result.text }] });
                 addMessage(result.text, 'ai');
                 setEmotion(result.emotion);
-                if(result.action) triggerAction(result.action, 2000);
+                
+                // ⭐⭐⭐ 處理跳舞與其他動作 ⭐⭐⭐
+                if (result.action === 'dance_random') {
+                    playSingleDance(-1); // 隨機
+                } else if (result.action === 'dance_0') {
+                    playSingleDance(0);
+                } else if (result.action === 'dance_1') {
+                    playSingleDance(1);
+                } else if (result.action === 'dance_2') {
+                    playSingleDance(2);
+                } else if (result.action === 'dance_3') {
+                    playSingleDance(3);
+                } else if(result.action) {
+                    triggerAction(result.action, 2000);
+                }
+                
                 speak(result.text);
 
             } catch (error) {
@@ -1543,8 +1652,14 @@
 
                 // ⭐⭐⭐ 每次說話前都先 cancel（避免卡住）
                 speechSynthesis.cancel();
+                
+                // ⭐⭐⭐ 新增：等待微小延遲，避免連續調用造成 interrupted 錯誤 ⭐⭐⭐
+                await new Promise(r => setTimeout(r, 50));
 
                 const u = new SpeechSynthesisUtterance(cleanText);
+                
+                // ⭐⭐⭐ 關鍵修復：掛載到 global 變數，防止被 GC 回收 ⭐⭐⭐
+                window.currentUtterance = u; 
 
                 // ===== Android 專用強化 =====
                 if (isAndroid) {
@@ -1621,7 +1736,11 @@
                 };
 
                 u.onerror = (e) => {
-                    console.error("TTS error:", e);
+                    // ⭐⭐⭐ 新增：過濾正常的插播中斷 ⭐⭐⭐
+                    if (e.error === 'interrupted' || e.error === 'canceled') {
+                        return; // 這是正常的，不顯示錯誤
+                    }
+                    console.error("TTS error detail:", e.error);
                     logTTS(`TTS 錯誤: ${e.error}`);
                 };
 
