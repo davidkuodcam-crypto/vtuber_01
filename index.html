@@ -1212,7 +1212,15 @@
             // 播放 BGM
             bgm.currentTime = 0;
             bgm.muted = isMuted;
-            bgm.play().catch(e => console.error("BGM error:", e));
+            
+            // ⭐⭐⭐ FIX: 增強的 BGM 播放 (防止中斷錯誤) ⭐⭐⭐
+            const playPromise = bgm.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.error("BGM Play Error:", error);
+                    // 自動重試或忽略
+                });
+            }
 
             // 重置狀態到第 1 回合
             danceRound = 1;
@@ -1476,9 +1484,26 @@
             if (talkingActionW) talkingActionW.fadeOut(0.5);
             
             // BGM 播放
-            bgm.currentTime = 0;
-            bgm.muted = isMuted;
-            bgm.play().catch(e => console.error("BGM error:", e));
+            // ⭐⭐⭐ FIX: 嚴格的 BGM 播放流程，避免 AbortError ⭐⭐⭐
+            try {
+                // 先確保暫停並重置
+                if (!bgm.paused) {
+                    bgm.pause();
+                }
+                bgm.currentTime = 0;
+                bgm.muted = isMuted;
+                
+                // 播放並捕捉錯誤
+                const playPromise = bgm.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        console.warn("BGM Auto-play interrupted or failed:", error);
+                        // 如果是因為快速切換導致的插播失敗，通常可以忽略
+                    });
+                }
+            } catch(e) {
+                console.error("BGM Fatal Error:", e);
+            }
 
             // 設定佇列
             currentDanceQueue = Array.isArray(sequence) ? [...sequence] : [];
@@ -1754,41 +1779,18 @@
             if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) {
                 triggerAction(result.action, 2000);
             }
-        }
-
-        // ⭐⭐⭐ 新增：語音修正函式 (含預覽模式檢查) ⭐⭐⭐
-        async function correctSpeechText(text) {
-            // ⭐⭐⭐ 預覽模式下無法呼叫 API，直接回傳原文字，避免報錯卡住 ⭐⭐⭐
-            if (isPreviewEnv) {
-                console.log("預覽模式: 跳過語音修正 API");
-                return text;
-            }
-
-            // 暫時的歷史紀錄，只為了修正這句話
-            const correctionMessages = [
-                { role: "user", parts: [{ text: `請將以下語音轉文字的結果修正錯字、語意不通順處，並加上適當標點符號。直接輸出修正後的句子，不要包含任何前言後語或引號：\n${text}` }] }
-            ];
-
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: correctionMessages,
-                        // 我們可以加上 systemInstruction 讓它更專注於修正，但這裡用 prompt 即可
-                    })
-                });
-
-                if (!response.ok) return text; // 失敗則回傳原字串
-
-                const data = await response.json();
-                let corrected = data.candidates?.[0]?.content?.parts?.[0]?.text || text;
-                return corrected.trim();
-            } catch (e) {
-                console.error("Correction API Error:", e);
-                return text;
+            
+            // ⭐⭐⭐ 新增：如果有校正後的文字，更新到 UI ⭐⭐⭐
+            if (result && result.corrected_text) {
+                console.log("更新校正文字:", result.corrected_text);
+                const lastUserMsg = document.querySelector('.message-user:last-child');
+                if (lastUserMsg) {
+                    lastUserMsg.innerHTML = result.corrected_text;
+                }
             }
         }
+
+        // 移除獨立的 correctSpeechText 函式，改為合併處理
 
         async function handleSendMessage() {
             // 防止重複點擊
@@ -1843,7 +1845,7 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 修改 Prompt: 教導 AI 識別跳舞指令 (支援連續舞步) ⭐⭐⭐
+            // ⭐⭐⭐ 修改 Prompt: 教導 AI 識別跳舞指令 (支援連續舞步) 並合併語音校正 ⭐⭐⭐
             finalSystemInstruction += `
 【INSTRUCTIONS】
 1. Use Knowledge Base first.
@@ -1862,6 +1864,9 @@
      Example: User says "Dance Flair then Hip Hop" -> "dance_list": [1, 2]
    - If user says "dance for me" (random), set "action": "dance_random".
    - For other actions: "none".
+
+5. **SPEECH CORRECTION**: The input is raw speech text. You MUST correct typos/grammar in the user's text and return the corrected version in the JSON field "corrected_text".
+   Example JSON: { "text": "...", "emotion": "...", "action": "...", "corrected_text": "已修正的使用者語句" }
 `;
 
             // Add AbortController for timeout
@@ -2164,25 +2169,8 @@
                     silenceTimer = setTimeout(async () => { 
                         const rawText = userInput.value.trim();
                         if(rawText) {
-                            // --- AI 修正邏輯 ---
-                            stopRecording(); // 停止錄音
-                            
-                            // 鎖定介面
-                            userInput.disabled = true;
-                            sendBtn.disabled = true;
-                            const procMsg = addMessage("🪄 語音校正中...", "system");
-                            
-                            try {
-                                const corrected = await correctSpeechText(rawText);
-                                userInput.value = corrected; // 更新為修正後的文字
-                            } catch(e) {
-                                console.warn("語音修正失敗，使用原始文字");
-                            } finally {
-                                removeMessage(procMsg);
-                                userInput.disabled = false;
-                                sendBtn.disabled = false;
-                                handleSendMessage(); // 發送
-                            }
+                            // ⭐⭐⭐ 修改：合併處理，不單獨呼叫校正 API，直接發送 ⭐⭐⭐
+                            handleSendMessage();
                         }
                     }, 1500);
                 }
