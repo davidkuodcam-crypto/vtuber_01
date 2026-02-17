@@ -2128,6 +2128,12 @@
         }
 
         function startRecording() {
+            // ⭐⭐⭐ 3. 立即停止語音與重置狀態 ⭐⭐⭐
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+            isSpeaking = false;
+
             finalTranscript = ''; // 每次重新開始錄音時清空累積文字
             userInput.value = ''; // 清空輸入框
             isRecording = true; 
@@ -2162,11 +2168,13 @@
         }
 
         // 綁定麥克風按鈕事件
+        // ⭐⭐⭐ 1. & 2. 針對 iPhone 修正：改用單純的 click 事件，移除 touchend 防止手勢被攔截 ⭐⭐⭐
         micBtn.addEventListener('click', toggleRecording);
-        micBtn.addEventListener('touchend', (e) => {
+        /* micBtn.addEventListener('touchend', (e) => {
             e.preventDefault();
             toggleRecording();
         });
+        */
 
     </script>
 </body>
