@@ -504,6 +504,9 @@
         // ⭐⭐⭐ 新增：連續舞步播放佇列 ⭐⭐⭐
         let currentDanceQueue = [];
         let currentPlayingDanceIndex = -1;
+        
+        // ⭐⭐⭐ 新增：全域變數記錄「目前這在監聽的」Action，解決事件衝突 ⭐⭐⭐
+        let currentActiveActionForListener = null;
 
         let chatHistory = [];
         let isSpeaking = false;
@@ -1137,6 +1140,11 @@
                 window.speechSynthesis.cancel();
                 isSpeaking = false;
             }
+            
+            // ⭐⭐⭐ FIX: 強制移除 AI 的監聽器，防止鎖死 ⭐⭐⭐
+            if (currentVrms[0]?.userData?.mixer) {
+                currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
+            }
 
             // 觸發動態運鏡
             updateCameraPosition();
@@ -1183,6 +1191,9 @@
                 const action = danceActionsMap[moveIndex]?.[vrmIndex];
 
                 if (action) {
+                    // ⭐⭐⭐ 記錄目前主控角色的 Action，用於事件過濾 ⭐⭐⭐
+                    if (vrmIndex === 0) currentActiveActionForListener = action;
+                    
                     action.reset();
                     action.setLoop(THREE.LoopOnce); // 設定只播放一次
                     action.clampWhenFinished = true; // 播完停在最後一幀
@@ -1199,8 +1210,16 @@
         }
 
         // 當一個舞步結束時的回呼函式
-        function onDanceFinished() {
+        function onDanceFinished(e) {
             if (!isDancing) return;
+
+            // ⭐⭐⭐ 關鍵修復：檢查觸發 finished 事件的 action 是否為當前舞蹈動作 ⭐⭐⭐
+            // 防止舊的動作（如正在淡出的 idle/manual dance）觸發此事件，導致流程錯亂
+            // 使用變數 currentActiveActionForListener 確保是同一個 instance
+            if (e && e.action && currentActiveActionForListener && e.action !== currentActiveActionForListener) {
+                // console.log("忽略舊動作事件", e.action);
+                return;
+            }
 
             // 淡出目前所有角色的動作
             currentVrms.forEach((vrm, vrmIndex) => {
@@ -1258,6 +1277,7 @@
             // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
             currentDanceQueue = [];
             currentPlayingDanceIndex = -1;
+            currentActiveActionForListener = null;
             
             // 重置相機
             setTimeout(() => {
@@ -1284,8 +1304,15 @@
         }
         
         // ⭐⭐⭐ 定義序列播放監聽器 (Global Scope) ⭐⭐⭐
-        function onSequenceStepFinished() {
+        function onSequenceStepFinished(e) {
              if (!isDancing) return;
+
+             // ⭐⭐⭐ 關鍵修復：檢查觸發 finished 事件的 action 是否為當前 AI 舞蹈動作 ⭐⭐⭐
+             // 使用變數 currentActiveActionForListener 確保是同一個 instance
+             if (e && e.action && currentActiveActionForListener && e.action !== currentActiveActionForListener) {
+                 // console.log("忽略舊動作事件 (AI)", e.action);
+                 return;
+             }
 
              // 淡出目前動作
              if (currentPlayingDanceIndex !== -1) {
@@ -1325,9 +1352,10 @@
                             .map(n => parseInt(n.trim()))
                             .filter(n => !isNaN(n));
                     }
-                    // 沒給 → 預設一支舞
+                    
+                    // ⭐⭐⭐ FIX: 若清單為空或格式錯誤，設為 null (不預設為 [0])，以便後續文字救援 ⭐⭐⭐
                     if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
-                        result.dance_list = [0];
+                        result.dance_list = null; // 設為 null，讓 handleAIResponse 用文字猜測
                     }
                 }
                 return result;
@@ -1342,7 +1370,7 @@
             if (!text) return null;
             const map = {
                 "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
-                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
                 "可愛": 2, "愛心": 2, "嘻哈": 2, "律動": 2, "hip hop": 2,
                 "性感": 3, "走秀": 3,
                 "開心": 4, "happy": 4,
@@ -1359,24 +1387,46 @@
 
         // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（可連跳多支） ⭐⭐⭐
         async function playDanceSequence(sequence) {
-            if (isDancing) stopDance();
+            // ⭐⭐⭐ 關鍵修復：在 await 之前先將狀態設為 true ⭐⭐⭐
+            // 這樣就算語音因為 cancel() 而觸發 onend，系統也會知道 "isDancing" 是 true
+            // 就不會錯誤地切回 Idle 動作了。
+            isDancing = true;
+            danceBtn.classList.add('active');
+
+            // ⭐⭐⭐ 關鍵修復：AI 跳舞時不強制停止語音，讓它邊說邊跳 ⭐⭐⭐
+            // 如果需要完全安靜，可以在 Prompt 裡叫 AI 不要回傳 text
+            // if (window.speechSynthesis) window.speechSynthesis.cancel(); 
+            // isSpeaking = false;
             
-            // ⭐⭐⭐ 這裡就是您原本報錯的地方，現在 loadDanceAssets 已經定義好了 ⭐⭐⭐
+            // 清理可能存在的舊監聽器 (手動執行 stopDance 的清理邏輯，但不將 isDancing 設為 false)
+            if (currentVrms[0]?.userData?.mixer) {
+                currentVrms[0].userData.mixer.removeEventListener('finished', onDanceFinished);
+                currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
+            }
+            // 停止現有動作 (避免手動模式殘留)
+             danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            // 載入資源 (此時 isDancing 已經是 true 了，安全)
             await loadDanceAssets(); 
             
-            // 停止說話
-            if (isSpeaking) {
-                window.speechSynthesis.cancel();
-                isSpeaking = false;
-            }
+            // 再次確認狀態 (雙重保險)
             isDancing = true;
             updateCameraPosition();
+            
+            // 淡出閒置/說話動作
             if (idleActionC) idleActionC.fadeOut(0.5);
             if (idleActionW) idleActionW.fadeOut(0.5);
             if (talkingActionC) talkingActionC.fadeOut(0.5);
             if (talkingActionW) talkingActionW.fadeOut(0.5);
             
-            // ⭐⭐⭐ 修正致命 bug：正確複製佇列
+            // BGM 播放
+            bgm.currentTime = 0;
+            bgm.muted = isMuted;
+            bgm.play().catch(e => console.error("BGM error:", e));
+
+            // 設定佇列
             currentDanceQueue = Array.isArray(sequence) ? [...sequence] : [];
             
             // 支援隨機舞蹈 -1
@@ -1391,8 +1441,18 @@
         // ⭐⭐⭐ 播放佇列中的下一個動作 ⭐⭐⭐
         function playNextDanceInQueue() {
             if (currentDanceQueue.length === 0) {
+                // ⭐⭐⭐ FIX: 佇列結束時，務必移除監聽器，防止干擾手動按鈕 ⭐⭐⭐
+                if (currentVrms[0]?.userData?.mixer) {
+                    currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
+                }
+                
                 // 序列結束，自然恢復閒置
                 isDancing = false;
+                // 停止 BGM
+                bgm.pause();
+                bgm.currentTime = 0;
+                danceBtn.classList.remove('active');
+
                 setTimeout(() => updateCameraPosition(), 500);
                 if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
                 if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
@@ -1414,6 +1474,9 @@
                 
                 const action = danceActionsMap[nextIndex]?.[vrmIndex];
                 if (action) {
+                    // ⭐⭐⭐ 記錄目前主控角色的 Action，用於事件過濾 ⭐⭐⭐
+                    if (vrmIndex === 0) currentActiveActionForListener = action;
+
                     action.reset();
                     action.setLoop(THREE.LoopOnce);
                     action.clampWhenFinished = true;
@@ -1596,29 +1659,44 @@
         // ⭐⭐⭐ 4️⃣ 接收 AI 回應（完整最終版） ⭐⭐⭐
         function handleAIResponse(aiText) {
             let result = safeParseAIJson(aiText);
-            // ⭐ JSON 壞掉 → 用文字猜舞蹈
-            if (!result) {
-                const guessDance = guessDanceFromText(aiText);
-                if (guessDance) {
-                    playDanceSequence(guessDance);
-                    speak(aiText);
-                    return;
-                }
-                speak(aiText);
-                return;
+            
+            // ⭐⭐⭐ FIX: 增強的舞蹈判斷邏輯 ⭐⭐⭐
+            let danceSeq = null;
+
+            // 1. 優先使用 JSON 裡的 dance_list (如果存在且有效)
+            if (result && Array.isArray(result.dance_list) && result.dance_list.length > 0) {
+                danceSeq = result.dance_list;
             }
-            // 正常 JSON
-            speak(result.text || "");
-            if (result.emotion) {
+
+            // 2. 如果 JSON 沒有清單 (或無效)，則從文字中猜測
+            if (!danceSeq) {
+                danceSeq = guessDanceFromText(aiText);
+            }
+
+            // 3. 如果還是沒有，且 action 是 random，則隨機
+            if (!danceSeq && result && result.action === "dance_random") {
+                danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)];
+            }
+
+            // 處理結果
+            // 如果判定要跳舞，執行跳舞
+            if (danceSeq) {
+                playDanceSequence(danceSeq);
+            } 
+            // 如果 JSON 說要跳舞但還是空的，預設跳 0 嗎？還是不跳？
+            // 為了避免「只會跳 0」的 Bug，這裡如果不確定就不跳，只說話。
+            
+            // 處理說話
+            let speakText = result ? result.text : aiText;
+            speak(speakText || "");
+            
+            // 處理表情
+            if (result && result.emotion) {
                 setEmotion(result.emotion);
             }
-            // ⭐⭐⭐ 連續舞蹈觸發點
-            if (result.action === "dance_sequence") {
-                playDanceSequence(result.dance_list);
-            } else if (result.action === "dance_random") {
-                const r = Math.floor(Math.random() * DANCE_URLS.length);
-                playDanceSequence([r]);
-            } else if (result.action && result.action !== 'none') {
+            
+            // 處理其他動作 (非舞蹈)
+            if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) {
                 triggerAction(result.action, 2000);
             }
         }
@@ -1632,6 +1710,11 @@
 
             // ⭐ 若正在跳舞，先停止跳舞
             if (isDancing) stopDance();
+
+            // ⭐⭐⭐ 新增：發送訊息前，確保徹底停止上一次的語音 ⭐⭐⭐
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
 
             // ⭐⭐⭐ 每次發送訊息前都重新解鎖語音（Android 必須）
             if (!isMuted && ttsSupported) {
@@ -1839,6 +1922,7 @@
                     if (talkingActionW) talkingActionW.fadeOut(0.5); // NEW
                     
                     // 恢復閒置
+                    // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
                         if (idleActionC) {
                             idleActionC.reset(); // 或許不需要 reset，視乎動作銜接
