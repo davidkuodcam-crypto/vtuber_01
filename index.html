@@ -2257,6 +2257,11 @@
             toggleRecording();
         });
 
+        // ⭐⭐⭐ 新增：如果是手機版 (Android/iOS)，隱藏麥克風按鈕，僅保留PC版功能 ⭐⭐⭐
+        if (isAndroid || isIOS) {
+            micBtn.style.display = 'none';
+        }
+
     </script>
 </body>
 </html>
