@@ -1870,9 +1870,6 @@
    **Action Rules:**
    - If user asks for specific dance(s), set "action": "dance_sequence" AND populate "dance_list": [ID, ID...].
      Example: User says "Dance Flair then Hip Hop" -> "dance_list": [1, 2]
-   - If user specifies a repetition count (e.g. "3 times"), YOU MUST REPEAT the ID in the "dance_list" array.
-     Example: "湯瑪士迴旋三次" (Thomas Flair 3 times) -> "dance_list": [1, 1, 1]
-     Example: "連續跳兩次嘻哈" (Hip Hop 2 times) -> "dance_list": [2, 2]
    - If user says "dance for me" (random), set "action": "dance_random".
    - If user says "隨機跳舞" or "隨機選一個" (in Chinese), ALSO set "action": "dance_random".
    - For other actions: "none".
