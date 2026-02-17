@@ -2127,21 +2127,23 @@
             if(isRecording) stopRecording(); else startRecording();
         }
 
-        async function startRecording() {
-            // ⭐⭐⭐ 3. 立即停止語音與重置狀態 ⭐⭐⭐
+        // ⭐⭐⭐ [CRITICAL IOS FIX] 必須同步呼叫，移除 async/await ⭐⭐⭐
+        function startRecording() {
+            // 1. 立即停止 TTS (同步執行)
             if (window.speechSynthesis) {
-                window.speechSynthesis.cancel();
+                // 加個 try-catch 確保萬無一失
+                try {
+                    window.speechSynthesis.cancel();
+                } catch(e) {}
             }
             isSpeaking = false;
 
-            // ⭐⭐⭐ 針對 iOS 的穩定性處理：稍微等待語音引擎釋放 ⭐⭐⭐
-            if (isIOS) {
-                await new Promise(r => setTimeout(r, 100));
-            }
-
-            finalTranscript = ''; // 每次重新開始錄音時清空累積文字
-            userInput.value = ''; // 清空輸入框
+            // 2. 清空 UI
+            finalTranscript = ''; 
+            userInput.value = ''; 
             isRecording = true; 
+            
+            // 3. 立即啟動錄音 (必須在 Event Loop 同一 tick 內)
             safeStartRecognition();
         }
 
@@ -2173,23 +2175,12 @@
         }
 
         // 綁定麥克風按鈕事件
-        // ⭐⭐⭐ 1. & 2. 針對 iPhone 修正：同時使用 touchstart 與 click，並防止重複觸發 ⭐⭐⭐
-        let lastMicClickTime = 0;
-        function handleMicInteraction(e) {
-            e.preventDefault(); // 防止預設行為 (例如長按選取、雙擊縮放)
-            
-            const now = Date.now();
-            if (now - lastMicClickTime < 300) {
-                return; // 忽略短時間內的重複觸發 (例如 touchstart 後的 click)
-            }
-            lastMicClickTime = now;
-            
+        // ⭐⭐⭐ 1. & 2. 針對 iPhone 修正：移除 touchstart，回歸最穩定的 click 事件 ⭐⭐⭐
+        // iOS Safari 上的 SpeechRecognition 必須由使用者手勢 (Click) 直接觸發
+        micBtn.addEventListener('click', (e) => {
             logTTS(`麥克風按鈕觸發: ${e.type}`); // Debug 訊息
             toggleRecording();
-        }
-
-        micBtn.addEventListener('touchstart', handleMicInteraction, { passive: false });
-        micBtn.addEventListener('click', handleMicInteraction);
+        });
 
     </script>
 </body>
