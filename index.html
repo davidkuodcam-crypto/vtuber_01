@@ -2,8 +2,10 @@
 <html lang="zh-TW">
 <head>
 <meta charset="utf-8">
-<title>AI VTuber - Golden New Year</title>
+<title>AI VTuber - Golden New Year (Voice Enabled)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<!-- 引入 FontAwesome 用於麥克風圖示 -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
     /* 全域設定：確保邊框計算不影響寬度 */
     * { box-sizing: border-box; }
@@ -258,12 +260,19 @@
         gap: 8px; 
         align-items: center; 
         width: 100%; /* 確保滿版 */
+        position: relative; /* 為了定位語音波動條 */
     }
     
+    /* 輸入框容器，用於包裹 input 與語音波動條 */
+    .input-wrapper {
+        position: relative;
+        flex: 1;
+        display: flex;
+        min-width: 0;
+    }
+
     #user-input {
-        flex: 1; 
-        /* 修改：防止 flex 子元素溢出 */
-        min-width: 0; 
+        width: 100%;
         padding: 12px 16px; 
         border-radius: 25px; 
         border: 1px solid rgba(255, 215, 0, 0.6);
@@ -272,8 +281,26 @@
         font-size: 16px; 
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         color: #5d4037;
+        z-index: 2; /* 確保文字在波動條上方 */
+        background-color: transparent; /* 讓背景透明以顯示波動條 */
+        background: rgba(255, 255, 255, 0.95);
     }
     #user-input::placeholder { color: #999; }
+
+    /* ⭐⭐⭐ 語音波動條樣式 ⭐⭐⭐ */
+    #voice-overlay {
+        position: absolute;
+        bottom: 1px;
+        left: 20px; /* 配合 border-radius */
+        right: 20px;
+        height: 3px;
+        background-color: #3b82f6;
+        z-index: 3;
+        display: none; /* 預設隱藏 */
+        pointer-events: none;
+        animation: voice-pulse 1.5s infinite;
+    }
+    @keyframes voice-pulse { 0%, 100% { opacity: 0.5; transform: scaleX(0.95); } 50% { opacity: 1; transform: scaleX(1); } }
 
     #send-btn {
         padding: 0 20px; 
@@ -304,6 +331,10 @@
         border: 1px solid #ffd700;
         color: #d32f2f;
         transition: all 0.2s; /* 增加過渡效果 */
+        /* Android 觸控優化 */
+        touch-action: manipulation; 
+        -webkit-tap-highlight-color: transparent;
+        user-select: none;
     }
     .control-btn:active { transform: scale(0.95); }
     #mute-btn.muted { background: #e74c3c; color: white; border: none; }
@@ -315,6 +346,19 @@
         color: white;
         box-shadow: inset 0 0 10px rgba(0,0,0,0.3);
         border-color: #c2185b;
+    }
+
+    /* ⭐⭐⭐ 麥克風錄音動畫 ⭐⭐⭐ */
+    .recording-pulse {
+        animation: pulse-ring 2s infinite;
+        background-color: #ef4444 !important; /* 紅色背景 */
+        color: white !important;
+        border: none !important;
+    }
+    @keyframes pulse-ring {
+        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+        70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
     }
     
     #emotion-debug {
@@ -384,11 +428,18 @@
             <!-- 訊息將由 JavaScript 動態加入 -->
         </div>
         <div id="input-area">
-            <!-- 修改：跳舞按鈕 -->
             <button id="dance-btn" class="control-btn" title="熱舞組曲">💃</button>
             <button id="mute-btn" class="control-btn" title="切換聲音">🔊</button>
-            <!-- 修改：提示文字改為 請輸入訊息... -->
-            <input type="text" id="user-input" placeholder="請輸入訊息..." disabled>
+            
+            <!-- ⭐⭐⭐ 輸入框包裹區與語音波動條 ⭐⭐⭐ -->
+            <div class="input-wrapper">
+                <input type="text" id="user-input" placeholder="請輸入訊息..." disabled>
+                <div id="voice-overlay"></div>
+            </div>
+
+            <!-- ⭐⭐⭐ 新增麥克風按鈕 ⭐⭐⭐ -->
+            <button id="mic-btn" class="control-btn" title="語音輸入"><i class="fa-solid fa-microphone"></i></button>
+
             <button id="send-btn" disabled>發送</button>
         </div>
     </div>
@@ -1566,6 +1617,7 @@
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
         const muteBtn = document.getElementById('mute-btn');
+        const micBtn = document.getElementById('mic-btn'); // 取得麥克風按鈕
 
         async function testApiConnection() {
             if (isPreviewEnv) {
@@ -1707,6 +1759,11 @@
 
             const text = userInput.value.trim();
             if (!text) return;
+            
+            // ⭐⭐⭐ 發送訊息時，如果正在錄音，暫時停止，以免系統把自己的話錄進去 ⭐⭐⭐
+            if (isRecording) {
+                stopRecording(); 
+            }
 
             // ⭐ 若正在跳舞，先停止跳舞
             if (isDancing) stopDance();
@@ -1823,6 +1880,13 @@
                 }
             } finally {
                 userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
+                
+                // ⭐⭐⭐ 為了保持 Continuous 對話，AI 回應完畢後，嘗試重啟麥克風 ⭐⭐⭐
+                // 使用者可能想繼續說話
+                // 註解：如果希望是「全自動連續對話」，可以在這裡加 safeStartRecognition
+                // 但為了不干擾 AI 說話 (AI 正在 speak())，通常我們等 AI 說完再開啟，或者手動開啟
+                // 此處保留手動開啟，避免麥克風收到 AI 的聲音造成迴圈
+                // if (shouldResumeRecording) startRecording(); 
             }
         }
 
@@ -1968,6 +2032,142 @@
             // 視窗改變大小時，重新檢查相機位置
             updateCameraPosition();
         });
+
+        // ⭐⭐⭐⭐⭐ 麥克風與語音辨識功能整合 (來自 AITranslator_v1) ⭐⭐⭐⭐⭐
+        let recognition = null;
+        let isRecording = false;
+        let silenceTimer = null;
+        let finalTranscript = '';
+        const voiceOverlay = document.getElementById('voice-overlay'); // 藍色波動條
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SR();
+            recognition.continuous = true; 
+            recognition.interimResults = true; 
+            recognition.lang = 'zh-TW'; // 預設中文，您可以根據需要修改
+
+            recognition.onstart = () => { 
+                isRecording = true; 
+                updateMicUI(true); 
+                // 停止背景音樂或 TTS 聲音，避免干擾
+                if (window.speechSynthesis) window.speechSynthesis.cancel();
+                isSpeaking = false; 
+                // 如果正在跳舞，可以選擇停止或不停止，這裡選擇不強制停止跳舞，但停止音樂
+                // bgm.pause(); 
+            };
+            
+            recognition.onend = () => { 
+                // 如果是連續模式且仍然標記為錄音中（非手動停止），則嘗試重啟
+                // 但為了配合 handleSendMessage 的 stopRecording 邏輯，這裡檢查 isRecording
+                if(isRecording) {
+                    safeStartRecognition(); 
+                } else {
+                    updateMicUI(false); 
+                }
+            };
+            
+            recognition.onerror = (e) => { 
+                // ⭐⭐⭐ FIX: 忽略 no-speech 錯誤，避免洗版 ⭐⭐⭐
+                if (e.error === 'no-speech') {
+                    // 這是正常的靜音超時，讓 onend 負責重啟即可
+                    return;
+                }
+
+                console.error("Speech Recognition Error:", e.error);
+                // 某些錯誤需要完全停止
+                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                    isRecording = false;
+                    updateMicUI(false);
+                } else {
+                    // 其他錯誤嘗試重啟
+                    recognition.stop();
+                }
+            };
+
+            recognition.onresult = (e) => {
+                let interim = '';
+                // 重新組合最終結果與臨時結果
+                // 注意：這裡是簡易實作，直接覆蓋 input
+                // AITranslator 邏輯：
+                for (let i = e.resultIndex; i < e.results.length; ++i) {
+                    if (e.results[i].isFinal) {
+                        finalTranscript += e.results[i][0].transcript;
+                    } else {
+                        interim += e.results[i][0].transcript;
+                    }
+                }
+                
+                // 將結果填入輸入框
+                // 為了讓使用者體驗更好，我們保留使用者可能手打的部分嗎？
+                // 這裡採用 AITranslator 的邏輯：直接由語音主導
+                userInput.value = finalTranscript + interim;
+                
+                // 重置靜音計時器
+                clearTimeout(silenceTimer);
+                
+                // 如果有內容，設定 1.5 秒後自動發送
+                if (userInput.value.trim()) {
+                    silenceTimer = setTimeout(() => { 
+                        if(userInput.value.trim()) {
+                            // 觸發發送
+                            handleSendMessage();
+                            // 注意：handleSendMessage 內部會呼叫 stopRecording()
+                        }
+                    }, 1500);
+                }
+            };
+        } else {
+            console.warn("瀏覽器不支援 Web Speech API");
+            micBtn.style.display = 'none';
+        }
+
+        function toggleRecording() {
+            if(!recognition) return;
+            if(isRecording) stopRecording(); else startRecording();
+        }
+
+        function startRecording() {
+            finalTranscript = ''; // 每次重新開始錄音時清空累積文字
+            userInput.value = ''; // 清空輸入框
+            isRecording = true; 
+            safeStartRecognition();
+        }
+
+        function stopRecording() { 
+            isRecording = false; 
+            recognition.stop(); 
+            clearTimeout(silenceTimer); 
+            updateMicUI(false); 
+        }
+
+        function safeStartRecognition() { 
+            try { 
+                recognition.start(); 
+            } catch(e) {
+                // 有時候已經 start 了會報錯，忽略即可
+            } 
+        }
+
+        function updateMicUI(active) {
+            if(active) { 
+                micBtn.classList.add('recording-pulse'); // 加入紅色脈衝動畫
+                micBtn.innerHTML = '<i class="fa-solid fa-microphone-lines"></i>'; // 改變圖示
+                voiceOverlay.style.display = 'block'; // 顯示藍色波動條
+            } else { 
+                micBtn.classList.remove('recording-pulse'); 
+                micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+                voiceOverlay.style.display = 'none'; // 隱藏藍色波動條
+            }
+        }
+
+        // 綁定麥克風按鈕事件
+        micBtn.addEventListener('click', toggleRecording);
+        micBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            toggleRecording();
+        });
+
     </script>
 </body>
 </html>
