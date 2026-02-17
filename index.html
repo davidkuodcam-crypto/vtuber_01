@@ -2046,7 +2046,15 @@
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SR();
-            recognition.continuous = true; 
+            
+            // ⭐⭐⭐ iOS 關鍵優化：強制關閉連續模式以解決辨識錯誤 ⭐⭐⭐
+            if (isIOS || isAndroid) {
+                recognition.continuous = false; // 手機版：講一句辨識一句，準確度最高
+                recognition.maxAlternatives = 1; // 減少運算負擔
+            } else {
+                recognition.continuous = true; // 電腦版：保持連續對話能力
+            }
+            
             recognition.interimResults = true; 
             recognition.lang = 'zh-TW'; // 預設中文，您可以根據需要修改
 
@@ -2055,16 +2063,22 @@
                 updateMicUI(true); 
                 // 停止背景音樂或 TTS 聲音，避免干擾
                 if (window.speechSynthesis) window.speechSynthesis.cancel();
+                // ⭐⭐⭐ 關鍵修復：開始錄音時強制暫停 BGM，避免迴音干擾辨識 ⭐⭐⭐
+                bgm.pause();
+                
                 isSpeaking = false; 
-                // 如果正在跳舞，可以選擇停止或不停止，這裡選擇不強制停止跳舞，但停止音樂
-                // bgm.pause(); 
             };
             
             recognition.onend = () => { 
                 // 如果是連續模式且仍然標記為錄音中（非手動停止），則嘗試重啟
-                // 但為了配合 handleSendMessage 的 stopRecording 邏輯，這裡檢查 isRecording
-                if(isRecording) {
-                    safeStartRecognition(); 
+                if (isRecording) {
+                    // ⭐⭐⭐ iOS/Android 的手動連續模式模擬 ⭐⭐⭐
+                    if (isIOS || isAndroid) {
+                       // 手機版：短暫延遲後重啟，避免過度頻繁調用 API
+                       setTimeout(() => safeStartRecognition(), 100);
+                    } else {
+                       safeStartRecognition(); 
+                    }
                 } else {
                     updateMicUI(false); 
                 }
