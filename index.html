@@ -456,6 +456,9 @@
         // --- 偵測作業系統 ---
         const isAndroid = /Android/i.test(navigator.userAgent);
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        // ⭐⭐⭐ 偵測是否為 LINE 或 Facebook 內建瀏覽器 ⭐⭐⭐
+        const isLineApp = /Line/i.test(navigator.userAgent);
+        const isFbApp = /FBAN|FBAV/i.test(navigator.userAgent);
 
         // Android Debug Logger Setup
         const ttsDebug = document.getElementById('tts-debug');
@@ -2079,6 +2082,8 @@
                 if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
                     isRecording = false;
                     updateMicUI(false);
+                    // ⭐⭐⭐ 新增：如果權限被拒，明確提示使用者 ⭐⭐⭐
+                    alert("麥克風功能已被封鎖或不支援。\n請檢查瀏覽器權限設定，或嘗試在 Safari (iOS) / Chrome (Android) 中開啟。");
                 } else {
                     // 其他錯誤嘗試重啟
                     recognition.stop();
@@ -2175,10 +2180,15 @@
         }
 
         // 綁定麥克風按鈕事件
-        // ⭐⭐⭐ 1. & 2. 針對 iPhone 修正：移除 touchstart，回歸最穩定的 click 事件 ⭐⭐⭐
-        // iOS Safari 上的 SpeechRecognition 必須由使用者手勢 (Click) 直接觸發
         micBtn.addEventListener('click', (e) => {
             logTTS(`麥克風按鈕觸發: ${e.type}`); // Debug 訊息
+            
+            // ⭐⭐⭐ 新增：LINE/Facebook 內建瀏覽器阻擋提示 ⭐⭐⭐
+            if (isIOS && (isLineApp || isFbApp)) {
+                alert("⚠️ LINE/Facebook 內建瀏覽器不支援麥克風錄音。\n\n請點擊右上角/右下角選單，選擇「在 Safari 開啟」或「開啟預設瀏覽器」即可使用完整功能。");
+                return;
+            }
+            
             toggleRecording();
         });
 
