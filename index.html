@@ -1868,11 +1868,12 @@
    - ID 3: "霹靂舞定格B" (Breakdance Freeze B)
    
    **Action Rules:**
-   - If user asks for specific dance(s), set "action": "dance_sequence" AND populate "dance_list": [ID, ID...].
-     Example: User says "Dance Flair then Hip Hop" -> "dance_list": [1, 2]
-   - If user says "dance for me" (random), set "action": "dance_random".
-   - If user says "隨機跳舞" or "隨機選一個" (in Chinese), ALSO set "action": "dance_random".
-   - For other actions: "none".
+   1. "action": "dance_sequence" if user wants specific dances.
+   2. **REPETITION HANDLING (CRITICAL):** - If the user says "跳三次" (3 times), "跳兩遍" (2 times), you MUST add the ID to "dance_list" multiple times.
+      - Example: "跳三次湯瑪士迴旋" -> "dance_list": [1, 1, 1]
+      - Example: "先跳兩次霹靂舞A，再跳一次嘻哈" -> "dance_list": [0, 0, 2]
+   3. "action": "dance_random" if user says "隨機跳舞", "隨便跳", "Random dance".
+   4. For other actions: "none".
 
 5. **SPEECH CORRECTION**: The input is raw speech text. You MUST correct typos/grammar in the user's text and return the corrected version in the JSON field "corrected_text".
    Example JSON: { "text": "...", "emotion": "...", "action": "...", "corrected_text": "已修正的使用者語句" }
