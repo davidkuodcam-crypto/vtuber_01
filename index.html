@@ -1065,17 +1065,16 @@
             console.log(`[Round ${round}] ${mode}`, vrmDanceSequences);
         }
 
-        // 載入所有舞步並開始
-        function loadAndPlayDance() {
-            if (currentVrms.length === 0) return; 
-
-            // 如果已經載入過動畫，直接開始
+        // ⭐⭐⭐ 修正：將載入邏輯獨立為 loadDanceAssets，以便 AI 指令呼叫 ⭐⭐⭐
+        async function loadDanceAssets() {
+            // 如果已經載入過動畫，直接返回
             if (danceActionsMap.length > 0) {
-                startDance();
                 return;
             }
 
-            addMessage("準備熱舞組曲...", "system");
+            if (currentVrms.length === 0) return;
+
+            addMessage("準備熱舞資料中...", "system");
             
             // 使用 Promise.all 一次載入所有舞步
             const promises = DANCE_URLS.map(url => new Promise((resolve, reject) => {
@@ -1092,33 +1091,40 @@
                 });
             }));
 
-            Promise.all(promises).then(animationClips => {
-                // 過濾掉載入失敗的
-                const validClips = animationClips.filter(c => c);
-                
-                if (validClips.length === 0) {
-                    addMessage("舞蹈載入失敗", "system");
-                    return;
-                }
+            const animationClips = await Promise.all(promises);
+            // 過濾掉載入失敗的
+            const validClips = animationClips.filter(c => c);
+            
+            if (validClips.length === 0) {
+                addMessage("舞蹈載入失敗", "system");
+                return;
+            }
 
-                // 為每個舞步、每個角色建立 Action
-                validClips.forEach(clipData => {
-                    const actionsForThisDance = [];
-                    currentVrms.forEach(vrm => {
-                        // FIX: 安全讀取 userData
-                        if (!vrm || !vrm.userData || !vrm.userData.mixer) return;
-                        
-                        // 建立 Clip 與 Action
-                        const clip = createVRMAnimationClip(clipData, vrm);
-                        const action = vrm.userData.mixer.clipAction(clip);
-                        actionsForThisDance.push(action);
-                    });
-                    danceActionsMap.push(actionsForThisDance);
+            // 為每個舞步、每個角色建立 Action
+            validClips.forEach(clipData => {
+                const actionsForThisDance = [];
+                currentVrms.forEach(vrm => {
+                    // FIX: 安全讀取 userData
+                    if (!vrm || !vrm.userData || !vrm.userData.mixer) return;
+                    
+                    // 建立 Clip 與 Action
+                    const clip = createVRMAnimationClip(clipData, vrm);
+                    const action = vrm.userData.mixer.clipAction(clip);
+                    actionsForThisDance.push(action);
                 });
-                
-                addMessage("舞步載入完成，Let's Dance!", "system");
-                startDance();
+                danceActionsMap.push(actionsForThisDance);
             });
+            
+            addMessage("舞步載入完成，Let's Dance!", "system");
+            console.log("Assets Loaded!");
+        }
+
+        // 修改後的按鈕邏輯：呼叫 loadDanceAssets 後再 startDance
+        async function loadAndPlayDance() {
+            await loadDanceAssets();
+            if (danceActionsMap.length > 0) {
+                startDance();
+            }
         }
 
         // 開始跳舞流程
@@ -1273,7 +1279,7 @@
             if (isDancing) {
                 stopDance();
             } else {
-                loadAndPlayDance();
+                loadAndPlayDance(); // 使用新的合併函式
             }
         }
         
@@ -1354,7 +1360,10 @@
         // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（可連跳多支） ⭐⭐⭐
         async function playDanceSequence(sequence) {
             if (isDancing) stopDance();
-            await loadDanceAssets();
+            
+            // ⭐⭐⭐ 這裡就是您原本報錯的地方，現在 loadDanceAssets 已經定義好了 ⭐⭐⭐
+            await loadDanceAssets(); 
+            
             // 停止說話
             if (isSpeaking) {
                 window.speechSynthesis.cancel();
