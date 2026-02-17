@@ -1126,12 +1126,20 @@
             isDancing = true;
             danceBtn.classList.add('active'); 
             
+            // ⭐⭐⭐ 強制停止說話 (修正) ⭐⭐⭐
+            if (isSpeaking) {
+                window.speechSynthesis.cancel();
+                isSpeaking = false;
+            }
+
             // 觸發動態運鏡
             updateCameraPosition();
             
             // 停止閒置動作
             if (idleActionC) idleActionC.fadeOut(0.5);
-            if (idleActionW) idleActionW.fadeOut(0.5); // New for W
+            if (idleActionW) idleActionW.fadeOut(0.5); 
+            if (talkingActionC) talkingActionC.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
             
             // 播放 BGM
             bgm.currentTime = 0;
@@ -1285,15 +1293,15 @@
              playNextDanceInQueue();
         }
 
-        // ⭐⭐⭐ 1️⃣ JSON 修復 + 強化解析器（終極版） ⭐⭐⭐
+        // ⭐⭐⭐ 1️⃣ JSON 自動修復 + 解析器（終極版） ⭐⭐⭐
         function safeParseAIJson(text) {
             try {
                 const match = text.match(/{[\s\S]*}/);
                 if (!match) return null;
                 let jsonStr = match[0];
-                // 修復常見壞 JSON
+                // ⭐ 修復常見壞 JSON
                 jsonStr = jsonStr
-                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],' ) // 修復空值
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') // 修復空值
                     .replace(/'/g, '"')
                     .replace(/,\s*}/g, '}')
                     .replace(/,\s*]/g, ']');
@@ -1347,6 +1355,7 @@
         async function playDanceSequence(sequence) {
             if (isDancing) stopDance();
             await loadDanceAssets();
+            // 停止說話
             if (isSpeaking) {
                 window.speechSynthesis.cancel();
                 isSpeaking = false;
@@ -1575,6 +1584,36 @@
             });
         }
 
+        // ⭐⭐⭐ 4️⃣ 接收 AI 回應（完整最終版） ⭐⭐⭐
+        function handleAIResponse(aiText) {
+            let result = safeParseAIJson(aiText);
+            // ⭐ JSON 壞掉 → 用文字猜舞蹈
+            if (!result) {
+                const guessDance = guessDanceFromText(aiText);
+                if (guessDance) {
+                    playDanceSequence(guessDance);
+                    speak(aiText);
+                    return;
+                }
+                speak(aiText);
+                return;
+            }
+            // 正常 JSON
+            speak(result.text || "");
+            if (result.emotion) {
+                setEmotion(result.emotion);
+            }
+            // ⭐⭐⭐ 連續舞蹈觸發點
+            if (result.action === "dance_sequence") {
+                playDanceSequence(result.dance_list);
+            } else if (result.action === "dance_random") {
+                const r = Math.floor(Math.random() * DANCE_URLS.length);
+                playDanceSequence([r]);
+            } else if (result.action && result.action !== 'none') {
+                triggerAction(result.action, 2000);
+            }
+        }
+
         async function handleSendMessage() {
             // 防止重複點擊
             if (userInput.disabled || sendBtn.disabled) return;
@@ -1669,50 +1708,18 @@
                 
                 let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
                 
-                // ⭐⭐⭐ 4️⃣ 修改 handleSendMessage() 接收 AI 回傳 ⭐⭐⭐
-                // 先嘗試解析 JSON
-                let result = safeParseAIJson(rawText);
+                // ⭐⭐⭐ 改用新的 handleAIResponse 統一處理 ⭐⭐⭐
+                chatHistory.push({ role: "model", parts: [{ text: rawText }] });
+                // 注意：這裡只顯示 AI 回傳的 raw text 給對話框嗎？
+                // 為了保持一致性，我們稍微調整 handleAIResponse 讓它負責 addMessage
                 
-                // ⭐ 如果 JSON 壞掉或沒有動作 → 嘗試用文字猜舞蹈 (Fallback)
-                if (!result || !result.action || result.action === 'none') {
-                    const guessDance = guessDanceFromText(rawText);
-                    if (guessDance) {
-                        console.log("JSON Parse Failed or No Action, but found dance in text:", guessDance);
-                        // 構造一個假的 result 物件
-                        result = {
-                            text: rawText,
-                            emotion: 'happy',
-                            action: 'dance_sequence',
-                            dance_list: guessDance
-                        };
-                    } else if (!result) {
-                        // 真的解析失敗且沒猜到
-                        result = { text: rawText, emotion: 'neutral' };
-                    }
-                }
-
-                if(!result.text) result.text = rawText;
-
-                if(result.emotion === 'neutral') {
-                    if(result.text.match(/(開心|快樂|happy)/)) result.emotion = 'happy';
-                    if(result.text.match(/(難過|悲傷|sad)/)) result.emotion = 'sad';
-                }
-
-                chatHistory.push({ role: "model", parts: [{ text: result.text }] });
-                addMessage(result.text, 'ai');
-                setEmotion(result.emotion);
+                // 為了簡單整合，我們直接在這裡呼叫
+                handleAIResponse(rawText);
                 
-                // ⭐⭐⭐ 處理跳舞與其他動作 ⭐⭐⭐
-                if (result.action === 'dance_sequence') {
-                    playDanceSequence(result.dance_list);
-                } else if (result.action === 'dance_random') {
-                    const r = Math.floor(Math.random() * DANCE_URLS.length);
-                    playDanceSequence([r]);
-                } else if(result.action && result.action !== 'none') {
-                    triggerAction(result.action, 2000);
-                }
-                
-                speak(result.text);
+                // 補上對話框顯示 (若 handleAIResponse 沒做)
+                let tempResult = safeParseAIJson(rawText);
+                let displayText = tempResult ? tempResult.text : rawText;
+                addMessage(displayText, 'ai');
 
             } catch (error) {
                 console.error(error);
