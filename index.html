@@ -1054,17 +1054,14 @@
             console.log(`[Round ${round}] ${mode}`, vrmDanceSequences);
         }
 
-        // 載入所有舞步並開始
-        function loadAndPlayDance() {
-            if (currentVrms.length === 0) return; 
-
-            // 如果已經載入過動畫，直接開始
+        // ⭐⭐⭐ 新增：獨立載入舞步資源的函式 (Return Promise) ⭐⭐⭐
+        function loadDanceAssets() {
+            // 如果已經載入過動畫，直接回傳 Resolved Promise
             if (danceActionsMap.length > 0) {
-                startDance();
-                return;
+                return Promise.resolve();
             }
 
-            addMessage("準備熱舞組曲...", "system");
+            addMessage("正在下載舞步動作...", "system");
             
             // 使用 Promise.all 一次載入所有舞步
             const promises = DANCE_URLS.map(url => new Promise((resolve, reject) => {
@@ -1081,13 +1078,13 @@
                 });
             }));
 
-            Promise.all(promises).then(animationClips => {
+            return Promise.all(promises).then(animationClips => {
                 // 過濾掉載入失敗的
                 const validClips = animationClips.filter(c => c);
                 
                 if (validClips.length === 0) {
                     addMessage("舞蹈載入失敗", "system");
-                    return;
+                    throw new Error("No dance clips loaded");
                 }
 
                 // 為每個舞步、每個角色建立 Action
@@ -1105,6 +1102,15 @@
                     danceActionsMap.push(actionsForThisDance);
                 });
                 
+                console.log("舞步載入完成");
+            });
+        }
+
+        // 載入所有舞步並開始 (原本的按鈕邏輯)
+        function loadAndPlayDance() {
+            if (currentVrms.length === 0) return; 
+
+            loadDanceAssets().then(() => {
                 addMessage("舞步載入完成，Let's Dance!", "system");
                 startDance();
             });
@@ -1249,6 +1255,69 @@
                 stopDance();
             } else {
                 loadAndPlayDance();
+            }
+        }
+        
+        // ⭐⭐⭐ 新增：AI 指令觸發的隨機單次跳舞功能 ⭐⭐⭐
+        async function playRandomSingleDance() {
+            // 如果正在跳舞中，就不要打斷 (或你可以選擇強制打斷)
+            if (isDancing) return;
+            
+            // 1. 確保動作已載入
+            await loadDanceAssets();
+            
+            isDancing = true;
+            // 觸發動態運鏡 (拉遠)
+            updateCameraPosition();
+
+            // 停止閒置動作
+            if (idleActionC) idleActionC.fadeOut(0.5);
+            if (idleActionW) idleActionW.fadeOut(0.5);
+
+            // 2. 隨機選一個動作 (0~3)
+            const randIndex = Math.floor(Math.random() * DANCE_URLS.length);
+            console.log("AI 單次跳舞展示, Index:", randIndex);
+
+            // 3. 播放動作
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                const action = danceActionsMap[randIndex]?.[vrmIndex];
+                if (action) {
+                    action.reset();
+                    action.setLoop(THREE.LoopOnce);
+                    action.clampWhenFinished = true;
+                    action.fadeIn(0.5);
+                    action.play();
+                }
+            });
+
+            // 4. 監聽動作結束 (使用第一個角色當 Timer)
+            const mainMixer = currentVrms[0]?.userData?.mixer;
+            
+            // 定義結束時的清理函式
+            const onOneShotFinished = () => {
+                mainMixer.removeEventListener('finished', onOneShotFinished);
+                
+                // 淡出跳舞動作
+                currentVrms.forEach((vrm, vrmIndex) => {
+                    const action = danceActionsMap[randIndex]?.[vrmIndex];
+                    if (action) action.fadeOut(0.5);
+                });
+                
+                // 恢復狀態
+                isDancing = false;
+                
+                // 恢復相機
+                setTimeout(() => updateCameraPosition(), 500);
+                
+                // 恢復閒置
+                if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
+                if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
+            };
+            
+            if (mainMixer) {
+                mainMixer.addEventListener('finished', onOneShotFinished);
             }
         }
 
@@ -1454,7 +1523,8 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.`;
+            // ⭐⭐⭐ 修改 Prompt: 教導 AI 識別跳舞指令 ⭐⭐⭐
+            finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.\n4. If user asks to dance, set "action" to "dance_random".`;
 
             // Add AbortController for timeout
             const controller = new AbortController();
@@ -1502,7 +1572,15 @@
                 chatHistory.push({ role: "model", parts: [{ text: result.text }] });
                 addMessage(result.text, 'ai');
                 setEmotion(result.emotion);
-                if(result.action) triggerAction(result.action, 2000);
+                
+                // ⭐⭐⭐ 處理跳舞與其他動作 ⭐⭐⭐
+                if (result.action === 'dance_random') {
+                    // 執行單次隨機跳舞
+                    playRandomSingleDance();
+                } else if(result.action) {
+                    triggerAction(result.action, 2000);
+                }
+                
                 speak(result.text);
 
             } catch (error) {
