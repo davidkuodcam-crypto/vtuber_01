@@ -1199,8 +1199,18 @@
         }
 
         // 當一個舞步結束時的回呼函式
-        function onDanceFinished() {
+        function onDanceFinished(e) {
             if (!isDancing) return;
+
+            // ⭐⭐⭐ 關鍵修復：檢查觸發 finished 事件的 action 是否為當前舞蹈動作 ⭐⭐⭐
+            // 防止舊的動作（如正在淡出的 idle/manual dance）觸發此事件，導致流程錯亂
+            const currentMoveIndex = vrmDanceSequences[0][danceStepIndex];
+            const currentAction = danceActionsMap[currentMoveIndex]?.[0];
+
+            // 如果事件有 action 屬性，且不等於當前預期的動作，則忽略
+            if (e && e.action && currentAction && e.action !== currentAction) {
+                return;
+            }
 
             // 淡出目前所有角色的動作
             currentVrms.forEach((vrm, vrmIndex) => {
@@ -1284,8 +1294,15 @@
         }
         
         // ⭐⭐⭐ 定義序列播放監聽器 (Global Scope) ⭐⭐⭐
-        function onSequenceStepFinished() {
+        function onSequenceStepFinished(e) {
              if (!isDancing) return;
+
+             // ⭐⭐⭐ 關鍵修復：檢查觸發 finished 事件的 action 是否為當前 AI 舞蹈動作 ⭐⭐⭐
+             const currentAction = danceActionsMap[currentPlayingDanceIndex]?.[0];
+             // 如果事件有 action 屬性，且不等於當前預期的動作，則忽略
+             if (e && e.action && currentAction && e.action !== currentAction) {
+                 return;
+             }
 
              // 淡出目前動作
              if (currentPlayingDanceIndex !== -1) {
@@ -1365,11 +1382,13 @@
             isDancing = true;
             danceBtn.classList.add('active');
 
-            // 如果正在說話，立刻停止 (避免語音繼續播放，且語音結束的事件不會再干擾)
-            if (isSpeaking) {
+            // ⭐⭐⭐ 關鍵修復：強制停止所有語音，避免 onstart/onend 狀態錯亂 ⭐⭐⭐
+            // 無論 isSpeaking 狀態為何，強制取消，確保舞蹈開始時是安靜的（或只播放 BGM）
+            // 如果不這樣做，之前的語音 onend 可能會在舞蹈開始後觸發，導致邏輯打架
+            if (window.speechSynthesis) {
                 window.speechSynthesis.cancel();
-                isSpeaking = false;
             }
+            isSpeaking = false;
             
             // 清理可能存在的舊監聽器 (手動執行 stopDance 的清理邏輯，但不將 isDancing 設為 false)
             if (currentVrms[0]?.userData?.mixer) {
