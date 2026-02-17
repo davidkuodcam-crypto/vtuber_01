@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <title>AI VTuber - Golden New Year</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<!-- ⭐ 新增：防止 Favicon 404 錯誤 -->
+<link rel="icon" href="data:,">
 <style>
     /* 全域設定：確保邊框計算不影響寬度 */
     * { box-sizing: border-box; }
@@ -738,7 +740,10 @@
 
                     if (res.ok) {
                         const text = await res.text();
-                        if (text.trim().length > 0) {
+                        // ⭐⭐⭐ 修正：防止 Vercel SPA 路由將 404 導向 index.html 造成無限迴圈
+                        if (text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html")) {
+                            keepLoading = false;
+                        } else if (text.trim().length > 0) {
                             if (fileIndex === 1) {
                                 openingRemark = text;
                             }
