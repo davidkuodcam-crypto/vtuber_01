@@ -1756,6 +1756,40 @@
             }
         }
 
+        // ⭐⭐⭐ 新增：語音修正函式 (含預覽模式檢查) ⭐⭐⭐
+        async function correctSpeechText(text) {
+            // ⭐⭐⭐ 預覽模式下無法呼叫 API，直接回傳原文字，避免報錯卡住 ⭐⭐⭐
+            if (isPreviewEnv) {
+                console.log("預覽模式: 跳過語音修正 API");
+                return text;
+            }
+
+            // 暫時的歷史紀錄，只為了修正這句話
+            const correctionMessages = [
+                { role: "user", parts: [{ text: `請將以下語音轉文字的結果修正錯字、語意不通順處，並加上適當標點符號。直接輸出修正後的句子，不要包含任何前言後語或引號：\n${text}` }] }
+            ];
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: correctionMessages,
+                        // 我們可以加上 systemInstruction 讓它更專注於修正，但這裡用 prompt 即可
+                    })
+                });
+
+                if (!response.ok) return text; // 失敗則回傳原字串
+
+                const data = await response.json();
+                let corrected = data.candidates?.[0]?.content?.parts?.[0]?.text || text;
+                return corrected.trim();
+            } catch (e) {
+                console.error("Correction API Error:", e);
+                return text;
+            }
+        }
+
         async function handleSendMessage() {
             // 防止重複點擊
             if (userInput.disabled || sendBtn.disabled) return;
@@ -2127,11 +2161,28 @@
                 
                 // 如果有內容，設定 1.5 秒後自動發送
                 if (userInput.value.trim()) {
-                    silenceTimer = setTimeout(() => { 
-                        if(userInput.value.trim()) {
-                            // 觸發發送
-                            handleSendMessage();
-                            // 注意：handleSendMessage 內部會呼叫 stopRecording()
+                    silenceTimer = setTimeout(async () => { 
+                        const rawText = userInput.value.trim();
+                        if(rawText) {
+                            // --- AI 修正邏輯 ---
+                            stopRecording(); // 停止錄音
+                            
+                            // 鎖定介面
+                            userInput.disabled = true;
+                            sendBtn.disabled = true;
+                            const procMsg = addMessage("🪄 語音校正中...", "system");
+                            
+                            try {
+                                const corrected = await correctSpeechText(rawText);
+                                userInput.value = corrected; // 更新為修正後的文字
+                            } catch(e) {
+                                console.warn("語音修正失敗，使用原始文字");
+                            } finally {
+                                removeMessage(procMsg);
+                                userInput.disabled = false;
+                                sendBtn.disabled = false;
+                                handleSendMessage(); // 發送
+                            }
                         }
                     }, 1500);
                 }
