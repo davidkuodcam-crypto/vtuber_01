@@ -726,8 +726,14 @@
                     let usedPath = fileNameFolder;
                     
                     if (!res.ok) {
-                         res = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
-                         usedPath = fileNameRoot;
+                         // 嘗試從根目錄讀取
+                         try {
+                             const resRoot = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
+                             if (resRoot.ok) {
+                                 res = resRoot;
+                                 usedPath = fileNameRoot;
+                             }
+                         } catch(e) {}
                     }
 
                     if (res.ok) {
@@ -743,6 +749,7 @@
                             fileIndex++;
                         }
                     } else {
+                        // 404 is expected when no more files
                         keepLoading = false;
                     }
                 } catch (e) {
@@ -1562,6 +1569,8 @@
             chatHistory.push({ role: "user", parts: [{ text: text }] });
 
             let finalSystemInstruction = "";
+            
+            // ⭐⭐⭐ 先加入外部 System Prompt，但後面會再加上強制指令 ⭐⭐⭐
             if (externalSystemPrompt) finalSystemInstruction += externalSystemPrompt;
             else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none" }`;
 
@@ -1570,7 +1579,25 @@
             }
 
             // ⭐⭐⭐ 修改 Prompt: 教導 AI 識別跳舞指令 (支援連續舞步) ⭐⭐⭐
-            finalSystemInstruction += `\n【INSTRUCTIONS】\n1. Use Knowledge Base first.\n2. Use Google Search if needed.\n3. Return JSON format.\n4. Dance IDs: 0="霹靂舞定格A"(Breakdance A), 1="湯瑪斯迴旋"(Flair), 2="嘻哈律動"(Hip Hop), 3="霹靂舞定格B"(Breakdance B).\n5. Action Rules:\n- If user asks for a specific dance or sequence, set "action" to "dance_sequence" and "dance_list" to an array of IDs (e.g. [1, 2, 0]).\n- If user asks to dance generally (random), set "action" to "dance_random".\n- For non-dance actions, use specific keywords or "none".`;
+            finalSystemInstruction += `
+【INSTRUCTIONS】
+1. Use Knowledge Base first.
+2. Use Google Search if needed.
+3. Return JSON format.
+4. **DANCE SYSTEM (CRITICAL):**
+   - You MUST extract dance names from user input and map them to IDs.
+   - **For the "dance_list", you must ONLY use these integers: 0, 1, 2, 3.**
+   - ID 0: "霹靂舞定格A" (Breakdance Freeze A)
+   - ID 1: "湯瑪斯迴旋" (Flair)
+   - ID 2: "嘻哈律動" (Hip Hop)
+   - ID 3: "霹靂舞定格B" (Breakdance Freeze B)
+   
+   **Action Rules:**
+   - If user asks for specific dance(s), set "action": "dance_sequence" AND populate "dance_list": [ID, ID...].
+     Example: User says "Dance Flair then Hip Hop" -> "dance_list": [1, 2]
+   - If user says "dance for me" (random), set "action": "dance_random".
+   - For other actions: "none".
+`;
 
             // Add AbortController for timeout
             const controller = new AbortController();
@@ -1622,11 +1649,16 @@
                 // ⭐⭐⭐ 處理跳舞與其他動作 ⭐⭐⭐
                 if (result.action === 'dance_random') {
                     const r = Math.floor(Math.random() * DANCE_URLS.length);
-                    playDanceSequence([r]); // 隨機跳一個
-                } else if (result.action === 'dance_sequence' && Array.isArray(result.dance_list)) {
-                    playDanceSequence(result.dance_list); // 依序跳指定舞步
+                    playDanceSequence([r]); 
+                } else if (result.action === 'dance_sequence') {
+                    // ⭐⭐⭐ 防呆：如果 AI 忘記給 dance_list，就隨機塞一個 ⭐⭐⭐
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        console.warn("AI returned empty dance_list, inserting random dance.");
+                        result.dance_list = [Math.floor(Math.random() * DANCE_URLS.length)];
+                    }
+                    playDanceSequence(result.dance_list); 
                 } else if (result.action && result.action.startsWith('dance_')) {
-                    // 相容舊版指令
+                    // 相容舊版單一指令
                     const idx = parseInt(result.action.split('_')[1]);
                     if (!isNaN(idx)) playDanceSequence([idx]);
                 } else if(result.action) {
