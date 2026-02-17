@@ -1436,7 +1436,8 @@
                 "可愛": 2, "愛心": 2, "嘻哈": 2, "律動": 2, "hip hop": 2,
                 "性感": 3, "走秀": 3,
                 "開心": 4, "happy": 4,
-                "跳舞": -1, "dance": -1 // Random
+                "跳舞": -1, "dance": -1, // Random
+                "隨機": -1, "random": -1, "選一個": -1, "表演": -1 // ⭐⭐⭐ 新增關鍵字 ⭐⭐⭐
             };
             const lowerText = text.toLowerCase();
             for (const key in map) {
@@ -1538,11 +1539,12 @@
                 return;
             }
 
-            const nextIndex = currentDanceQueue.shift();
+            let nextIndex = currentDanceQueue.shift();
             // 驗證索引
             if (nextIndex < 0 || nextIndex >= DANCE_URLS.length) {
-                playNextDanceInQueue(); // 跳過無效索引
-                return;
+                // ⭐⭐⭐ FIX: 如果 AI 給了錯誤索引，自動隨機修正 ⭐⭐⭐
+                console.warn(`Invalid dance index ${nextIndex}, fallback to random`);
+                nextIndex = Math.floor(Math.random() * DANCE_URLS.length);
             }
             
             currentPlayingDanceIndex = nextIndex;
@@ -1863,6 +1865,7 @@
    - If user asks for specific dance(s), set "action": "dance_sequence" AND populate "dance_list": [ID, ID...].
      Example: User says "Dance Flair then Hip Hop" -> "dance_list": [1, 2]
    - If user says "dance for me" (random), set "action": "dance_random".
+   - If user says "隨機跳舞" or "隨機選一個" (in Chinese), ALSO set "action": "dance_random".
    - For other actions: "none".
 
 5. **SPEECH CORRECTION**: The input is raw speech text. You MUST correct typos/grammar in the user's text and return the corrected version in the JSON field "corrected_text".
