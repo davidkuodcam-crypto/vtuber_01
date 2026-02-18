@@ -101,6 +101,25 @@
         cursor: grabbing; /* 抓取中 */
     }
 
+    /* ⭐⭐⭐ 單人模式對話氣泡 ⭐⭐⭐ */
+    #solo-bubble {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.95);
+        color: #333;
+        padding: 15px 20px;
+        border-radius: 20px;
+        border-bottom-left-radius: 2px; /* 像氣泡的尖角 */
+        max-width: 280px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        font-size: 15px;
+        line-height: 1.5;
+        z-index: 20;
+        display: none; /* 預設隱藏 */
+        pointer-events: none; /* 點擊穿透，不影響拖曳 */
+        transition: opacity 0.3s;
+        border: 1px solid #ddd;
+    }
+
     /* API 狀態 */
     #api-status {
         position: absolute;
@@ -193,6 +212,9 @@
         #file-status, #api-status { top: 10px; transform: scale(0.9); transform-origin: top; }
         #file-status { left: 10px; }
         #api-status { right: 10px; }
+        
+        /* ⭐⭐⭐ 手機版強制隱藏單人模式切換按鈕 (只保留雙人模式) ⭐⭐⭐ */
+        #switch-mode-btn { display: none !important; }
     }
 
     #chat-display {
@@ -314,6 +336,9 @@
     <!-- ⭐⭐⭐ 角色 Hitbox (用於單人模式拖曳) ⭐⭐⭐ -->
     <div id="character-hitbox"></div>
 
+    <!-- ⭐⭐⭐ 單人模式氣泡 ⭐⭐⭐ -->
+    <div id="solo-bubble">你好！我是郭大維老師，歡迎來到文藻外語大學。</div>
+
     <div id="loading-screen">
         <div class="loader" id="loader"></div>
         <div class="loading-text" id="status-text">初始化系統中...</div>
@@ -407,6 +432,7 @@
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm'  // W
         ];
         
+        // ⭐⭐⭐ 修改：更新為 David_Kuo_03.vrm ⭐⭐⭐
         const SOLO_VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_03.vrm';
         const SOLO_ANIM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle.vrma';
 
@@ -428,6 +454,7 @@
 
         // ⭐⭐⭐ 拖曳變數 (使用 Raycasting) ⭐⭐⭐
         const hitbox = document.getElementById('character-hitbox');
+        const soloBubble = document.getElementById('solo-bubble');
         let isDraggingSolo = false;
         let dragOffset = new THREE.Vector3(); // 滑鼠點擊點與角色中心的偏差值
         
@@ -593,9 +620,8 @@
 
         updateCameraPosition(); 
 
-        // --- File Loading ---
+        // --- File Loading (恢復載入功能) ---
         async function loadExternalData() {
-            // (Same as original code)
             const statusText = document.getElementById('status-text');
             const fileStatusDiv = document.getElementById('file-status');
             
@@ -804,31 +830,25 @@
             const head = soloVrm ? soloVrm.humanoid.getNormalizedBoneNode('head') : null;
             if (!head) return;
 
-            // ⭐⭐⭐ (修改) 移除拖曳時的頭部轉向，因為現在身體會直接轉向 ⭐⭐⭐
-            // 如果身體轉向了，頭部只要保持自然 (或看向正前方，即相機) 即可
-            // 如果要更精緻，可以讓頭部負責上下 (Pitch)，身體負責左右 (Yaw)
-            // 這裡簡單處理：拖曳時暫停隨機擺動
-
-            if (isDraggingSolo) {
-                // 拖曳時，確保嘴巴閉合，且頭部回正 (因為身體已經對準相機)
-                soloVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('aa'), 0, 0.2));
-                head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, 0, 0.2);
-                
-                // 計算 Pitch (上下看)，讓頭部還是會追蹤相機的高度
+            // ⭐⭐⭐ 拖曳時，強制轉向相機 ⭐⭐⭐
+            if (isDraggingSolo && soloVrm) {
                 const diffX = camera.position.x - soloVrm.scene.position.x;
                 const diffY = camera.position.y - (soloVrm.scene.position.y + 1.45); 
                 const diffZ = camera.position.z - soloVrm.scene.position.z;
+                
+                const targetYaw = Math.atan2(diffX, diffZ);
                 const targetPitch = Math.atan2(diffY, Math.sqrt(diffX*diffX + diffZ*diffZ));
+                
+                head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, targetYaw, 0.2);
                 head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, -targetPitch, 0.2);
                 
-                return;
+                soloVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('aa'), 0, 0.2));
+                return; 
             }
 
             if (isSpeaking) {
-                // 如果正在說話，重置表情權重為0 (除了嘴巴在 animate loop 控制)
                 soloVrm.expressionManager.setValue('happy', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('happy'), 0, 0.1));
                 soloVrm.expressionManager.setValue('relaxed', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('relaxed'), 0, 0.1));
-                // 說話時頭部也稍微回正
                 head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, 0, 0.05);
                 head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, 0, 0.05);
                 return; 
@@ -856,7 +876,7 @@
             }
 
             // 平滑過渡表情
-            const targetHappy = (currentRandomEmotion === 'happy') ? 0.3 : 0; // 微笑就好，不要太誇張
+            const targetHappy = (currentRandomEmotion === 'happy') ? 0.3 : 0; 
             const targetRelaxed = (currentRandomEmotion === 'relaxed') ? 0.3 : 0;
             const currentHappy = soloVrm.expressionManager.getValue('happy');
             const currentRelaxed = soloVrm.expressionManager.getValue('relaxed');
@@ -864,15 +884,13 @@
             soloVrm.expressionManager.setValue('happy', THREE.MathUtils.lerp(currentHappy, targetHappy, 0.05));
             soloVrm.expressionManager.setValue('relaxed', THREE.MathUtils.lerp(currentRelaxed, targetRelaxed, 0.05));
             
-            // 確保嘴巴閉合 (aa = 0)
+            // 確保嘴巴閉合
             soloVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('aa'), 0, 0.2));
 
             // 2. 頭部微動 (使用 Head Bone 旋轉)
-            // 產生平滑的隨機擺動
             const swayX = Math.sin(headSwayTime * 0.5) * 0.03 + Math.sin(headSwayTime * 1.2) * 0.01;
             const swayY = Math.cos(headSwayTime * 0.3) * 0.03 + Math.sin(headSwayTime * 0.8) * 0.01;
             
-            // 混合 LookAt 的影響
             const targetLookRotX = -lookAtTarget.x * 0.1;
             const targetLookRotY = (lookAtTarget.y - 1.5) * 0.1;
 
@@ -880,10 +898,11 @@
             head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, swayY - targetLookRotY, 0.05);
         }
 
-        // ⭐⭐⭐ 更新 Hitbox 位置 ⭐⭐⭐
+        // ⭐⭐⭐ 更新 Hitbox 與 氣泡位置 ⭐⭐⭐
         function updateHitbox() {
             if (!isSoloMode || !soloVrm) {
                 hitbox.style.display = 'none';
+                soloBubble.style.display = 'none';
                 return;
             }
             
@@ -904,36 +923,41 @@
             const dist = camera.position.distanceTo(rootPos);
             const width = (250 / dist); // 調整寬度以匹配縮小後的模型
             
+            // Hitbox 位置
             hitbox.style.left = `${x - width/2}px`;
             hitbox.style.top = `${yTop}px`;
             hitbox.style.width = `${width}px`;
             hitbox.style.height = `${yBottom - yTop}px`;
+            
+            // ⭐⭐⭐ 氣泡位置 (頭部右上方) ⭐⭐⭐
+            if (soloBubble.innerText.trim() !== "") {
+                soloBubble.style.display = 'block';
+                soloBubble.style.left = `${x + width/2}px`; 
+                // 限制氣泡不超出右邊界
+                if (x + width/2 + 280 > window.innerWidth) {
+                    soloBubble.style.left = `${x - width/2 - 290}px`; // 改放左邊
+                }
+                soloBubble.style.top = `${yTop - 20}px`;
+            } else {
+                soloBubble.style.display = 'none';
+            }
         }
 
-        // ⭐⭐⭐ 拖曳事件處理 (完全修正：Raycast Project 1:1) ⭐⭐⭐
+        // ⭐⭐⭐ 拖曳事件處理 (Raycast Project 1:1) ⭐⭐⭐
         
-        // 將螢幕座標轉換為世界座標 (在特定深度)
         function getProjectedPosition(clientX, clientY, depthZ) {
             const vec = new THREE.Vector3();
             const pos = new THREE.Vector3();
             
-            // 轉為 NDC (-1 到 1)
             vec.set(
                 (clientX / window.innerWidth) * 2 - 1,
                 -(clientY / window.innerHeight) * 2 + 1,
                 0.5
             );
             
-            // Unproject: 從 2D 螢幕點發射一條射線到 3D 空間
             vec.unproject(camera);
-            
-            // 計算射線方向
             vec.sub(camera.position).normalize();
             
-            // 計算射線與 Z=depthZ 平面的交點
-            // P = Origin + t * Dir
-            // P.z = depthZ
-            // depthZ = Origin.z + t * Dir.z  =>  t = (depthZ - Origin.z) / Dir.z
             const distance = (depthZ - camera.position.z) / vec.z;
             pos.copy(camera.position).add(vec.multiplyScalar(distance));
             
@@ -943,9 +967,7 @@
         function onDragStart(clientX, clientY) {
             isDraggingSolo = true;
             if (soloVrm) {
-                // 計算滑鼠點擊位置對應的 3D 點
                 const mousePos3D = getProjectedPosition(clientX, clientY, soloVrm.scene.position.z);
-                // 記錄偏移量：角色位置 - 滑鼠點擊的 3D 位置
                 dragOffset.subVectors(soloVrm.scene.position, mousePos3D);
             }
         }
@@ -953,37 +975,31 @@
         function onDragMove(clientX, clientY) {
             if (!isDraggingSolo || !soloVrm) return;
             
-            // 1. 取得當前滑鼠在 3D 平面的位置
             const mousePos3D = getProjectedPosition(clientX, clientY, soloVrm.scene.position.z);
             
-            // 2. 計算新位置 (滑鼠位置 + 初始偏移)
             let newX = mousePos3D.x + dragOffset.x;
             let newY = mousePos3D.y + dragOffset.y;
 
-            // 3. 嚴格限制邊界 (Clamping to Visible Frustum)
-            // 計算該深度下，相機可以看到的寬度和高度
+            // Clamping
             const dist = Math.abs(camera.position.z - soloVrm.scene.position.z);
             const vFov = camera.fov * Math.PI / 180;
             const visibleHeight = 2 * Math.tan(vFov / 2) * dist;
             const visibleWidth = visibleHeight * camera.aspect;
             
-            // 根據 Camera Target 的中心點計算邊界
-            const cy = controls.target.y; // 垂直中心
+            const cy = controls.target.y; 
             
-            // 設定邊際 (保留 15% 邊距，確保身體不切到邊緣)
             const marginX = visibleWidth * 0.4; 
-            const marginY = visibleHeight * 0.4; 
+            const marginTop = visibleHeight * 0.4; 
+            const marginBottom = visibleHeight * 0.48;
             
             const minX = -marginX;
             const maxX = marginX;
-            const minY = cy - marginY;
-            const maxY = cy + marginY;
+            const minY = cy - marginBottom;
+            const maxY = cy + marginTop;
             
-            // 限制座標
             newX = Math.max(minX, Math.min(maxX, newX));
             newY = Math.max(minY, Math.min(maxY, newY));
             
-            // 套用位置
             soloVrm.scene.position.x = newX;
             soloVrm.scene.position.y = newY;
         }
@@ -1027,13 +1043,11 @@
                 directionalLight.position.lerp(targetPos, 0.05);
                 fillLight.intensity = THREE.MathUtils.lerp(fillLight.intensity, 0.8, 0.05); 
                 
-                // ⭐⭐⭐ 新增：身體隨時轉向相機 (Y軸) ⭐⭐⭐
+                // ⭐⭐⭐ 身體隨時轉向相機 (Y軸) ⭐⭐⭐
                 if (soloVrm) {
                     const dx = camera.position.x - soloVrm.scene.position.x;
                     const dz = camera.position.z - soloVrm.scene.position.z;
-                    // 計算角度 (atan2)
                     const angle = Math.atan2(dx, dz);
-                    // VRM 預設背對，所以加 180 度 (PI) 讓臉朝向相機
                     soloVrm.scene.rotation.y = angle + Math.PI;
                 }
 
@@ -1104,7 +1118,6 @@
                     const s = Math.sin(elapsedTime * 18);
                     soloVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
                 } 
-                // else: updateSoloRandomBehavior 已經處理了閉嘴
             }
 
             controls.update();
@@ -1116,14 +1129,13 @@
             if(!vrm) return;
             const blinkLoop = () => {
                 if (!window.actionActive) {
-                    // 隨機眨眼間隔
                     setTimeout(() => {
                         vrm.expressionManager.setValue('blink', 1);
                         setTimeout(() => {
                             vrm.expressionManager.setValue('blink', 0);
                             blinkLoop();
                         }, 120);
-                    }, Math.random() * 3000 + 1000); // 1~4秒眨一次
+                    }, Math.random() * 3000 + 1000); 
                 } else { setTimeout(blinkLoop, 1000); }
             };
             blinkLoop();
@@ -1149,23 +1161,30 @@
                 // UI 更新
                 switchBtn.classList.remove('group-active');
                 switchBtn.classList.add('solo-active');
-                switchBtn.innerHTML = '<i class="fa-solid fa-user-group"></i>'; // 現在是單人，顯示雙人圖示供切換
+                switchBtn.innerHTML = '<i class="fa-solid fa-user-group"></i>'; 
                 
                 danceBtn.style.opacity = '0.3';
                 danceBtn.style.pointerEvents = 'none';
 
-                // ⭐⭐⭐ 隱藏對話相關 UI ⭐⭐⭐
+                // ⭐⭐⭐ 單人模式 UI 邏輯 ⭐⭐⭐
+                // 1. 隱藏對話列表 (歷史訊息)
                 document.getElementById('chat-display').style.display = 'none';
-                document.querySelector('.input-wrapper').style.display = 'none';
-                document.getElementById('send-btn').style.display = 'none';
-                document.getElementById('mic-btn').style.display = 'none';
+                
+                // 2. 確保輸入框、麥克風、發送鈕顯示
+                document.querySelector('.input-wrapper').style.display = 'flex';
+                document.getElementById('send-btn').style.display = 'block';
+                if (recognition && !isAndroid && !isIOS) {
+                    document.getElementById('mic-btn').style.display = 'flex';
+                }
+
+                // 3. 顯示氣泡 (如果有的話)
+                soloBubble.style.display = soloBubble.innerText ? 'block' : 'none';
 
                 // 模型切換
                 currentVrms.forEach(vrm => { if(vrm) vrm.scene.visible = false; });
                 if (soloVrm) soloVrm.scene.visible = true;
 
                 // ⭐⭐⭐ 修正：背景設定為 null，讓 Canvas 透明 ⭐⭐⭐
-                // 否則 THREE.js 會每幀用顏色清除畫面，遮擋 iframe
                 scene.background = null; 
                 scene.fog.color.set(0xffffff); 
                 renderer.setClearColor(0x000000, 0); 
@@ -1182,25 +1201,29 @@
                 // UI 更新
                 switchBtn.classList.remove('solo-active');
                 switchBtn.classList.add('group-active');
-                switchBtn.innerHTML = '<i class="fa-solid fa-user"></i>'; // 現在是雙人，顯示單人圖示供切換
+                switchBtn.innerHTML = '<i class="fa-solid fa-user"></i>'; 
 
                 danceBtn.style.opacity = '1';
                 danceBtn.style.pointerEvents = 'auto';
 
-                // ⭐⭐⭐ 顯示對話相關 UI ⭐⭐⭐
+                // ⭐⭐⭐ 群體模式 UI 邏輯 ⭐⭐⭐
+                // 1. 顯示對話列表
                 document.getElementById('chat-display').style.display = 'flex';
+                // 2. 顯示輸入框
                 document.querySelector('.input-wrapper').style.display = 'flex';
-                document.getElementById('send-btn').style.display = ''; // 恢復預設
+                document.getElementById('send-btn').style.display = ''; 
                 if (recognition && !isAndroid && !isIOS) {
                     document.getElementById('mic-btn').style.display = 'flex';
                 }
+                
+                // 3. 隱藏單人氣泡
+                soloBubble.style.display = 'none';
 
                 // 模型切換
                 currentVrms.forEach(vrm => { if(vrm) vrm.scene.visible = true; });
                 if (soloVrm) soloVrm.scene.visible = false;
 
                 // 背景還原
-                // ⭐⭐⭐ 修正：恢復場景背景色 ⭐⭐⭐
                 scene.background = new THREE.Color(0xfff8e1);
                 renderer.setClearColor(0x000000, 0); 
                 document.body.style.background = 'linear-gradient(135deg, #fff8e1 0%, #ffecb3 50%, #ffe0b2 100%)';
@@ -1489,6 +1512,19 @@
         }
 
         function addMessage(text, type) {
+            // ⭐⭐⭐ 修改：根據模式顯示訊息 ⭐⭐⭐
+            if (isSoloMode) {
+                if (type === 'ai') {
+                    const bubble = document.getElementById('solo-bubble');
+                    // 清除之前的打字機效果 (簡單起見，直接替換)
+                    bubble.innerText = text;
+                    bubble.style.display = 'block';
+                    updateHitbox(); // 立即更新位置
+                }
+                // 單人模式不顯示 User 訊息在對話框 (或可選顯示在另一個氣泡)
+                return;
+            }
+
             const chatDisplay = document.getElementById('chat-display');
             const div = document.createElement('div');
             div.className = `message message-${type}`;
@@ -1576,6 +1612,7 @@
             if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) triggerAction(result.action, 2000);
             
             if (result && result.corrected_text) {
+                // 如果是單人模式，這裡沒有 message-user，可以忽略或另外處理
                 const lastUserMsg = document.querySelector('.message-user:last-child');
                 if (lastUserMsg) lastUserMsg.innerHTML = result.corrected_text;
             }
@@ -1592,13 +1629,24 @@
             if (!isMuted && ttsSupported) await Promise.race([unlockTTS(), new Promise(r => setTimeout(r, 300))]);
 
             userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
-            addMessage(text, 'user');
+            addMessage(text, 'user'); // 單人模式下此函數會被攔截不顯示在對話框，這是預期的
+            
             if (isPreviewEnv) {
                 addMessage("【提示】預覽模式無法連接 AI。", 'system');
                 userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
                 return;
             }
-            const loadingMsg = addMessage("Thinking...", 'system');
+            
+            // 單人模式下，還是需要一個 loading 提示
+            if (isSoloMode) {
+                const bubble = document.getElementById('solo-bubble');
+                bubble.innerText = "Thinking...";
+                bubble.style.display = 'block';
+                updateHitbox();
+            } else {
+                 const loadingMsg = addMessage("Thinking...", 'system');
+            }
+            
             chatHistory.push({ role: "user", parts: [{ text: text }] });
 
             let finalSystemInstruction = "";
@@ -1622,14 +1670,25 @@
                 clearTimeout(timeoutId);
                 if (!response.ok) throw new Error("Server Error");
                 const data = await response.json();
-                removeMessage(loadingMsg);
+                
+                // 移除 loading (單人模式會直接覆蓋文字，群體模式移除 DOM)
+                if (!isSoloMode) {
+                     const loadingMsgs = document.querySelectorAll('.message-system');
+                     if(loadingMsgs.length > 0 && loadingMsgs[loadingMsgs.length-1].innerText === "Thinking...") {
+                         removeMessage(loadingMsgs[loadingMsgs.length-1]);
+                     }
+                }
+
                 let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
                 chatHistory.push({ role: "model", parts: [{ text: rawText }] });
                 handleAIResponse(rawText);
                 let tempResult = safeParseAIJson(rawText);
                 addMessage(tempResult ? tempResult.text : rawText, 'ai');
             } catch (error) {
-                removeMessage(loadingMsg);
+                if (!isSoloMode) {
+                     const loadingMsgs = document.querySelectorAll('.message-system');
+                     if(loadingMsgs.length > 0) removeMessage(loadingMsgs[loadingMsgs.length-1]);
+                }
                 addMessage(error.name === 'AbortError' ? "連線逾時" : `錯誤: ${error.message}`, 'system');
             } finally {
                 userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
