@@ -88,6 +88,19 @@
         transition: opacity 0.5s;
     }
 
+    /* ⭐⭐⭐ 角色 Hitbox (隱形觸控區) ⭐⭐⭐ */
+    #character-hitbox {
+        position: absolute;
+        z-index: 10; /* 比 Canvas 高，確保能接收點擊 */
+        border: none; 
+        cursor: grab; /* 顯示手掌 */
+        display: none; /* 預設隱藏，單人模式開啟 */
+        touch-action: none; /* 防止手機滑動頁面 */
+    }
+    #character-hitbox:active {
+        cursor: grabbing; /* 抓取中 */
+    }
+
     /* API 狀態 */
     #api-status {
         position: absolute;
@@ -104,6 +117,7 @@
         z-index: 100;
         transition: all 0.3s;
         border: 1px solid #ffcc80;
+        pointer-events: none; /* 避免遮擋 */
     }
     .status-dot { width: 8px; height: 8px; border-radius: 50%; background-color: #ccc; margin-right: 6px; }
     .status-connected { background-color: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
@@ -296,6 +310,9 @@
 
     <!-- ⭐⭐⭐ 背景 Iframe ⭐⭐⭐ -->
     <iframe id="website-iframe" src="https://a001.wzu.edu.tw/"></iframe>
+    
+    <!-- ⭐⭐⭐ 角色 Hitbox (用於單人模式拖曳) ⭐⭐⭐ -->
+    <div id="character-hitbox"></div>
 
     <div id="loading-screen">
         <div class="loader" id="loader"></div>
@@ -390,8 +407,8 @@
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm'  // W
         ];
         
-        const SOLO_VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_02.vrm';
-        const SOLO_ANIM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Breathing_Idle.vrma';
+        const SOLO_VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_03.vrm';
+        const SOLO_ANIM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle.vrma';
 
         let currentVrms = []; 
         let mixers = [];      
@@ -409,6 +426,11 @@
         let lookAtTarget = new THREE.Vector3(0, 1.5, 2.0); // 眼睛看的地方
         let headSwayTime = 0;
 
+        // ⭐⭐⭐ 拖曳變數 (使用 Raycasting) ⭐⭐⭐
+        const hitbox = document.getElementById('character-hitbox');
+        let isDraggingSolo = false;
+        let dragOffset = new THREE.Vector3(); // 滑鼠點擊點與角色中心的偏差值
+        
         const DANCE_URLS = [
             'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma', 
             'https://davidkuodcam-crypto.github.io/VTuber/Flair.vrma',                   
@@ -478,15 +500,17 @@
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
             
+            // ⭐⭐⭐ 獨立模式下的相機邏輯 ⭐⭐⭐
             if (isSoloMode) {
                 if (aspect < 0.8) { // Mobile
-                    camera.position.set(0.0, 1.35, 1.8); 
-                    controls.target.set(0.0, 1.3, 0.0);
+                    camera.position.set(0.0, 1.1, 3.5); // 稍微貼近，因為背景可互動
+                    controls.target.set(0.0, 1.1, 0.0);
                 } else { // Desktop
-                    camera.position.set(0.0, 1.4, 2.2);
-                    controls.target.set(0.0, 1.3, 0.0);
+                    camera.position.set(0.0, 1.3, 2.8);
+                    controls.target.set(0.0, 1.2, 0.0);
                 }
             } else {
+                // 原本群體模式
                 if (aspect < 0.8) {
                     if (isDancing) {
                         camera.position.set(0.0, 0.8, 8.5); 
@@ -666,6 +690,10 @@
                 scene.add(vrm.scene);
                 vrm.scene.visible = false;
                 vrm.scene.position.set(0, 0, 0); 
+                
+                // ⭐⭐⭐ 縮小一點比例 (0.6) ⭐⭐⭐
+                vrm.scene.scale.set(0.6, 0.6, 0.6);
+
                 const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
                 const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
                 if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
@@ -773,12 +801,36 @@
 
         // ⭐⭐⭐ 隨機閒置行為 (David) ⭐⭐⭐
         function updateSoloRandomBehavior(deltaTime) {
-            if (!soloVrm || isSpeaking) {
+            const head = soloVrm ? soloVrm.humanoid.getNormalizedBoneNode('head') : null;
+            if (!head) return;
+
+            // ⭐⭐⭐ (修改) 移除拖曳時的頭部轉向，因為現在身體會直接轉向 ⭐⭐⭐
+            // 如果身體轉向了，頭部只要保持自然 (或看向正前方，即相機) 即可
+            // 如果要更精緻，可以讓頭部負責上下 (Pitch)，身體負責左右 (Yaw)
+            // 這裡簡單處理：拖曳時暫停隨機擺動
+
+            if (isDraggingSolo) {
+                // 拖曳時，確保嘴巴閉合，且頭部回正 (因為身體已經對準相機)
+                soloVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('aa'), 0, 0.2));
+                head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, 0, 0.2);
+                
+                // 計算 Pitch (上下看)，讓頭部還是會追蹤相機的高度
+                const diffX = camera.position.x - soloVrm.scene.position.x;
+                const diffY = camera.position.y - (soloVrm.scene.position.y + 1.45); 
+                const diffZ = camera.position.z - soloVrm.scene.position.z;
+                const targetPitch = Math.atan2(diffY, Math.sqrt(diffX*diffX + diffZ*diffZ));
+                head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, -targetPitch, 0.2);
+                
+                return;
+            }
+
+            if (isSpeaking) {
                 // 如果正在說話，重置表情權重為0 (除了嘴巴在 animate loop 控制)
-                if (soloVrm) {
-                    soloVrm.expressionManager.setValue('happy', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('happy'), 0, 0.1));
-                    soloVrm.expressionManager.setValue('relaxed', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('relaxed'), 0, 0.1));
-                }
+                soloVrm.expressionManager.setValue('happy', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('happy'), 0, 0.1));
+                soloVrm.expressionManager.setValue('relaxed', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('relaxed'), 0, 0.1));
+                // 說話時頭部也稍微回正
+                head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, 0, 0.05);
+                head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, 0, 0.05);
                 return; 
             }
 
@@ -816,20 +868,149 @@
             soloVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('aa'), 0, 0.2));
 
             // 2. 頭部微動 (使用 Head Bone 旋轉)
-            const head = soloVrm.humanoid.getNormalizedBoneNode('head');
-            if (head) {
-                // 產生平滑的隨機擺動
-                const swayX = Math.sin(headSwayTime * 0.5) * 0.03 + Math.sin(headSwayTime * 1.2) * 0.01;
-                const swayY = Math.cos(headSwayTime * 0.3) * 0.03 + Math.sin(headSwayTime * 0.8) * 0.01;
-                
-                // 混合 LookAt 的影響
-                const targetLookRotX = -lookAtTarget.x * 0.1;
-                const targetLookRotY = (lookAtTarget.y - 1.5) * 0.1;
+            // 產生平滑的隨機擺動
+            const swayX = Math.sin(headSwayTime * 0.5) * 0.03 + Math.sin(headSwayTime * 1.2) * 0.01;
+            const swayY = Math.cos(headSwayTime * 0.3) * 0.03 + Math.sin(headSwayTime * 0.8) * 0.01;
+            
+            // 混合 LookAt 的影響
+            const targetLookRotX = -lookAtTarget.x * 0.1;
+            const targetLookRotY = (lookAtTarget.y - 1.5) * 0.1;
 
-                head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, swayX + targetLookRotX, 0.05);
-                head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, swayY - targetLookRotY, 0.05);
+            head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, swayX + targetLookRotX, 0.05);
+            head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, swayY - targetLookRotY, 0.05);
+        }
+
+        // ⭐⭐⭐ 更新 Hitbox 位置 ⭐⭐⭐
+        function updateHitbox() {
+            if (!isSoloMode || !soloVrm) {
+                hitbox.style.display = 'none';
+                return;
+            }
+            
+            hitbox.style.display = 'block';
+            
+            const headNode = soloVrm.humanoid.getNormalizedBoneNode('head');
+            const rootPos = soloVrm.scene.position.clone();
+            const headPos = headNode ? headNode.getWorldPosition(new THREE.Vector3()) : rootPos.clone().add(new THREE.Vector3(0, 1.6, 0));
+            headPos.y += 0.2;
+            
+            const headScreen = headPos.clone().project(camera);
+            const rootScreen = rootPos.clone().project(camera);
+            
+            const x = (rootScreen.x * 0.5 + 0.5) * window.innerWidth;
+            const yBottom = (-(rootScreen.y * 0.5) + 0.5) * window.innerHeight;
+            const yTop = (-(headScreen.y * 0.5) + 0.5) * window.innerHeight;
+            
+            const dist = camera.position.distanceTo(rootPos);
+            const width = (250 / dist); // 調整寬度以匹配縮小後的模型
+            
+            hitbox.style.left = `${x - width/2}px`;
+            hitbox.style.top = `${yTop}px`;
+            hitbox.style.width = `${width}px`;
+            hitbox.style.height = `${yBottom - yTop}px`;
+        }
+
+        // ⭐⭐⭐ 拖曳事件處理 (完全修正：Raycast Project 1:1) ⭐⭐⭐
+        
+        // 將螢幕座標轉換為世界座標 (在特定深度)
+        function getProjectedPosition(clientX, clientY, depthZ) {
+            const vec = new THREE.Vector3();
+            const pos = new THREE.Vector3();
+            
+            // 轉為 NDC (-1 到 1)
+            vec.set(
+                (clientX / window.innerWidth) * 2 - 1,
+                -(clientY / window.innerHeight) * 2 + 1,
+                0.5
+            );
+            
+            // Unproject: 從 2D 螢幕點發射一條射線到 3D 空間
+            vec.unproject(camera);
+            
+            // 計算射線方向
+            vec.sub(camera.position).normalize();
+            
+            // 計算射線與 Z=depthZ 平面的交點
+            // P = Origin + t * Dir
+            // P.z = depthZ
+            // depthZ = Origin.z + t * Dir.z  =>  t = (depthZ - Origin.z) / Dir.z
+            const distance = (depthZ - camera.position.z) / vec.z;
+            pos.copy(camera.position).add(vec.multiplyScalar(distance));
+            
+            return pos;
+        }
+
+        function onDragStart(clientX, clientY) {
+            isDraggingSolo = true;
+            if (soloVrm) {
+                // 計算滑鼠點擊位置對應的 3D 點
+                const mousePos3D = getProjectedPosition(clientX, clientY, soloVrm.scene.position.z);
+                // 記錄偏移量：角色位置 - 滑鼠點擊的 3D 位置
+                dragOffset.subVectors(soloVrm.scene.position, mousePos3D);
             }
         }
+
+        function onDragMove(clientX, clientY) {
+            if (!isDraggingSolo || !soloVrm) return;
+            
+            // 1. 取得當前滑鼠在 3D 平面的位置
+            const mousePos3D = getProjectedPosition(clientX, clientY, soloVrm.scene.position.z);
+            
+            // 2. 計算新位置 (滑鼠位置 + 初始偏移)
+            let newX = mousePos3D.x + dragOffset.x;
+            let newY = mousePos3D.y + dragOffset.y;
+
+            // 3. 嚴格限制邊界 (Clamping to Visible Frustum)
+            // 計算該深度下，相機可以看到的寬度和高度
+            const dist = Math.abs(camera.position.z - soloVrm.scene.position.z);
+            const vFov = camera.fov * Math.PI / 180;
+            const visibleHeight = 2 * Math.tan(vFov / 2) * dist;
+            const visibleWidth = visibleHeight * camera.aspect;
+            
+            // 根據 Camera Target 的中心點計算邊界
+            const cy = controls.target.y; // 垂直中心
+            
+            // 設定邊際 (保留 15% 邊距，確保身體不切到邊緣)
+            const marginX = visibleWidth * 0.4; 
+            const marginY = visibleHeight * 0.4; 
+            
+            const minX = -marginX;
+            const maxX = marginX;
+            const minY = cy - marginY;
+            const maxY = cy + marginY;
+            
+            // 限制座標
+            newX = Math.max(minX, Math.min(maxX, newX));
+            newY = Math.max(minY, Math.min(maxY, newY));
+            
+            // 套用位置
+            soloVrm.scene.position.x = newX;
+            soloVrm.scene.position.y = newY;
+        }
+
+        function onDragEnd() {
+            isDraggingSolo = false;
+        }
+
+        // 滑鼠事件
+        hitbox.addEventListener('mousedown', (e) => { e.preventDefault(); onDragStart(e.clientX, e.clientY); });
+        window.addEventListener('mousemove', (e) => { onDragMove(e.clientX, e.clientY); });
+        window.addEventListener('mouseup', onDragEnd);
+
+        // 觸控事件
+        hitbox.addEventListener('touchstart', (e) => { 
+            if(e.touches.length > 0) {
+                e.preventDefault(); 
+                onDragStart(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, {passive: false});
+        
+        window.addEventListener('touchmove', (e) => { 
+            if(e.touches.length > 0) onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+        }, {passive: false});
+        
+        window.addEventListener('touchend', onDragEnd);
+
 
         // --- Animation Loop ---
         const clock = new THREE.Clock();
@@ -845,6 +1026,19 @@
                 const targetPos = new THREE.Vector3(0.5, 1.5, 2.0);
                 directionalLight.position.lerp(targetPos, 0.05);
                 fillLight.intensity = THREE.MathUtils.lerp(fillLight.intensity, 0.8, 0.05); 
+                
+                // ⭐⭐⭐ 新增：身體隨時轉向相機 (Y軸) ⭐⭐⭐
+                if (soloVrm) {
+                    const dx = camera.position.x - soloVrm.scene.position.x;
+                    const dz = camera.position.z - soloVrm.scene.position.z;
+                    // 計算角度 (atan2)
+                    const angle = Math.atan2(dx, dz);
+                    // VRM 預設背對，所以加 180 度 (PI) 讓臉朝向相機
+                    soloVrm.scene.rotation.y = angle + Math.PI;
+                }
+
+                // ⭐ 更新 Hitbox ⭐
+                updateHitbox();
             } else {
                 // 群體模式光線
                 ambientLight.intensity = THREE.MathUtils.lerp(ambientLight.intensity, 0.8, 0.05); 
@@ -903,7 +1097,7 @@
                 soloMixer.update(deltaTime);
                 soloVrm.update(deltaTime);
                 
-                // ⭐⭐⭐ 呼叫閒置行為 ⭐⭐⭐
+                // ⭐⭐⭐ 呼叫閒置行為 (含拖曳注視) ⭐⭐⭐
                 updateSoloRandomBehavior(deltaTime);
                 
                 if (isSpeaking && !isMuted) {
