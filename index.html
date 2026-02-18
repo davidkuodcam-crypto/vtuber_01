@@ -432,7 +432,6 @@
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm'  // W
         ];
         
-        // ⭐⭐⭐ 修改：更新為 David_Kuo_03.vrm ⭐⭐⭐
         const SOLO_VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_03.vrm';
         const SOLO_ANIM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle.vrma';
 
@@ -650,7 +649,7 @@
 
         updateCameraPosition(); 
 
-        // --- File Loading (恢復載入功能) ---
+        // --- File Loading ---
         async function loadExternalData() {
             const statusText = document.getElementById('status-text');
             const fileStatusDiv = document.getElementById('file-status');
@@ -862,30 +861,23 @@
 
             // ⭐⭐⭐ 拖曳時，強制轉向相機 ⭐⭐⭐
             if (isDraggingSolo && soloVrm) {
-                // 計算指向相機的向量
                 const diffX = camera.position.x - soloVrm.scene.position.x;
-                // 調整Y軸差異，稍微看高一點(看相機鏡頭)
                 const diffY = camera.position.y - (soloVrm.scene.position.y + 1.45); 
                 const diffZ = camera.position.z - soloVrm.scene.position.z;
                 
-                // 計算目標角度
                 const targetYaw = Math.atan2(diffX, diffZ);
                 const targetPitch = Math.atan2(diffY, Math.sqrt(diffX*diffX + diffZ*diffZ));
                 
-                // 平滑轉動 (Lerp)
                 head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, targetYaw, 0.2);
                 head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, -targetPitch, 0.2);
                 
-                // 確保嘴巴閉合
                 soloVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('aa'), 0, 0.2));
-                return; // 直接返回，不執行下方的隨機邏輯
+                return; 
             }
 
             if (isSpeaking) {
-                // 如果正在說話，重置表情權重為0 (除了嘴巴在 animate loop 控制)
                 soloVrm.expressionManager.setValue('happy', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('happy'), 0, 0.1));
                 soloVrm.expressionManager.setValue('relaxed', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('relaxed'), 0, 0.1));
-                // 說話時頭部也稍微回正
                 head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, 0, 0.05);
                 head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, 0, 0.05);
                 return; 
@@ -1227,10 +1219,11 @@
                 danceBtn.style.opacity = '0.3';
                 danceBtn.style.pointerEvents = 'none';
 
-                // ⭐⭐⭐ 隱藏對話相關 UI，保留麥克風與輸入框 ⭐⭐⭐
-                document.getElementById('chat-display').style.display = 'none'; // 隱藏歷史對話窗
+                // ⭐⭐⭐ 單人模式 UI 邏輯 ⭐⭐⭐
+                // 1. 隱藏對話列表 (歷史訊息)
+                document.getElementById('chat-display').style.display = 'none';
                 
-                // 確保輸入框、麥克風、發送鈕顯示
+                // 2. 確保輸入框、麥克風、發送鈕顯示
                 document.querySelector('.input-wrapper').style.display = 'flex';
                 document.getElementById('send-btn').style.display = ''; // 恢復預設 (block/flex)
                 if (recognition && !isAndroid && !isIOS) {
@@ -1267,8 +1260,10 @@
                 danceBtn.style.opacity = '1';
                 danceBtn.style.pointerEvents = 'auto';
 
-                // ⭐⭐⭐ 顯示對話相關 UI ⭐⭐⭐
+                // ⭐⭐⭐ 群體模式 UI 邏輯 ⭐⭐⭐
+                // 1. 顯示對話列表
                 document.getElementById('chat-display').style.display = 'flex';
+                // 2. 顯示輸入框
                 document.querySelector('.input-wrapper').style.display = 'flex';
                 document.getElementById('send-btn').style.display = ''; // 恢復預設
                 if (recognition && !isAndroid && !isIOS) {
@@ -1355,20 +1350,33 @@
         }
 
         function startDance() {
-            if (isSoloMode) return; // 獨立模式不跳舞
-            
+            // ⭐⭐⭐ 關鍵修復：手動觸發時取消語音，符合 Index02 邏輯 ⭐⭐⭐
+            if (isSpeaking) {
+                window.speechSynthesis.cancel();
+                isSpeaking = false;
+            }
+
+            // ⭐⭐⭐ 關鍵修復：單人模式不跳舞 ⭐⭐⭐
+            if (isSoloMode) return;
+
             isDancing = true;
             danceBtn.classList.add('active'); 
-            if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking = false; }
-            if (currentVrms[0]?.userData?.mixer) currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
+            
+            // ⭐⭐⭐ 關鍵修復：清理 AI 佇列監聽器 ⭐⭐⭐
+            if (currentVrms[0]?.userData?.mixer) {
+                currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
+            }
+
             updateCameraPosition();
             if (idleActionC) idleActionC.fadeOut(0.5);
             if (idleActionW) idleActionW.fadeOut(0.5); 
             if (talkingActionC) talkingActionC.fadeOut(0.5);
             if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
             bgm.currentTime = 0; bgm.muted = isMuted;
             const playPromise = bgm.play();
             if (playPromise !== undefined) playPromise.catch(e=>{});
+            
             danceRound = 1; danceStepIndex = 0;
             generateSequences(danceRound);
             playCurrentStep();
@@ -1376,23 +1384,36 @@
 
         function playCurrentStep() {
             if (!isDancing) return;
-            if (currentVrms[0]?.userData?.mixer) currentVrms[0].userData.mixer.removeEventListener('finished', onDanceFinished);
+
+            // ⭐⭐⭐ 關鍵修復：清理舊監聽器 ⭐⭐⭐
+            if (currentVrms[0]?.userData?.mixer) {
+                currentVrms[0].userData.mixer.removeEventListener('finished', onDanceFinished);
+            }
+
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
                 const moveIndex = vrmDanceSequences[vrmIndex][danceStepIndex];
                 const action = danceActionsMap[moveIndex]?.[vrmIndex];
                 if (action) {
                     if (vrmIndex === 0) currentActiveActionForListener = action;
-                    action.reset(); action.setLoop(THREE.LoopOnce); action.clampWhenFinished = true;
+                    action.reset(); 
+                    action.setLoop(THREE.LoopOnce); 
+                    action.clampWhenFinished = true;
                     action.fadeIn(0.5); action.play();
                 }
             });
-            if (currentVrms[0]?.userData?.mixer) currentVrms[0].userData.mixer.addEventListener('finished', onDanceFinished);
+            
+            if (currentVrms[0]?.userData?.mixer) {
+                currentVrms[0].userData.mixer.addEventListener('finished', onDanceFinished);
+            }
         }
 
         function onDanceFinished(e) {
             if (!isDancing) return;
+            
+            // ⭐⭐⭐ 關鍵修復：事件安全檢查 ⭐⭐⭐
             if (e && e.action && currentActiveActionForListener && e.action !== currentActiveActionForListener) return;
+
             currentVrms.forEach((vrm, vrmIndex) => {
                 const moveIndex = vrmDanceSequences[vrmIndex][danceStepIndex];
                 const action = danceActionsMap[moveIndex]?.[vrmIndex];
@@ -1413,12 +1434,19 @@
             isDancing = false;
             danceBtn.classList.remove('active');
             bgm.pause(); bgm.currentTime = 0;
+            
             danceActionsMap.forEach(group => group.forEach(action => action.fadeOut(0.5)));
+            
+            // ⭐⭐⭐ 關鍵修復：清理所有監聽器 ⭐⭐⭐
             if (currentVrms[0]?.userData?.mixer) {
                 currentVrms[0].userData.mixer.removeEventListener('finished', onDanceFinished);
                 currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
             }
-            currentDanceQueue = []; currentPlayingDanceIndex = -1; currentActiveActionForListener = null;
+            
+            currentDanceQueue = []; 
+            currentPlayingDanceIndex = -1; 
+            currentActiveActionForListener = null;
+            
             setTimeout(() => updateCameraPosition(), 500);
             if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
             if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
@@ -1430,7 +1458,10 @@
         
         function onSequenceStepFinished(e) {
              if (!isDancing) return;
+             
+             // ⭐⭐⭐ 關鍵修復：事件安全檢查 ⭐⭐⭐
              if (e && e.action && currentActiveActionForListener && e.action !== currentActiveActionForListener) return;
+
              if (currentPlayingDanceIndex !== -1) {
                  currentVrms.forEach((vrm, vrmIndex) => {
                     const action = danceActionsMap[currentPlayingDanceIndex]?.[vrmIndex];
@@ -1472,30 +1503,46 @@
             return null;
         }
 
+        // ⭐⭐⭐ 關鍵修復：整合 Index02 的 playDanceSequence 邏輯 ⭐⭐⭐
         async function playDanceSequence(sequence) {
-            isDancing = true; danceBtn.classList.add('active');
+            isDancing = true; 
+            danceBtn.classList.add('active');
+            
+            // Index02 邏輯：不強制停止語音 (保留註解)
+            // if (window.speechSynthesis) window.speechSynthesis.cancel(); 
+            // isSpeaking = false;
+            
+            // 清理舊監聽器
             if (currentVrms[0]?.userData?.mixer) {
                 currentVrms[0].userData.mixer.removeEventListener('finished', onDanceFinished);
                 currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
             }
              danceActionsMap.forEach(group => group.forEach(action => action.fadeOut(0.5)));
+            
             await loadDanceAssets(); 
-            isDancing = true; updateCameraPosition();
+            
+            isDancing = true; 
+            updateCameraPosition();
+            
             if (idleActionC) idleActionC.fadeOut(0.5);
             if (idleActionW) idleActionW.fadeOut(0.5);
             if (talkingActionC) talkingActionC.fadeOut(0.5);
             if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
             try {
                 if (!bgm.paused) bgm.pause();
                 bgm.currentTime = 0; bgm.muted = isMuted;
                 const playPromise = bgm.play();
                 if (playPromise !== undefined) playPromise.catch(e=>{});
             } catch(e) {}
+            
             currentDanceQueue = Array.isArray(sequence) ? [...sequence] : [];
             currentDanceQueue = currentDanceQueue.map(id => (id === -1) ? Math.floor(Math.random() * DANCE_URLS.length) : id);
+            
             playNextDanceInQueue();
         }
 
+        // ⭐⭐⭐ 關鍵修復：整合 Index02 的 playNextDanceInQueue 邏輯 (索引驗證) ⭐⭐⭐
         function playNextDanceInQueue() {
             if (currentDanceQueue.length === 0) {
                 if (currentVrms[0]?.userData?.mixer) currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
@@ -1505,9 +1552,17 @@
                 if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
                 return;
             }
+            
             let nextIndex = currentDanceQueue.shift();
-            if (nextIndex < 0 || nextIndex >= DANCE_URLS.length) nextIndex = Math.floor(Math.random() * DANCE_URLS.length);
+            
+            // Index02 邏輯：索引驗證與 Fallback
+            if (nextIndex < 0 || nextIndex >= DANCE_URLS.length) {
+                console.warn(`Invalid dance index ${nextIndex}, fallback to random`);
+                nextIndex = Math.floor(Math.random() * DANCE_URLS.length);
+            }
+
             currentPlayingDanceIndex = nextIndex;
+            
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
                 const action = danceActionsMap[nextIndex]?.[vrmIndex];
@@ -1517,6 +1572,7 @@
                     action.fadeIn(0.5); action.play();
                 }
             });
+            
             if (currentVrms[0]?.userData?.mixer) {
                 currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
                 currentVrms[0].userData.mixer.addEventListener('finished', onSequenceStepFinished);
@@ -1672,7 +1728,6 @@
             if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) triggerAction(result.action, 2000);
             
             if (result && result.corrected_text) {
-                // 如果是單人模式，這裡沒有 message-user，可以忽略或另外處理
                 const lastUserMsg = document.querySelector('.message-user:last-child');
                 if (lastUserMsg) lastUserMsg.innerHTML = result.corrected_text;
             }
@@ -1770,15 +1825,14 @@
                 const u = new SpeechSynthesisUtterance(cleanText);
                 window.currentUtterance = u; 
                 
-                // ⭐⭐⭐ 優先使用我們選好的男聲 ⭐⭐⭐
                 if (preferredVoice) {
                     u.voice = preferredVoice;
                     u.lang = preferredVoice.lang;
-                    u.pitch = 0.8; // 降低音調
+                    u.pitch = 0.8; 
                     u.rate = 1.0; 
                 } else {
                     u.lang = 'zh-TW';
-                    u.pitch = 0.8; // 預設也降低音調
+                    u.pitch = 0.8; 
                 }
                 
                 u.volume = 1;
@@ -1787,8 +1841,9 @@
                     isSpeaking = true;
                     if (!isDancing) {
                         if (isSoloMode) {
-                           // 獨立模式只控制 soloVrm 說話動作，這裡簡單處理，只要開啟嘴型即可 (在 animate 裡)
-                           // 如果有獨立的說話動作資源可以 loaded 這裡，目前僅使用 Breathing_Idle
+                           if (soloVrm) {
+                               soloVrm.expressionManager.setValue('aa', 0.5); 
+                           }
                         } else {
                             if (idleActionC) idleActionC.fadeOut(0.2);
                             if (idleActionW) idleActionW.fadeOut(0.2); 
