@@ -21,14 +21,9 @@
         width: 100vw;
         height: 100vh;
         height: 100dvh; 
-        transition: background 1s ease; /* 背景色過渡 */
+        transition: background 1s ease;
     }
 
-    /* 獨立空間的背景色 (科技感淡灰/米白) */
-    body.solo-mode {
-        background: #f5f5f7;
-    }
-    
     /* 讀取畫面 */
     #loading-screen {
         position: absolute;
@@ -73,6 +68,25 @@
     #start-btn:active { transform: scale(0.95); background: #b71c1c; }
 
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* 背景 Iframe (文藻官網) */
+    #website-iframe {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        border: none;
+        z-index: 0; /* 在 Canvas 下層 */
+        display: none; /* 預設隱藏 */
+        background: white;
+    }
+
+    /* Canvas 樣式調整 */
+    canvas {
+        position: absolute;
+        top: 0; left: 0;
+        z-index: 1; /* 在 Iframe 上層 */
+        transition: opacity 0.5s;
+    }
 
     /* API 狀態 */
     #api-status {
@@ -155,7 +169,11 @@
         width: 90%; max-width: 600px;
         display: flex; flex-direction: column; gap: 8px;
         z-index: 100; transition: bottom 0.3s;
+        pointer-events: none; /* 讓點擊穿透到 iframe (部分區域) */
     }
+    /* 讓聊天介面的互動元素恢復可點擊 */
+    #chat-display, #input-area { pointer-events: auto; }
+
     @media (max-width: 600px) {
         #chat-container { width: 95%; bottom: 40px; bottom: calc(40px + env(safe-area-inset-bottom)); }
         #file-status, #api-status { top: 10px; transform: scale(0.9); transform-origin: top; }
@@ -229,15 +247,18 @@
     #dance-btn { color: #e91e63; } 
     #dance-btn.active { background: #e91e63; color: white; box-shadow: inset 0 0 10px rgba(0,0,0,0.3); border-color: #c2185b; }
 
-    /* ⭐⭐⭐ 模式切換按鈕樣式 (使用深紫色系區分) ⭐⭐⭐ */
-    .mode-btn { color: #673ab7; border-color: #9575cd; }
-    
-    /* 啟動狀態：深底白字 */
-    .mode-btn.active { 
-        background: #673ab7; 
-        color: white; 
-        box-shadow: inset 0 0 5px rgba(0,0,0,0.3);
-        transform: scale(0.95); /* 視覺上有些微下壓感 */
+    /* ⭐⭐⭐ 模式切換按鈕樣式 ⭐⭐⭐ */
+    #switch-mode-btn { color: #673ab7; border-color: #9575cd; }
+    /* 單人模式樣式 */
+    #switch-mode-btn.solo-active { 
+        background: #ffffff; color: #673ab7; 
+        border: 2px solid #673ab7;
+        box-shadow: 0 0 10px rgba(103, 58, 183, 0.2);
+    }
+    /* 雙人模式樣式 */
+    #switch-mode-btn.group-active { 
+        background: #673ab7; color: #ffffff; 
+        border: 2px solid #512da8;
     }
 
     .recording-pulse {
@@ -273,6 +294,9 @@
 
 <body>
 
+    <!-- ⭐⭐⭐ 背景 Iframe ⭐⭐⭐ -->
+    <iframe id="website-iframe" src="https://a001.wzu.edu.tw/"></iframe>
+
     <div id="loading-screen">
         <div class="loader" id="loader"></div>
         <div class="loading-text" id="status-text">初始化系統中...</div>
@@ -304,9 +328,8 @@
     <div id="chat-container">
         <div id="chat-display"></div>
         <div id="input-area">
-            <!-- ⭐⭐⭐ 修改：拆分為兩個獨立按鈕 (單人 / 雙人) ⭐⭐⭐ -->
-            <button id="btn-mode-solo" class="control-btn mode-btn" title="切換至 David 空間"><i class="fa-solid fa-user"></i></button>
-            <button id="btn-mode-group" class="control-btn mode-btn active" title="切換至新年會場"><i class="fa-solid fa-user-group"></i></button>
+            <!-- ⭐⭐⭐ 修改：合併為單一按鈕，節省空間 ⭐⭐⭐ -->
+            <button id="switch-mode-btn" class="control-btn mode-btn group-active" title="切換空間"><i class="fa-solid fa-user-group"></i></button>
             
             <button id="dance-btn" class="control-btn" title="熱舞組曲">💃</button>
             <button id="mute-btn" class="control-btn" title="切換聲音">🔊</button>
@@ -367,20 +390,25 @@
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm'  // W
         ];
         
-        // ⭐⭐⭐ 修改：更換獨立模式角色為 David_Kuo ⭐⭐⭐
-        const SOLO_VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo.vrm';
+        const SOLO_VRM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_02.vrm';
         const SOLO_ANIM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Breathing_Idle.vrma';
 
         let currentVrms = []; 
         let mixers = [];      
         let isDancing = false;
         
-        // ⭐⭐⭐ 獨立模式變數 ⭐⭐⭐
         let isSoloMode = false;
         let soloVrm = null;
         let soloMixer = null;
         let soloAction = null;
         
+        // ⭐⭐⭐ 隨機閒置動作變數 ⭐⭐⭐
+        let idleRandomTimer = 0;
+        let nextIdleChangeTime = 0;
+        let currentRandomEmotion = 'neutral';
+        let lookAtTarget = new THREE.Vector3(0, 1.5, 2.0); // 眼睛看的地方
+        let headSwayTime = 0;
+
         const DANCE_URLS = [
             'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_3.vrma', 
             'https://davidkuodcam-crypto.github.io/VTuber/Flair.vrma',                   
@@ -439,7 +467,7 @@
 
         // --- Scene Init ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xfff8e1); 
+        scene.background = new THREE.Color(0xfff8e1); // 預設背景色
         scene.fog = new THREE.Fog(0xfff8e1, 5, 15);
         
         const gridHelper = new THREE.GridHelper(20, 20, 0xd32f2f, 0xffcc80);
@@ -450,17 +478,15 @@
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
             
-            // ⭐⭐⭐ 獨立模式下的相機邏輯 ⭐⭐⭐
             if (isSoloMode) {
                 if (aspect < 0.8) { // Mobile
-                    camera.position.set(0.0, 1.4, 2.0); 
-                    controls.target.set(0.0, 1.35, 0.0);
+                    camera.position.set(0.0, 1.35, 1.8); 
+                    controls.target.set(0.0, 1.3, 0.0);
                 } else { // Desktop
-                    camera.position.set(0.0, 1.45, 2.5);
-                    controls.target.set(0.0, 1.4, 0.0);
+                    camera.position.set(0.0, 1.4, 2.2);
+                    controls.target.set(0.0, 1.3, 0.0);
                 }
             } else {
-                // 原本群體模式
                 if (aspect < 0.8) {
                     if (isDancing) {
                         camera.position.set(0.0, 0.8, 8.5); 
@@ -486,27 +512,19 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
-        
-        // ⭐⭐⭐ 修正：膚色偏紅問題 ⭐⭐⭐
-        // 原因：原本的 code 在群體模式使用了 LinearSRGBColorSpace，導致貼圖顏色過深。
-        // 修正：統一強制使用 SRGBColorSpace，這對 VRM 來說才是正確的顯示方式。
         renderer.outputColorSpace = THREE.SRGBColorSpace; 
         
         document.body.appendChild(renderer.domElement);
 
-        // --- Lights Setup (Global References for Tweening) ---
-        // 預設 (新年模式) - 修改：稍微調降飽和度，避免膚色過黃/紅
-        // 原本: 0xffedd5 (很黃) -> 0xfff0e6 (淡暖白)
+        // --- Lights Setup ---
         const directionalLight = new THREE.DirectionalLight(0xfff0e6, 1.5); 
         directionalLight.position.set(-1.0, 2.0, 1.0).normalize();
         scene.add(directionalLight);
         
-        // 補光 - 修改：0xffd700 (金) -> 0xffe0b2 (淡橘黃)
         const fillLight = new THREE.DirectionalLight(0xffe0b2, 0.6);
         fillLight.position.set(1.0, 1.0, 1.0).normalize();
         scene.add(fillLight);
         
-        // 環境光 - 稍微增強一點點，減少陰影對比
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         scene.add(ambientLight);
 
@@ -615,7 +633,6 @@
         loader.register((parser) => new VRMLoaderPlugin(parser));
         loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
-        // 載入群體模式角色
         const loadPromises = VRM_MODELS.map((url, index) => {
             return new Promise((resolve) => {
                 loader.load(url, (gltf) => {
@@ -642,35 +659,27 @@
             });
         });
 
-        // ⭐⭐⭐ 載入獨立模式角色 (David Kuo) ⭐⭐⭐
         const loadSoloCharacter = new Promise((resolve) => {
             loader.load(SOLO_VRM_URL, (gltf) => {
                 const vrm = gltf.userData.vrm;
                 VRMUtils.rotateVRM0(vrm);
                 scene.add(vrm.scene);
-                
-                // 獨立模式初始設定 (預設隱藏)
                 vrm.scene.visible = false;
-                vrm.scene.position.set(0, 0, 0); // 置中
-
-                // 手臂自然下垂
+                vrm.scene.position.set(0, 0, 0); 
                 const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
                 const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
                 if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
                 if (rightUpperArm) { rightUpperArm.rotation.z = 1.1; rightUpperArm.rotation.x = 0.15; }
-
                 soloMixer = new THREE.AnimationMixer(vrm.scene);
                 soloVrm = vrm;
                 startBlinking(soloVrm);
 
-                // 載入 Breathing_Idle 動畫
                 loader.load(SOLO_ANIM_URL, (animGltf) => {
                     const vrmAnimations = animGltf.userData.vrmAnimations;
                     if (vrmAnimations && vrmAnimations.length > 0) {
                         const clip = createVRMAnimationClip(vrmAnimations[0], soloVrm);
                         soloAction = soloMixer.clipAction(clip);
                         soloAction.loop = THREE.LoopRepeat;
-                        // 這裡不立即播放，等切換模式時播放
                     }
                     resolve();
                 });
@@ -762,6 +771,66 @@
             });
         });
 
+        // ⭐⭐⭐ 隨機閒置行為 (David) ⭐⭐⭐
+        function updateSoloRandomBehavior(deltaTime) {
+            if (!soloVrm || isSpeaking) {
+                // 如果正在說話，重置表情權重為0 (除了嘴巴在 animate loop 控制)
+                if (soloVrm) {
+                    soloVrm.expressionManager.setValue('happy', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('happy'), 0, 0.1));
+                    soloVrm.expressionManager.setValue('relaxed', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('relaxed'), 0, 0.1));
+                }
+                return; 
+            }
+
+            idleRandomTimer += deltaTime;
+            headSwayTime += deltaTime;
+
+            // 1. 表情隨機切換
+            if (idleRandomTimer > nextIdleChangeTime) {
+                idleRandomTimer = 0;
+                nextIdleChangeTime = Math.random() * 3 + 2; // 2~5秒切換一次
+                const r = Math.random();
+                if (r < 0.6) currentRandomEmotion = 'neutral';
+                else if (r < 0.8) currentRandomEmotion = 'happy';
+                else currentRandomEmotion = 'relaxed';
+                
+                // 偶爾隨機看不同方向
+                if (Math.random() < 0.4) {
+                    lookAtTarget.x = (Math.random() - 0.5) * 2.0;
+                    lookAtTarget.y = 1.5 + (Math.random() - 0.5) * 0.5;
+                } else {
+                    lookAtTarget.set(0, 1.4, 3.0); // 看向前方相機
+                }
+            }
+
+            // 平滑過渡表情
+            const targetHappy = (currentRandomEmotion === 'happy') ? 0.3 : 0; // 微笑就好，不要太誇張
+            const targetRelaxed = (currentRandomEmotion === 'relaxed') ? 0.3 : 0;
+            const currentHappy = soloVrm.expressionManager.getValue('happy');
+            const currentRelaxed = soloVrm.expressionManager.getValue('relaxed');
+            
+            soloVrm.expressionManager.setValue('happy', THREE.MathUtils.lerp(currentHappy, targetHappy, 0.05));
+            soloVrm.expressionManager.setValue('relaxed', THREE.MathUtils.lerp(currentRelaxed, targetRelaxed, 0.05));
+            
+            // 確保嘴巴閉合 (aa = 0)
+            soloVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(soloVrm.expressionManager.getValue('aa'), 0, 0.2));
+
+            // 2. 頭部微動 (使用 Head Bone 旋轉)
+            const head = soloVrm.humanoid.getNormalizedBoneNode('head');
+            if (head) {
+                // 產生平滑的隨機擺動
+                const swayX = Math.sin(headSwayTime * 0.5) * 0.03 + Math.sin(headSwayTime * 1.2) * 0.01;
+                const swayY = Math.cos(headSwayTime * 0.3) * 0.03 + Math.sin(headSwayTime * 0.8) * 0.01;
+                
+                // 混合 LookAt 的影響
+                const targetLookRotX = -lookAtTarget.x * 0.1;
+                const targetLookRotY = (lookAtTarget.y - 1.5) * 0.1;
+
+                head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, swayX + targetLookRotX, 0.05);
+                head.rotation.x = THREE.MathUtils.lerp(head.rotation.x, swayY - targetLookRotY, 0.05);
+            }
+        }
+
         // --- Animation Loop ---
         const clock = new THREE.Clock();
         function animate() {
@@ -769,31 +838,24 @@
             const deltaTime = clock.getDelta();
             const elapsedTime = clock.elapsedTime;
 
-            // --- 燈光過渡動畫 ---
             if (isSoloMode) {
-                // David 空間：白皙明亮
-                ambientLight.intensity = THREE.MathUtils.lerp(ambientLight.intensity, 1.0, 0.05);
-                directionalLight.intensity = THREE.MathUtils.lerp(directionalLight.intensity, 2.5, 0.05);
-                
-                // 位置平滑移動到正面
-                const targetPos = new THREE.Vector3(0, 1, 2);
+                // David 空間光線
+                ambientLight.intensity = THREE.MathUtils.lerp(ambientLight.intensity, 1.3, 0.05);
+                directionalLight.intensity = THREE.MathUtils.lerp(directionalLight.intensity, 3.0, 0.05);
+                const targetPos = new THREE.Vector3(0.5, 1.5, 2.0);
                 directionalLight.position.lerp(targetPos, 0.05);
-                
-                fillLight.intensity = THREE.MathUtils.lerp(fillLight.intensity, 0.2, 0.05); // 補光減弱
+                fillLight.intensity = THREE.MathUtils.lerp(fillLight.intensity, 0.8, 0.05); 
             } else {
-                // 群體模式：使用較白的光源，減少環境的黃色影響
-                ambientLight.intensity = THREE.MathUtils.lerp(ambientLight.intensity, 0.8, 0.05); // 提高環境光，減少陰影
-                directionalLight.intensity = THREE.MathUtils.lerp(directionalLight.intensity, 1.2, 0.05); // 主光稍微減弱，避免過曝
-                
+                // 群體模式光線
+                ambientLight.intensity = THREE.MathUtils.lerp(ambientLight.intensity, 0.8, 0.05); 
+                directionalLight.intensity = THREE.MathUtils.lerp(directionalLight.intensity, 1.2, 0.05); 
                 const targetPos = new THREE.Vector3(-1, 2, 1).normalize();
                 directionalLight.position.lerp(targetPos, 0.05);
-                
                 fillLight.intensity = THREE.MathUtils.lerp(fillLight.intensity, 0.6, 0.05);
             }
 
-            // --- 粒子動畫 ---
             if (particlesMesh) {
-                particlesMesh.visible = !isSoloMode; // 獨立空間隱藏慶祝紙屑
+                particlesMesh.visible = !isSoloMode;
                 if (!isSoloMode) {
                     particlesMesh.rotation.y += 0.001;
                     const positions = particlesMesh.geometry.attributes.position.array;
@@ -805,7 +867,6 @@
                 }
             }
 
-            // 更新群體動畫
             if (!isSoloMode) {
                 mixers.forEach(mixer => mixer.update(deltaTime));
                 currentVrms.forEach((vrm, index) => {
@@ -813,7 +874,6 @@
                     vrm.update(deltaTime);
                     
                     if (!isDancing) {
-                        // 呼吸邏輯... (省略，保持原樣)
                         const isC = (index === 0);
                         const isW = (index === 1);
                         let playBreathing = true;
@@ -829,7 +889,6 @@
                         }
                     }
                     
-                    // 嘴型同步 (群體)
                     if (isSpeaking && !isMuted) {
                         const s = Math.sin(elapsedTime * 18); 
                         vrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
@@ -840,19 +899,18 @@
                 });
             }
 
-            // 更新獨立角色動畫
             if (isSoloMode && soloVrm && soloMixer) {
                 soloMixer.update(deltaTime);
                 soloVrm.update(deltaTime);
                 
-                // 嘴型同步 (獨立)
+                // ⭐⭐⭐ 呼叫閒置行為 ⭐⭐⭐
+                updateSoloRandomBehavior(deltaTime);
+                
                 if (isSpeaking && !isMuted) {
                     const s = Math.sin(elapsedTime * 18);
                     soloVrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
-                } else {
-                    const currentVal = soloVrm.expressionManager.getValue('aa');
-                    soloVrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(currentVal, 0, 0.2));
-                }
+                } 
+                // else: updateSoloRandomBehavior 已經處理了閉嘴
             }
 
             controls.update();
@@ -864,83 +922,110 @@
             if(!vrm) return;
             const blinkLoop = () => {
                 if (!window.actionActive) {
+                    // 隨機眨眼間隔
                     setTimeout(() => {
                         vrm.expressionManager.setValue('blink', 1);
                         setTimeout(() => {
                             vrm.expressionManager.setValue('blink', 0);
                             blinkLoop();
                         }, 120);
-                    }, Math.random() * 3000 + 2000);
+                    }, Math.random() * 3000 + 1000); // 1~4秒眨一次
                 } else { setTimeout(blinkLoop, 1000); }
             };
             blinkLoop();
         }
 
         // --- 切換模式邏輯 ---
-        const btnSolo = document.getElementById('btn-mode-solo');
-        const btnGroup = document.getElementById('btn-mode-group');
+        const switchBtn = document.getElementById('switch-mode-btn');
         const danceBtn = document.getElementById('dance-btn');
+        const iframe = document.getElementById('website-iframe');
         
-        function switchToSolo() {
-            if (isSoloMode) return; // 已經在單人模式
-            if (isDancing) stopDance();
+        function toggleMode() {
+            // 切換模式狀態
+            isSoloMode = !isSoloMode;
             
-            isSoloMode = true;
-            
-            // UI Update
-            btnSolo.classList.add('active');
-            btnGroup.classList.remove('active');
-            document.body.classList.add('solo-mode');
-            
-            danceBtn.style.opacity = '0.3';
-            danceBtn.style.pointerEvents = 'none';
+            // 停止語音
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            isSpeaking = false;
 
-            // Show/Hide Models
-            currentVrms.forEach(vrm => { if(vrm) vrm.scene.visible = false; });
-            if (soloVrm) soloVrm.scene.visible = true;
+            if (isSoloMode) {
+                // --- 進入單人模式 ---
+                if (isDancing) stopDance();
+                
+                // UI 更新
+                switchBtn.classList.remove('group-active');
+                switchBtn.classList.add('solo-active');
+                switchBtn.innerHTML = '<i class="fa-solid fa-user-group"></i>'; // 現在是單人，顯示雙人圖示供切換
+                
+                danceBtn.style.opacity = '0.3';
+                danceBtn.style.pointerEvents = 'none';
 
-            // Scene Config for Solo
-            scene.fog.color.set(0xf5f5f7);
-            scene.background.set(0xf5f5f7);
-            gridHelper.visible = false;
-            
-            if (soloAction) { soloAction.reset(); soloAction.play(); }
+                // ⭐⭐⭐ 隱藏對話相關 UI ⭐⭐⭐
+                document.getElementById('chat-display').style.display = 'none';
+                document.querySelector('.input-wrapper').style.display = 'none';
+                document.getElementById('send-btn').style.display = 'none';
+                document.getElementById('mic-btn').style.display = 'none';
+
+                // 模型切換
+                currentVrms.forEach(vrm => { if(vrm) vrm.scene.visible = false; });
+                if (soloVrm) soloVrm.scene.visible = true;
+
+                // ⭐⭐⭐ 修正：背景設定為 null，讓 Canvas 透明 ⭐⭐⭐
+                // 否則 THREE.js 會每幀用顏色清除畫面，遮擋 iframe
+                scene.background = null; 
+                scene.fog.color.set(0xffffff); 
+                renderer.setClearColor(0x000000, 0); 
+                document.body.style.background = 'transparent';
+                
+                iframe.style.display = 'block';
+                // ⭐關鍵：讓 Canvas 不擋滑鼠，以便點擊 Iframe
+                renderer.domElement.style.pointerEvents = 'none';
+
+                if (soloAction) { soloAction.reset(); soloAction.play(); }
+            } else {
+                // --- 進入群體模式 ---
+                
+                // UI 更新
+                switchBtn.classList.remove('solo-active');
+                switchBtn.classList.add('group-active');
+                switchBtn.innerHTML = '<i class="fa-solid fa-user"></i>'; // 現在是雙人，顯示單人圖示供切換
+
+                danceBtn.style.opacity = '1';
+                danceBtn.style.pointerEvents = 'auto';
+
+                // ⭐⭐⭐ 顯示對話相關 UI ⭐⭐⭐
+                document.getElementById('chat-display').style.display = 'flex';
+                document.querySelector('.input-wrapper').style.display = 'flex';
+                document.getElementById('send-btn').style.display = ''; // 恢復預設
+                if (recognition && !isAndroid && !isIOS) {
+                    document.getElementById('mic-btn').style.display = 'flex';
+                }
+
+                // 模型切換
+                currentVrms.forEach(vrm => { if(vrm) vrm.scene.visible = true; });
+                if (soloVrm) soloVrm.scene.visible = false;
+
+                // 背景還原
+                // ⭐⭐⭐ 修正：恢復場景背景色 ⭐⭐⭐
+                scene.background = new THREE.Color(0xfff8e1);
+                renderer.setClearColor(0x000000, 0); 
+                document.body.style.background = 'linear-gradient(135deg, #fff8e1 0%, #ffecb3 50%, #ffe0b2 100%)';
+                scene.fog.color.set(0xfff8e1);
+                
+                iframe.style.display = 'none';
+                // 恢復 Canvas 互動 (OrbitControls)
+                renderer.domElement.style.pointerEvents = 'auto';
+
+                if (soloAction) soloAction.stop();
+                addMessage("已返回新年會場 (AI Assistants)", "system");
+            }
             updateCameraPosition();
-            addMessage("已切換至獨立空間 (David Kuo)", "system");
         }
         
-        function switchToGroup() {
-            if (!isSoloMode) return; // 已經在群體模式
-            
-            isSoloMode = false;
-            
-            // UI Update
-            btnSolo.classList.remove('active');
-            btnGroup.classList.add('active');
-            document.body.classList.remove('solo-mode');
-            
-            danceBtn.style.opacity = '1';
-            danceBtn.style.pointerEvents = 'auto';
-
-            // Show/Hide Models
-            currentVrms.forEach(vrm => { if(vrm) vrm.scene.visible = true; });
-            if (soloVrm) soloVrm.scene.visible = false;
-
-            // Scene Config for Group
-            scene.fog.color.set(0xfff8e1);
-            scene.background.set(0xfff8e1);
-            gridHelper.visible = true;
-            
-            if (soloAction) soloAction.stop();
-            updateCameraPosition();
-            addMessage("已返回新年會場 (AI Assistants)", "system");
-        }
-        
-        btnSolo.addEventListener('click', switchToSolo);
-        btnSolo.addEventListener('touchend', (e) => { e.preventDefault(); switchToSolo(); });
-        
-        btnGroup.addEventListener('click', switchToGroup);
-        btnGroup.addEventListener('touchend', (e) => { e.preventDefault(); switchToGroup(); });
+        // 預設按鈕顯示「單人」圖示 (因為預設是群體模式)
+        switchBtn.innerHTML = '<i class="fa-solid fa-user"></i>';
+        switchBtn.addEventListener('click', toggleMode);
+        switchBtn.addEventListener('touchend', (e) => { e.preventDefault(); toggleMode(); });
 
         // --- Dance Logic ---
         function shuffleArray(array) {
