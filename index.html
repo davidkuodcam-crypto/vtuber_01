@@ -1227,11 +1227,18 @@
                 danceBtn.style.opacity = '0.3';
                 danceBtn.style.pointerEvents = 'none';
 
-                // ⭐⭐⭐ 隱藏對話相關 UI ⭐⭐⭐
-                document.getElementById('chat-display').style.display = 'none';
-                document.querySelector('.input-wrapper').style.display = 'none';
-                document.getElementById('send-btn').style.display = 'none';
-                document.getElementById('mic-btn').style.display = 'none';
+                // ⭐⭐⭐ 隱藏對話相關 UI，保留麥克風與輸入框 ⭐⭐⭐
+                document.getElementById('chat-display').style.display = 'none'; // 隱藏歷史對話窗
+                
+                // 確保輸入框、麥克風、發送鈕顯示
+                document.querySelector('.input-wrapper').style.display = 'flex';
+                document.getElementById('send-btn').style.display = ''; // 恢復預設 (block/flex)
+                if (recognition && !isAndroid && !isIOS) {
+                    document.getElementById('mic-btn').style.display = 'flex';
+                }
+
+                // 3. 顯示氣泡 (如果有的話)
+                soloBubble.style.display = soloBubble.innerText ? 'block' : 'none';
 
                 // 模型切換
                 currentVrms.forEach(vrm => { if(vrm) vrm.scene.visible = false; });
@@ -1267,6 +1274,9 @@
                 if (recognition && !isAndroid && !isIOS) {
                     document.getElementById('mic-btn').style.display = 'flex';
                 }
+                
+                // 3. 隱藏單人氣泡
+                soloBubble.style.display = 'none';
 
                 // 模型切換
                 currentVrms.forEach(vrm => { if(vrm) vrm.scene.visible = true; });
