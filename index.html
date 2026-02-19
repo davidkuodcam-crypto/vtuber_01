@@ -209,13 +209,13 @@
     }
 
     #chat-display {
-        background: rgba(255, 255, 255, 0.4); /* 更亮更通透 */
+        background: rgba(255, 255, 255, 0.15); /* ⭐ 改回半透明，並大幅提高透明度 (數值越小越透明) */
         padding: 12px; 
         border-radius: 16px;
         height: 140px; 
         overflow-y: auto;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(8px); /* ⭐ 加回毛玻璃效果 */
+        -webkit-backdrop-filter: blur(8px);
         border: 1px solid rgba(255, 215, 0, 0.6);
         display: flex;
         flex-direction: column;
@@ -513,10 +513,11 @@
             logTTS(">> 已顯示瀏覽器更換提示 <<");
         }
 
-        // --- 隨機角色選擇邏輯 ---
+        // --- 隨機角色選擇邏輯 (新增第三位角色) ---
         const VRM_MODELS = [
-            'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm', // 角色 C
-            'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm'  // 角色 W
+            'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm', // 角色 0: C
+            'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm', // 角色 1: W
+            'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_03.vrm'    // 角色 2: David (新增)
         ];
         
         // 變數修改：支援多角色
@@ -532,18 +533,21 @@
             'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_1.vrma'  // 3: 霹靂舞定格B
         ];
         
-        // --- 動作設定 (說話 / 閒置) ---
-        // 修改：分離說話動作，C 使用 Breathing_Idle，W 使用 Talking_01
+        // --- 動作設定 (說話 / 閒置) (新增第三位) ---
         const TALK_ANIMATION_C_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Breathing_Idle.vrma';
         const TALK_ANIMATION_W_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Talking_01.vrma';
+        const TALK_ANIMATION_D_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Breathing_Idle.vrma'; // 新增 D
         
         const IDLE_ANIMATION_C_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Taunt_with_Skin.vrma'; // C 的閒置動作
         const IDLE_ANIMATION_W_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle_01.vrma'; // W 的閒置動作
+        const IDLE_ANIMATION_D_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle.vrma'; // 新增 D 的閒置動作
         
-        let talkingActionC = null; // C 的說話動作
-        let talkingActionW = null; // W 的說話動作
-        let idleActionC = null;    // C 的閒置動作 (Taunt)
-        let idleActionW = null;    // W 的閒置動作 (Idle_01)
+        let talkingActionC = null;
+        let talkingActionW = null;
+        let talkingActionD = null; // 新增 D
+        let idleActionC = null;    
+        let idleActionW = null;    
+        let idleActionD = null;    // 新增 D
 
         // --- BGM 設定 ---
         const BGM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Happy_new_year.mp3';
@@ -634,30 +638,28 @@
 
         const camera = new THREE.PerspectiveCamera(30.0, window.innerWidth / window.innerHeight, 0.1, 20.0);
         
-        // **相機位置邏輯 (修正：支援跳舞時自動運鏡)**
+        // **相機位置邏輯 (支援跳舞時自動運鏡並適應 3 人陣型)**
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
             if (aspect < 0.8) {
                 // 手機直立模式
                 if (isDancing) {
-                    // 跳舞時：相機大幅拉遠、視點降低，確保地板動作與全身入鏡
-                    camera.position.set(0.0, 0.8, 8.5); 
-                    controls.target.set(0.0, 0.8, 0.0); // 瞄準兩人中心
+                    // 跳舞時：相機大幅拉遠、視點降低，確保地板動作與全身入鏡 (因 3 人縱深較大，退更遠)
+                    camera.position.set(0.0, 1.2, 8.5); 
+                    controls.target.set(0.0, 0.8, -0.5); // 瞄準陣型中心
                 } else {
                     // 對話時：相機拉近、視點提高，特寫上半身
-                    // 為了看到兩人，稍微退後一點，並瞄準中間
-                    camera.position.set(0.0, 1.35, 2.5); 
-                    controls.target.set(0.0, 1.35, -0.2);
+                    camera.position.set(0.0, 1.35, 3.2); 
+                    controls.target.set(0.0, 1.2, -0.5);
                 }
             } else {
                 // 桌面寬螢幕模式
                 if (isDancing) {
-                     // 桌面模式也稍微拉遠一點
-                     camera.position.set(0.0, 1.0, 6.0);
-                     controls.target.set(0.0, 0.8, 0.0);
+                     camera.position.set(0.0, 1.0, 7.0);
+                     controls.target.set(0.0, 0.8, -0.5);
                 } else {
-                     camera.position.set(0.0, 1.4, 3.5);
-                     controls.target.set(0.0, 1.3, -0.2);
+                     camera.position.set(0.0, 1.4, 3.8);
+                     controls.target.set(0.0, 1.2, -0.5);
                 }
             }
             camera.updateProjectionMatrix();
@@ -669,17 +671,27 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
         document.body.appendChild(renderer.domElement);
 
-        // 燈光優化：暖色光
+        // 燈光優化：暖色光 (影響 Layer 0)
         const directionalLight = new THREE.DirectionalLight(0xffedd5, 1.5); // 暖白光
         directionalLight.position.set(-1.0, 2.0, 1.0).normalize();
         scene.add(directionalLight);
         
-        // 補光 (金色)
+        // 補光 (金色) (影響 Layer 0)
         const fillLight = new THREE.DirectionalLight(0xffd700, 0.6);
         fillLight.position.set(1.0, 1.0, 1.0).normalize();
         scene.add(fillLight);
         
         scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+        // ⭐⭐⭐ 新增：第三角色 (David) 的專屬聚光燈群組 ⭐⭐⭐
+        // ⭐ 修改：為了讓額頭容光煥發且避開鼻子，改用微暖膚色，並縮小照射範圍
+        const dLight1 = new THREE.SpotLight(0xffeedd, 0.15); // ⭐ 再次調降額頭聚光亮度 (原本 0.35 -> 降至 0.15)
+        dLight1.angle = Math.PI / 3.0; // 稍微收束角度，讓光集中在額頭
+        dLight1.penumbra = 1.0; 
+        dLight1.distance = 2.0; // ⭐ 縮短光線衰減距離，讓光線在照到鼻子前就自然變弱
+        dLight1.decay = 2.0;
+        scene.add(dLight1); scene.add(dLight1.target);
+
 
         // --- 新年特效：飄落金粉/紅紙屑 ---
         let particlesMesh;
@@ -841,13 +853,28 @@
                     VRMUtils.rotateVRM0(vrm);
                     scene.add(vrm.scene);
                     
-                    // --- 隊形排列 ---
+                    // --- ⭐⭐⭐ 隊形排列 (防穿模且美觀) ⭐⭐⭐ ---
                     if (index === 0) {
-                        // 角色 A: 左前
-                        vrm.scene.position.set(-0.3, 0.0, 0.2);
-                    } else {
-                        // 角色 B: 右後 (避免重疊)
-                        vrm.scene.position.set(0.3, 0.0, -0.8);
+                        // 第一個角色：靠近中線，稍微往前
+                        vrm.scene.position.set(-0.25, 0.0, 0.4);
+                    } else if (index === 1) {
+                        // 第二個角色：靠近中線，稍微往後 (拉大與角色 1 距離)
+                        vrm.scene.position.set(0.25, 0.0, -0.4);
+                    } else if (index === 2) {
+                        // 第三個角色：在中線上，向後拉開與角色 2 距離 (保持跳舞不穿模)
+                        vrm.scene.position.set(0.0, 0.0, -1.5);
+                        
+                        // ⭐ 恢復材質提亮：這是讓角色「容光煥發」的關鍵，從根本解決衣服與皮膚暗沉
+                        vrm.scene.traverse((object) => {
+                            if (object.isMesh) {
+                                const materials = Array.isArray(object.material) ? object.material : [object.material];
+                                materials.forEach((mat) => {
+                                    if (mat.color) {
+                                        mat.color.multiplyScalar(1.1); // 微調底色，從1.2降至1.1，避免光線打上後過曝
+                                    }
+                                });
+                            }
+                        });
                     }
 
                     // 調整手臂
@@ -867,7 +894,7 @@
                     
                     mixers.push(mixer); // 加入全域 mixers 以便 update
 
-                    // 修改：依索引指定陣列位置，確保 C (index 0) 永遠是第一個
+                    // 修改：依索引指定陣列位置，確保順序正確
                     currentVrms[index] = vrm; 
                     startBlinking(vrm);    // 個別啟動眨眼
                     resolve();
@@ -880,7 +907,6 @@
 
         // 獨立載入說話動作
         function loadTalkAnimations() {
-            // 載入 C 的說話動作 (Breathing_Idle)
             const pC = new Promise((resolve) => {
                 loader.load(TALK_ANIMATION_C_URL, (gltf) => {
                     const vrmAnimations = gltf.userData.vrmAnimations;
@@ -890,13 +916,9 @@
                          talkingActionC.loop = THREE.LoopRepeat;
                     }
                     resolve();
-                }, undefined, (e) => {
-                    console.error("Talk C Anim Error:", e);
-                    resolve();
-                });
+                }, undefined, (e) => { console.error("Talk C Anim Error:", e); resolve(); });
             });
 
-            // 載入 W 的說話動作 (Talking_01)
             const pW = new Promise((resolve) => {
                 loader.load(TALK_ANIMATION_W_URL, (gltf) => {
                     const vrmAnimations = gltf.userData.vrmAnimations;
@@ -906,18 +928,26 @@
                          talkingActionW.loop = THREE.LoopRepeat;
                     }
                     resolve();
-                }, undefined, (e) => {
-                    console.error("Talk W Anim Error:", e);
-                    resolve();
-                });
+                }, undefined, (e) => { console.error("Talk W Anim Error:", e); resolve(); });
             });
 
-            return Promise.all([pC, pW]);
+            const pD = new Promise((resolve) => {
+                loader.load(TALK_ANIMATION_D_URL, (gltf) => {
+                    const vrmAnimations = gltf.userData.vrmAnimations;
+                    if (vrmAnimations && vrmAnimations.length > 0 && currentVrms[2]) {
+                         const clip = createVRMAnimationClip(vrmAnimations[0], currentVrms[2]);
+                         talkingActionD = currentVrms[2].userData.mixer.clipAction(clip);
+                         talkingActionD.loop = THREE.LoopRepeat;
+                    }
+                    resolve();
+                }, undefined, (e) => { console.error("Talk D Anim Error:", e); resolve(); });
+            });
+
+            return Promise.all([pC, pW, pD]);
         }
 
         // ⭐⭐⭐ 獨立載入閒置動作 (Taunt & Idle) ⭐⭐⭐
         function loadIdleAnimations() {
-            // 載入 C 的嘲諷動作
             const pC = new Promise((resolve) => {
                 loader.load(IDLE_ANIMATION_C_URL, (gltf) => {
                     const vrmAnimations = gltf.userData.vrmAnimations;
@@ -928,13 +958,9 @@
                          idleActionC.play();
                     }
                     resolve();
-                }, undefined, (e) => {
-                    console.error("Idle C Anim Error:", e);
-                    resolve();
-                });
+                }, undefined, (e) => { console.error("Idle C Anim Error:", e); resolve(); });
             });
 
-            // 載入 W 的閒置動作 (Idle_01)
             const pW = new Promise((resolve) => {
                 loader.load(IDLE_ANIMATION_W_URL, (gltf) => {
                     const vrmAnimations = gltf.userData.vrmAnimations;
@@ -945,13 +971,23 @@
                          idleActionW.play();
                     }
                     resolve();
-                }, undefined, (e) => {
-                    console.error("Idle W Anim Error:", e);
-                    resolve();
-                });
+                }, undefined, (e) => { console.error("Idle W Anim Error:", e); resolve(); });
             });
 
-            return Promise.all([pC, pW]);
+            const pD = new Promise((resolve) => {
+                loader.load(IDLE_ANIMATION_D_URL, (gltf) => {
+                    const vrmAnimations = gltf.userData.vrmAnimations;
+                    if (vrmAnimations && vrmAnimations.length > 0 && currentVrms[2]) {
+                         const clip = createVRMAnimationClip(vrmAnimations[0], currentVrms[2]);
+                         idleActionD = currentVrms[2].userData.mixer.clipAction(clip);
+                         idleActionD.loop = THREE.LoopRepeat;
+                         idleActionD.play();
+                    }
+                    resolve();
+                }, undefined, (e) => { console.error("Idle D Anim Error:", e); resolve(); });
+            });
+
+            return Promise.all([pC, pW, pD]);
         }
 
         Promise.all([...loadPromises, loadExternalData()]).then(() => {
@@ -982,7 +1018,7 @@
                 testApiConnection();
             };
 
-            // 確保說話和閒置動作載入 (需等 C 角色載入完畢)
+            // 確保說話和閒置動作載入
             Promise.all([loadTalkAnimations(), loadIdleAnimations()]).then(() => {
                 const loaderEl = document.getElementById('loader');
                 const statusText = document.getElementById('status-text');
@@ -992,7 +1028,7 @@
                 statusText.innerText = `準備完成 (${currentVrms.length} 人)`;
                 startBtn.style.display = 'block';
                 
-                // 更新相機以對準兩人中心
+                // 更新相機以對準陣型中心
                 updateCameraPosition();
                 
                 // 綁定事件：在這裡 startBtn 肯定已定義
@@ -1025,7 +1061,7 @@
                 particlesMesh.geometry.attributes.position.needsUpdate = true;
             }
 
-            // 更新所有動畫混合器
+            // 更新所有 動畫混合器
             mixers.forEach(mixer => mixer.update(deltaTime));
 
             // 更新所有 VRM 角色
@@ -1033,21 +1069,34 @@
                 if(!vrm) return; // 避免陣列有空洞
                 vrm.update(deltaTime);
                 
+                // ⭐⭐⭐ 讓第三角色 (David) 的專屬聚光燈無縫跟隨他移動 ⭐⭐⭐
+                if (index === 2 && typeof dLight1 !== 'undefined') {
+                    const spine = vrm.humanoid.getNormalizedBoneNode('spine');
+                    if (spine) {
+                        const tPos = new THREE.Vector3();
+                        spine.getWorldPosition(tPos);
+
+                        // ⭐ 修改：精準鎖定「額頭」高度
+                        const foreheadY = tPos.y + 0.7;
+                        dLight1.target.position.set(tPos.x, foreheadY, tPos.z);
+
+                        // ⭐ 修改：將光源架設在額頭的「正前方極近距離，稍微偏上方」
+                        // 配合較短的 distance 衰減，讓額頭吃到最多光，鼻子則處於餘光陰影區
+                        dLight1.position.set(tPos.x, foreheadY + 0.15, tPos.z + 0.35); 
+                    }
+                }
+
                 // 如果沒有在跳舞，才執行自然的呼吸動作
                 if (!isDancing) {
                     const isC = (index === 0);
                     const isW = (index === 1);
+                    const isD = (index === 2);
                     let playBreathing = true;
 
-                    // C: 有閒置動作時不呼吸，有說話動作時不呼吸
-                    if (isC && (idleActionC || (isSpeaking && talkingActionC))) {
-                        playBreathing = false;
-                    }
-                    
-                    // W: 有閒置動作時不呼吸，有說話動作時不呼吸
-                    if (isW && (idleActionW || (isSpeaking && talkingActionW))) {
-                        playBreathing = false;
-                    }
+                    // 有閒置或說話動作時不觸發預設呼吸，避免動作衝突
+                    if (isC && (idleActionC || (isSpeaking && talkingActionC))) playBreathing = false;
+                    if (isW && (idleActionW || (isSpeaking && talkingActionW))) playBreathing = false;
+                    if (isD && (idleActionD || (isSpeaking && talkingActionD))) playBreathing = false;
 
                     if (playBreathing) {
                         const spine = vrm.humanoid.getNormalizedBoneNode('spine');
@@ -1206,11 +1255,13 @@
             // 觸發動態運鏡
             updateCameraPosition();
             
-            // 停止閒置動作
+            // 停止所有閒置和說話動作
             if (idleActionC) idleActionC.fadeOut(0.5);
             if (idleActionW) idleActionW.fadeOut(0.5); 
+            if (idleActionD) idleActionD.fadeOut(0.5); 
             if (talkingActionC) talkingActionC.fadeOut(0.5);
             if (talkingActionW) talkingActionW.fadeOut(0.5);
+            if (talkingActionD) talkingActionD.fadeOut(0.5);
             
             // 播放 BGM
             bgm.currentTime = 0;
@@ -1358,6 +1409,10 @@
                 idleActionW.reset();
                 idleActionW.fadeIn(0.5).play();
             }
+            if (idleActionD) {
+                idleActionD.reset();
+                idleActionD.fadeIn(0.5).play();
+            }
         }
 
         function toggleDance() {
@@ -1481,11 +1536,13 @@
             isDancing = true;
             updateCameraPosition();
             
-            // 淡出閒置/說話動作
+            // 淡出所有閒置與說話動作
             if (idleActionC) idleActionC.fadeOut(0.5);
             if (idleActionW) idleActionW.fadeOut(0.5);
+            if (idleActionD) idleActionD.fadeOut(0.5);
             if (talkingActionC) talkingActionC.fadeOut(0.5);
             if (talkingActionW) talkingActionW.fadeOut(0.5);
+            if (talkingActionD) talkingActionD.fadeOut(0.5);
             
             // BGM 播放
             // ⭐⭐⭐ FIX: 嚴格的 BGM 播放流程，避免 AbortError ⭐⭐⭐
@@ -1539,6 +1596,7 @@
                 setTimeout(() => updateCameraPosition(), 500);
                 if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
                 if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
+                if (idleActionD) { idleActionD.reset(); idleActionD.fadeIn(0.5).play(); }
                 return;
             }
 
@@ -2018,16 +2076,23 @@
                     if (!isDancing) {
                         // 淡出閒置
                         if (idleActionC) idleActionC.fadeOut(0.2);
-                        if (idleActionW) idleActionW.fadeOut(0.2); // New for W
+                        if (idleActionW) idleActionW.fadeOut(0.2); 
+                        if (idleActionD) idleActionD.fadeOut(0.2); // 新增 D
+                        
                         // 淡入說話 (C)
                         if (talkingActionC) {
                             talkingActionC.reset();
                             talkingActionC.fadeIn(0.2).play();
                         }
-                        // 淡入說話 (W) - NEW
+                        // 淡入說話 (W) 
                         if (talkingActionW) {
                             talkingActionW.reset();
                             talkingActionW.fadeIn(0.2).play();
+                        }
+                        // 淡入說話 (D)
+                        if (talkingActionD) {
+                            talkingActionD.reset();
+                            talkingActionD.fadeIn(0.2).play();
                         }
                     }
                 };
@@ -2041,18 +2106,23 @@
                     
                     // ⭐⭐⭐ 新增：停止說話動作，淡出回原本狀態 ⭐⭐⭐
                     if (talkingActionC) talkingActionC.fadeOut(0.5);
-                    if (talkingActionW) talkingActionW.fadeOut(0.5); // NEW
+                    if (talkingActionW) talkingActionW.fadeOut(0.5); 
+                    if (talkingActionD) talkingActionD.fadeOut(0.5); // 新增 D
                     
                     // 恢復閒置
                     // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
                         if (idleActionC) {
-                            idleActionC.reset(); // 或許不需要 reset，視乎動作銜接
+                            idleActionC.reset(); 
                             idleActionC.fadeIn(0.5).play();
                         }
                         if (idleActionW) {
                             idleActionW.reset(); 
                             idleActionW.fadeIn(0.5).play();
+                        }
+                        if (idleActionD) {
+                            idleActionD.reset(); 
+                            idleActionD.fadeIn(0.5).play();
                         }
                     }
 
