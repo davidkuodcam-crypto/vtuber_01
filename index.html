@@ -2273,16 +2273,6 @@
 
         async function speak(text) {
             if (isMuted) return;
-
-            // ⭐⭐⭐ 修改要求：當角色在跳舞時，不語音講話（文字會由對話框照常輸出） ⭐⭐⭐
-            if (isDancing) {
-                logTTS("跳舞中，僅以文字回答，不發出語音。");
-                if (window.shouldResumeMic) {
-                    window.pendingMicResume = true;
-                }
-                return;
-            }
-
             if (!ttsSupported || !window.speechSynthesis) {
                 logTTS("❌ 說話失敗: 語音功能不支援");
                 return;
