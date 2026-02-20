@@ -1437,10 +1437,11 @@
                     dancersFinished[vrmIndex] = false; // 有動作的人標為未完成
                     currentActiveActions[vrmIndex] = action; // 記錄目前動作
                     
+                    action.stop(); // ⭐ 終極修復：播放前先強制砍斷前一次可能殘留的 fadeOut，防止權重被抵銷
                     action.reset();
                     action.setLoop(THREE.LoopOnce); 
                     action.clampWhenFinished = true; // ⭐ 完美停格等待：播完停在最後一幀定格
-                    action.fadeIn(0.5); 
+                    action.fadeIn(0.2); // 使用較短的 fadeIn 覆蓋過渡
                     action.play();
 
                     // 為每個角色的 Mixer 獨立掛上一次性監聽器 (使用安全函式防止 Memory Leak)
@@ -1537,19 +1538,10 @@
                 updateCameraPosition();
             }, 500);
             
-            // 恢復閒置動作
-            if (idleActionC) {
-                idleActionC.reset();
-                idleActionC.fadeIn(0.5).play();
-            }
-            if (idleActionW) {
-                idleActionW.reset();
-                idleActionW.fadeIn(0.5).play();
-            }
-            if (idleActionD) {
-                idleActionD.reset();
-                idleActionD.fadeIn(0.5).play();
-            }
+            // 恢復閒置動作 (停止先前的殘留，然後平滑淡入)
+            if (idleActionC) { idleActionC.stop(); idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
+            if (idleActionW) { idleActionW.stop(); idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
+            if (idleActionD) { idleActionD.stop(); idleActionD.reset(); idleActionD.fadeIn(0.5).play(); }
         }
 
         function toggleDance() {
@@ -1755,9 +1747,11 @@
                 clearAllMixerListeners();
 
                 setTimeout(() => updateCameraPosition(), 500);
-                if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
-                if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
-                if (idleActionD) { idleActionD.reset(); idleActionD.fadeIn(0.5).play(); }
+                
+                // ⭐ 恢復閒置動作 (不使用 reset，讓它自然淡入，解決語音結束時閃跳的現象)
+                if (idleActionC) { idleActionC.fadeIn(0.5).play(); }
+                if (idleActionW) { idleActionW.fadeIn(0.5).play(); }
+                if (idleActionD) { idleActionD.fadeIn(0.5).play(); }
                 
                 // 當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
                 if (window.pendingMicResume) {
@@ -1811,6 +1805,7 @@
                     if (vrmIndex === 2) idleA = idleActionD;
                     
                     if (idleA) {
+                        idleA.stop(); // 停止先前的殘留
                         idleA.reset();
                         idleA.fadeIn(0.5).play();
                         currentActiveActions[vrmIndex] = idleA;
@@ -1827,10 +1822,11 @@
                     dancersFinished[vrmIndex] = false; // ⭐ 有動作的人才標記為 false
                     currentActiveActions[vrmIndex] = action; // 記錄目前動作
                     
+                    action.stop(); // ⭐ 終極修復：播放前先強制砍斷前一次可能殘留的 fadeOut，防止權重被抵銷
                     action.reset();
                     action.setLoop(THREE.LoopOnce);
                     action.clampWhenFinished = true; // ⭐ 完美停格：保持定格，等其他人跳完
-                    action.fadeIn(0.5);
+                    action.fadeIn(0.2);
                     action.play();
 
                     const onFinished = (e) => {
@@ -2367,20 +2363,11 @@
                     if (talkingActionD) talkingActionD.fadeOut(0.5); // 新增 D
                     
                     // 恢復閒置
-                    // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
+                    // ⭐⭐⭐ 關鍵修復：不使用 reset()，直接 fadeIn，防止角色突然閃跳 (Snap) ⭐⭐⭐
                     if (!isDancing) {
-                        if (idleActionC) {
-                            idleActionC.reset(); 
-                            idleActionC.fadeIn(0.5).play();
-                        }
-                        if (idleActionW) {
-                            idleActionW.reset(); 
-                            idleActionW.fadeIn(0.5).play();
-                        }
-                        if (idleActionD) {
-                            idleActionD.reset(); 
-                            idleActionD.fadeIn(0.5).play();
-                        }
+                        if (idleActionC) { idleActionC.fadeIn(0.5).play(); }
+                        if (idleActionW) { idleActionW.fadeIn(0.5).play(); }
+                        if (idleActionD) { idleActionD.fadeIn(0.5).play(); }
                     }
 
                     // ⭐⭐⭐ Auto Resume Mic logic ⭐⭐⭐
