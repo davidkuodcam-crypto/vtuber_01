@@ -373,6 +373,37 @@
         opacity: 0.6; 
     }
 
+    /* ⭐⭐⭐ 新增：畫面上方的動作指令監控面板 ⭐⭐⭐ */
+    #action-debug-panel {
+        position: absolute;
+        top: 15px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.85);
+        color: #00ffcc; /* 螢光綠色，方便錄影時看清楚 */
+        font-family: "Courier New", monospace;
+        font-size: 11px;
+        padding: 10px;
+        border-radius: 8px;
+        width: 60%;
+        max-width: 500px;
+        max-height: 120px;
+        overflow-y: auto;
+        z-index: 10000;
+        pointer-events: auto; /* 允許滾動 */
+        border: 1px solid #00ffcc;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    @media (max-width: 600px) {
+        #action-debug-panel {
+            width: 90%;
+            top: 40px; /* 手機版往下挪一點避免與其他狀態重疊 */
+        }
+    }
+
 </style>
 
 <!-- ⭐ 新增: ES Module Shims，確保 importmap 在所有瀏覽器都能正常運作 -->
@@ -422,6 +453,9 @@
         情緒: Neutral<br>
         動作: None
     </div>
+
+    <!-- ⭐⭐⭐ 新增：動作指令監控面板 (Action Debug Panel) ⭐⭐⭐ -->
+    <div id="action-debug-panel">等待動作指令...</div>
 
     <div id="chat-container">
         <div id="chat-display">
@@ -483,6 +517,16 @@
 
         // 立即測試 Log 功能
         logTTS("腳本載入... 檢查 API");
+
+        // ⭐⭐⭐ 新增：動作監控寫入函式 ⭐⭐⭐
+        function logAction(msg) {
+            const panel = document.getElementById('action-debug-panel');
+            if (panel) {
+                const time = new Date().toTimeString().split(' ')[0];
+                // 將新訊息加在最上方
+                panel.innerHTML = `[${time}] ${msg}\n-------------------\n` + panel.innerHTML;
+            }
+        }
 
         // ⭐⭐⭐ 瀏覽器功能檢查與相容性修復 ⭐⭐⭐
         let ttsSupported = true;
@@ -577,6 +621,9 @@
         
         // ⭐ 修改：全域變數改為陣列，精準記錄每位角色「目前正在跳」的動作
         let currentActiveActions = [null, null, null];
+        
+        // ⭐ 終極防呆：儲存所有的事件監聽器，防止 Three.js 發生 Memory Leak 與動作雙重觸發的 Bug
+        let currentDanceListeners = [null, null, null];
 
         let chatHistory = [];
         let isSpeaking = false;
@@ -1241,6 +1288,25 @@
             console.log(`[Round ${round}] ${mode}`, vrmDanceSequences);
         }
 
+        // ⭐⭐⭐ 終極防呆：嚴格管理 Three.js Mixer 的事件監聽器，防止記憶體洩漏與動作快轉 ⭐⭐⭐
+        function assignMixerListener(vrm, index, listener) {
+            if (!vrm || !vrm.userData.mixer) return;
+            if (currentDanceListeners[index]) {
+                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[index]);
+            }
+            currentDanceListeners[index] = listener;
+            vrm.userData.mixer.addEventListener('finished', listener);
+        }
+
+        function clearAllMixerListeners() {
+            currentVrms.forEach((vrm, i) => {
+                if (vrm && vrm.userData.mixer && currentDanceListeners[i]) {
+                    vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[i]);
+                }
+                currentDanceListeners[i] = null;
+            });
+        }
+
         // ⭐⭐⭐ 修正：將載入邏輯獨立為 loadDanceAssets，以便 AI 指令呼叫 ⭐⭐⭐
         async function loadDanceAssets() {
             // 如果已經載入過動畫，直接返回
@@ -1345,6 +1411,9 @@
             // 產生第 1 回合的動作表
             generateSequences(danceRound);
 
+            // 清理任何殘留的監聽器
+            clearAllMixerListeners();
+
             // 開始播放
             playCurrentStep();
         }
@@ -1370,16 +1439,20 @@
                     
                     action.reset();
                     action.setLoop(THREE.LoopOnce); 
-                    action.clampWhenFinished = true; // 播完停在最後一幀定格
+                    action.clampWhenFinished = true; // ⭐ 完美停格等待：播完停在最後一幀定格
                     action.fadeIn(0.5); 
                     action.play();
 
-                    // 為每個角色的 Mixer 獨立掛上一次性監聽器
+                    // 為每個角色的 Mixer 獨立掛上一次性監聽器 (使用安全函式防止 Memory Leak)
                     const onFinished = (e) => {
                         if (e.action === action) {
-                            vrm.userData.mixer.removeEventListener('finished', onFinished);
+                            if (currentDanceListeners[vrmIndex]) {
+                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
+                                currentDanceListeners[vrmIndex] = null;
+                            }
+
                             if (!isDancing) return;
-                            if (currentActiveActions[vrmIndex] !== action) return; // ⭐ 忽略舊動作
+                            if (currentActiveActions[vrmIndex] !== action) return; // 忽略舊動作
 
                             dancersFinished[vrmIndex] = true; // 標記這個角色已跳完
 
@@ -1409,7 +1482,7 @@
                             }
                         }
                     };
-                    vrm.userData.mixer.addEventListener('finished', onFinished);
+                    assignMixerListener(vrm, vrmIndex, onFinished);
                 } else {
                     currentActiveActions[vrmIndex] = null;
                 }
@@ -1449,6 +1522,9 @@
             currentActiveActions.forEach(action => {
                 if (action) action.fadeOut(0.5);
             });
+            
+            // ⭐⭐⭐ 徹底清除所有殘留的監聽器 ⭐⭐⭐
+            clearAllMixerListeners();
             
             // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
             currentDanceQueue = [];
@@ -1576,6 +1652,9 @@
             isDancing = true;
             danceBtn.classList.add('active');
 
+            // 清理可能殘留的監聽器，防止漏網之魚
+            clearAllMixerListeners();
+
             // 停止現有動作
              danceActionsMap.forEach(group => {
                 group.forEach(action => action.fadeOut(0.5));
@@ -1639,6 +1718,8 @@
             }
             
             console.log("AI 舞步序列解碼完成 (Queue):", currentDanceQueue);
+            // ⭐ 將最終系統要執行的排程陣列印到監控面板
+            logAction(`執行 Queue: ${JSON.stringify(currentDanceQueue)}`);
             playNextDanceInQueue();
         }
 
@@ -1651,11 +1732,14 @@
                 bgm.currentTime = 0;
                 danceBtn.classList.remove('active');
 
-                // Fade out current active actions
+                // 淡出所有進行中的動作
                 currentVrms.forEach((v, i) => {
                     const fadeAction = currentActiveActions[i];
                     if (fadeAction) fadeAction.fadeOut(0.5);
                 });
+
+                // 確保監聽器被清除
+                clearAllMixerListeners();
 
                 setTimeout(() => updateCameraPosition(), 500);
                 if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
@@ -1706,7 +1790,7 @@
                 
                 // ⭐ 單獨跳舞邏輯：如果這個人的動作是 99，代表他這回合原地不動，我們幫他播放 Idle 動作！
                 if (nextIndex === 99) {
-                    dancersFinished[vrmIndex] = true;
+                    dancersFinished[vrmIndex] = true; // 設為 true 讓他不會阻礙其他人
                     
                     let idleA = null;
                     if (vrmIndex === 0) idleA = idleActionC;
@@ -1720,7 +1804,7 @@
                     } else {
                         currentActiveActions[vrmIndex] = null;
                     }
-                    return; // 99 的人不會觸發 onFinished
+                    return; // 99 的人不需要綁定 onFinished 監聽器
                 }
                 
                 const action = danceActionsMap[nextIndex]?.[vrmIndex];
@@ -1732,19 +1816,23 @@
                     
                     action.reset();
                     action.setLoop(THREE.LoopOnce);
-                    action.clampWhenFinished = true; // 保持定格，等其他人跳完
+                    action.clampWhenFinished = true; // ⭐ 完美停格：保持定格，等其他人跳完
                     action.fadeIn(0.5);
                     action.play();
 
                     const onFinished = (e) => {
                         if (e.action === action) {
-                            vrm.userData.mixer.removeEventListener('finished', onFinished);
+                            if (currentDanceListeners[vrmIndex]) {
+                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
+                                currentDanceListeners[vrmIndex] = null;
+                            }
+
                             if (!isDancing) return;
                             if (currentActiveActions[vrmIndex] !== action) return; // 忽略舊動作
 
                             dancersFinished[vrmIndex] = true; // 此人跳完
 
-                            // ⭐ 當三個人都完成動作後，且尚未觸發過下一步時，再一起淡出！
+                            // ⭐ 當三個人都完成動作後，且尚未觸發過下一步時，再一起淡出換下一個動作！
                             if (dancersFinished.every(v => v) && !stepTriggered) {
                                 stepTriggered = true; // 鎖定
                                 currentVrms.forEach((v, i) => {
@@ -1755,7 +1843,7 @@
                             }
                         }
                     };
-                    vrm.userData.mixer.addEventListener('finished', onFinished);
+                    assignMixerListener(vrm, vrmIndex, onFinished);
                 } else {
                     currentActiveActions[vrmIndex] = null;
                 }
@@ -1936,9 +2024,13 @@
         function handleAIResponse(aiText) {
             let result = safeParseAIJson(aiText);
             
+            // ⭐ 將 AI 原始文字與解析結果印到監控面板，方便錄影抓蟲
+            logAction(`Raw AI Text:\n${aiText}`);
+            
             let danceSeq = null;
 
             if (result) {
+                logAction(`Parsed Result:\nAction: ${result.action}\nDance List: ${JSON.stringify(result.dance_list)}`);
                 if (result.action === 'dance_sequence' || result.action === 'dance_random') {
                     if (Array.isArray(result.dance_list) && result.dance_list.length > 0) {
                         danceSeq = result.dance_list;
@@ -1950,6 +2042,7 @@
                     }
                 }
             } else {
+                logAction(`Parse Failed! 使用關鍵字兜底猜測`);
                 danceSeq = guessDanceFromText(aiText);
             }
 
@@ -1978,6 +2071,14 @@
             }
             speak(speakText || "");
             
+            // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 ⭐⭐⭐
+            if (result && result.corrected_text) {
+                const userMsgs = document.querySelectorAll('.message-user');
+                if (userMsgs.length > 0) {
+                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
+                }
+            }
+
             // 處理表情
             if (result && result.emotion) {
                 setEmotion(result.emotion);
