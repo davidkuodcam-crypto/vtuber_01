@@ -573,9 +573,11 @@
         
         // ⭐⭐⭐ 新增：連續舞步播放佇列 ⭐⭐⭐
         let currentDanceQueue = [];
-        // ⭐ 修改：升級變數以支援多角色同時進行不同舞步的陣列
         let currentPlayingDanceData = null; 
         
+        // ⭐ 修改：全域變數改為陣列，精準記錄每位角色「目前正在跳」的動作
+        let currentActiveActions = [null, null, null];
+
         let chatHistory = [];
         let isSpeaking = false;
         let isOpeningRemark = false; // ⭐ 新增：標記是否正在講開場白
@@ -1351,20 +1353,20 @@
         function playCurrentStep() {
             if (!isDancing) return;
 
-            let dancersFinished = [false, false, false];
+            let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數少於 3 會卡死的問題)
             let anyoneDancing = false;
 
             currentVrms.forEach((vrm, vrmIndex) => {
-                if (!vrm || !vrm.userData.mixer) {
-                    dancersFinished[vrmIndex] = true;
-                    return;
-                }
+                if (!vrm || !vrm.userData.mixer) return;
 
                 const moveIndex = vrmDanceSequences[vrmIndex][danceStepIndex];
                 const action = danceActionsMap[moveIndex]?.[vrmIndex];
 
                 if (action) {
                     anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; // 有動作的人標為未完成
+                    currentActiveActions[vrmIndex] = action; // 記錄目前動作
+                    
                     action.reset();
                     action.setLoop(THREE.LoopOnce); 
                     action.clampWhenFinished = true; // 播完停在最後一幀定格
@@ -1376,15 +1378,15 @@
                         if (e.action === action) {
                             vrm.userData.mixer.removeEventListener('finished', onFinished);
                             if (!isDancing) return;
+                            if (currentActiveActions[vrmIndex] !== action) return; // ⭐ 忽略舊動作
 
                             dancersFinished[vrmIndex] = true; // 標記這個角色已跳完
 
                             // ⭐ 只有當「三個人都跳完」時，才一起進入下一步！(解決動作中斷問題)
-                            if (dancersFinished[0] && dancersFinished[1] && dancersFinished[2]) {
+                            if (dancersFinished.every(v => v)) {
                                 // 淡出這回合的所有動作
                                 currentVrms.forEach((v, i) => {
-                                    const mIndex = vrmDanceSequences[i][danceStepIndex];
-                                    const fadeAction = danceActionsMap[mIndex]?.[i];
+                                    const fadeAction = currentActiveActions[i];
                                     if (fadeAction) fadeAction.fadeOut(0.5);
                                 });
 
@@ -1406,19 +1408,21 @@
                     };
                     vrm.userData.mixer.addEventListener('finished', onFinished);
                 } else {
-                    dancersFinished[vrmIndex] = true; // 沒動作直接當作完成
+                    currentActiveActions[vrmIndex] = null;
                 }
             });
 
-            // 防呆：如果完全沒人有動作，直接跳過
+            // 防呆：如果完全沒人有動作，延遲後直接跳過
             if (!anyoneDancing) {
-                danceStepIndex++;
-                if (danceStepIndex >= 4) {
-                    danceStepIndex = 0;
-                    danceRound++;
-                    generateSequences(danceRound);
-                }
-                playCurrentStep();
+                setTimeout(() => {
+                    danceStepIndex++;
+                    if (danceStepIndex >= 4) {
+                        danceStepIndex = 0;
+                        danceRound++;
+                        generateSequences(danceRound);
+                    }
+                    playCurrentStep();
+                }, 50);
             }
         }
 
@@ -1441,6 +1445,7 @@
             // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
             currentDanceQueue = [];
             currentPlayingDanceData = null; 
+            currentActiveActions = [null, null, null]; // ⭐ 清空追蹤
             window.pendingMicResume = false; // 取消等待中的麥克風自動開啟任務
             
             // 重置相機
@@ -1661,20 +1666,20 @@
             currentPlayingDanceData = nextData; 
 
             // ⭐ 核心：追蹤三位舞者的進度，確保同步
-            let dancersFinished = [false, false, false];
+            let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數不足會卡死的問題)
             let anyoneDancing = false;
 
             currentVrms.forEach((vrm, vrmIndex) => {
-                if (!vrm || !vrm.userData.mixer) {
-                    dancersFinished[vrmIndex] = true;
-                    return;
-                }
+                if (!vrm || !vrm.userData.mixer) return;
                 
                 let nextIndex = Array.isArray(nextData) ? nextData[vrmIndex] : nextData;
                 const action = danceActionsMap[nextIndex]?.[vrmIndex];
                 
                 if (action) {
                     anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; // ⭐ 有動作的人才標記為 false
+                    currentActiveActions[vrmIndex] = action; // 記錄目前動作
+                    
                     action.reset();
                     action.setLoop(THREE.LoopOnce);
                     action.clampWhenFinished = true; // 保持定格，等其他人跳完
@@ -1685,14 +1690,14 @@
                         if (e.action === action) {
                             vrm.userData.mixer.removeEventListener('finished', onFinished);
                             if (!isDancing) return;
+                            if (currentActiveActions[vrmIndex] !== action) return; // 忽略舊動作
 
                             dancersFinished[vrmIndex] = true; // 此人跳完
 
                             // ⭐ 當三個人都完成動作後，再一起淡出換下一個！
-                            if (dancersFinished[0] && dancersFinished[1] && dancersFinished[2]) {
+                            if (dancersFinished.every(v => v)) {
                                 currentVrms.forEach((v, i) => {
-                                    let dIndex = Array.isArray(currentPlayingDanceData) ? currentPlayingDanceData[i] : currentPlayingDanceData;
-                                    const fadeAction = danceActionsMap[dIndex]?.[i];
+                                    const fadeAction = currentActiveActions[i];
                                     if (fadeAction) fadeAction.fadeOut(0.5);
                                 });
                                 playNextDanceInQueue(); // 觸發下一輪
@@ -1701,13 +1706,13 @@
                     };
                     vrm.userData.mixer.addEventListener('finished', onFinished);
                 } else {
-                    dancersFinished[vrmIndex] = true;
+                    currentActiveActions[vrmIndex] = null;
                 }
             });
 
             // 如果完全沒人有動作，直接進行下一步
             if (!anyoneDancing) {
-                playNextDanceInQueue();
+                setTimeout(() => playNextDanceInQueue(), 50);
             }
         }
 
