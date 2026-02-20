@@ -685,7 +685,7 @@
 
         // ⭐⭐⭐ 新增：第三角色 (David) 的專屬聚光燈群組 ⭐⭐⭐
         // ⭐ 修改：調降頭部聚光燈的亮度，保留柔和好氣色但避免過曝
-        const dLight1 = new THREE.SpotLight(0xfff5e6, 0.8); // ⭐ 將亮度由 1.0 微調至 0.8
+        const dLight1 = new THREE.SpotLight(0xfff5e6, 0.5); // ⭐ 將亮度微調至 0.5
         dLight1.angle = Math.PI / 2.5; // 放寬角度，讓光線均勻覆蓋整個臉龐
         dLight1.penumbra = 0.8; // 光線邊緣過渡更柔和自然
         dLight1.distance = 2.5; // 稍微延長照射距離
