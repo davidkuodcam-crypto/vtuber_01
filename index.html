@@ -517,7 +517,7 @@
         const VRM_MODELS = [
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm', // 角色 0: C
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm', // 角色 1: W
-            'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_06.vrm'    // 角色 2: David (新增)
+            'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_03.vrm'    // 角色 2: David (新增)
         ];
         
         // 變數修改：支援多角色
@@ -1485,17 +1485,15 @@
             }
         }
 
-        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（JSON壞掉時救命） ⭐⭐⭐
+        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（修改：移除容易被誤判的字眼） ⭐⭐⭐
         function guessDanceFromText(text) {
             if (!text) return null;
             const map = {
                 "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
                 "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
-                "可愛": 2, "愛心": 2, "嘻哈": 2, "律動": 2, "hip hop": 2,
-                "性感": 3, "走秀": 3,
-                "開心": 4, "happy": 4,
+                "嘻哈": 2, "律動": 2, "hip hop": 2,
                 "跳舞": -1, "dance": -1, // Random
-                "隨機": -1, "random": -1, "選一個": -1, "表演": -1 // ⭐⭐⭐ 新增關鍵字 ⭐⭐⭐
+                "隨機跳": -1, "隨便跳": -1
             };
             const lowerText = text.toLowerCase();
             for (const key in map) {
@@ -1799,26 +1797,29 @@
             });
         }
 
-        // ⭐⭐⭐ 4️⃣ 接收 AI 回應（完整最終版） ⭐⭐⭐
+        // ⭐⭐⭐ 4️⃣ 接收 AI 回應（修正誤判跳舞的最終版） ⭐⭐⭐
         function handleAIResponse(aiText) {
             let result = safeParseAIJson(aiText);
             
-            // ⭐⭐⭐ FIX: 增強的舞蹈判斷邏輯 ⭐⭐⭐
+            // ⭐⭐⭐ FIX: 修正過度敏感的舞蹈判斷邏輯 ⭐⭐⭐
             let danceSeq = null;
 
-            // 1. 優先使用 JSON 裡的 dance_list (如果存在且有效)
-            if (result && Array.isArray(result.dance_list) && result.dance_list.length > 0) {
-                danceSeq = result.dance_list;
-            }
-
-            // 2. 如果 JSON 沒有清單 (或無效)，則從文字中猜測
-            if (!danceSeq) {
+            if (result) {
+                // 如果 JSON 解析成功，嚴格依照 action 判斷是否跳舞
+                if (result.action === 'dance_sequence' || result.action === 'dance_random') {
+                    if (Array.isArray(result.dance_list) && result.dance_list.length > 0) {
+                        danceSeq = result.dance_list;
+                    } else if (result.action === 'dance_random') {
+                        danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)];
+                    } else {
+                        // AI 說要跳舞但清單為空，嘗試從文字猜測或給予隨機
+                        danceSeq = guessDanceFromText(result.text);
+                        if (!danceSeq) danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)];
+                    }
+                }
+            } else {
+                // 如果 JSON 完全壞掉沒有 action，才從整段文字中尋找跳舞關鍵字
                 danceSeq = guessDanceFromText(aiText);
-            }
-
-            // 3. 如果還是沒有，且 action 是 random，則隨機
-            if (!danceSeq && result && result.action === "dance_random") {
-                danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)];
             }
 
             // 處理結果
@@ -1826,8 +1827,6 @@
             if (danceSeq) {
                 playDanceSequence(danceSeq);
             } 
-            // 如果 JSON 說要跳舞但還是空的，預設跳 0 嗎？還是不跳？
-            // 為了避免「只會跳 0」的 Bug，這裡如果不確定就不跳，只說話。
             
             // 處理說話
             let speakText = result ? result.text : aiText;
