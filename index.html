@@ -1452,7 +1452,7 @@
                             }
 
                             if (!isDancing) return;
-                            if (currentActiveActions[vrmIndex] !== action) return; // 忽略舊動作
+                            if (currentActiveActions[vrmIndex] !== action) return; // ⭐ 忽略舊動作
 
                             dancersFinished[vrmIndex] = true; // 標記這個角色已跳完
 
@@ -1582,6 +1582,9 @@
                 // ⭐ 終極修復 3 (防止單引號搗亂)
                 jsonStr = jsonStr.replace(/'/g, '"');
                 
+                // ⭐ 終極修復 4 (拯救空元素)：利用正則自動補齊 AI 輸出的空元素 [, ,] 成為 [99, 99, 99]
+                jsonStr = jsonStr.replace(/(?<=\[|,)\s*(?=[,\]])/g, '99');
+
                 // 修復常見壞 JSON
                 jsonStr = jsonStr
                     .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') // 修復空值
@@ -1599,14 +1602,24 @@
                         result.dance_list = null; // 設為 null，讓 handleAIResponse 用文字猜測
                     } else {
                         // ⭐ 強制轉換所有元素為數字，防止 AI 塞文字進來
-                        result.dance_list = result.dance_list.map(item => {
-                            if (Array.isArray(item)) {
-                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
-                            } else {
-                                let v = parseInt(item);
-                                return isNaN(v) ? -1 : v;
+                        if (Array.isArray(result.dance_list[0])) {
+                            // 二維陣列：強制補齊 3 個子陣列
+                            while(result.dance_list.length < 3) {
+                                result.dance_list.push([99]);
                             }
-                        });
+                            result.dance_list = result.dance_list.map(item => {
+                                if (Array.isArray(item)) {
+                                    if(item.length === 0) return [99]; // 避免空陣列
+                                    return item.map(v => parseInt(v)).map(v => isNaN(v) ? 99 : v);
+                                } else {
+                                    let v = parseInt(item);
+                                    return [isNaN(v) ? 99 : v];
+                                }
+                            });
+                        } else {
+                            // 一維陣列
+                            result.dance_list = result.dance_list.map(v => parseInt(v)).map(v => isNaN(v) ? 99 : v);
+                        }
                     }
                 }
                 return result;
@@ -2148,7 +2161,7 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 修改 Prompt: 強制限定 JSON 輸出並防止 AI 幻覺漏逗號 ⭐⭐⭐
+            // ⭐⭐⭐ 修改 Prompt: 強制限定 JSON 輸出，明確定義 David，並嚴格防範空陣列 ⭐⭐⭐
             finalSystemInstruction += `
 【CRITICAL INSTRUCTIONS】
 1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json. The system will crash if you output plain text or invalid JSON.
@@ -2156,15 +2169,15 @@
 3. **DANCE SYSTEM**:
    - Dance IDs available: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B), 99(不跳舞/原地待命).
    - "action" must be "dance_sequence".
-   - **預設齊舞 (1D Array)**: 這是系統的【預設模式】。除非使用者明確說出「各自」、「分別」、「單獨」等字眼，否則你【絕對只能】回傳一維陣列 (1D Array)，讓所有人同步跳一樣的舞！ Ex: "跳兩次" -> "dance_list": [1, 1].
-   - **各自跳舞 (2D Array)**: 只有當使用者特別要求「各自跳」時，才回傳 2D 陣列 (包含 3 個子陣列，依序對應 C、W、David)。若某人被要求「單獨跳」，其他人請填寫 99。
-     * Ex: "各自隨機選1種舞蹈各跳1次" -> "dance_list": [[2], [0], [3]]
-     * Ex: "第一人單獨跳嘻哈，其他不動" -> "dance_list": [[2], [99], [99]]
-     * Ex: "各自隨機選1種舞蹈各跳2次" -> "dance_list": [[3, 3], [1, 1], [0, 0]]
-     * Ex: "各自隨機選3種舞蹈各跳2次" -> "dance_list": [[1,1,2,2,0,0], [3,3,1,1,2,2], [0,0,3,3,1,1]] (CRITICAL: 子陣列之間必須加逗號!)
-   - **SPEECH CONSISTENCY (CRITICAL)**: Your "text" value MUST perfectly match the number of dances you scheduled in "dance_list". Do not hallucinate different numbers.
+   - **預設齊舞 (1D Array)**: 這是系統的【預設模式】。除非使用者明確指示某人「各自」、「分別」、「單獨跳」，否則你【絕對只能】回傳一維陣列，讓所有人同步跳一樣的舞！ Ex: "跳兩次" -> "dance_list": [1, 1].
+   - **各自跳舞/單獨跳 (2D Array)**: 只有當使用者特別要求時，才回傳 2D 陣列。這個陣列【必須包含剛好 3 個子陣列】，依序對應: 第一人(左)、第二人(中)、第三人(右/David)。若某人不跳，請務必填入 [99]，【絕對不可以留空】！
+     * Ex: "各自隨機跳1次" -> "dance_list": [[2], [0], [3]]
+     * Ex: "第三人(David)單獨跳嘻哈" -> "dance_list": [[99], [99], [2]]
+     * Ex: "第一人先跳定格A再跳定格B" -> "dance_list": [[0, 3], [99], [99]]
+     * 嚴禁輸出 [,,] 或是 [[],[],[]] 這種格式，不跳舞請一律使用 [99]。
+   - **SPEECH CONSISTENCY (CRITICAL)**: Your "text" value MUST perfectly match the dances you scheduled.
 4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
-   Example structure: { "text": "沒問題！我們這就為您跳舞！", "emotion": "happy", "action": "dance_sequence", "dance_list": [2, 0], "corrected_text": "已修正語句" }
+   Example: { "text": "沒問題！現在請David單獨為您跳一段！", "emotion": "happy", "action": "dance_sequence", "dance_list": [[99], [99], [0, 3]], "corrected_text": "已修正語句" }
 `;
 
             // Add AbortController for timeout
