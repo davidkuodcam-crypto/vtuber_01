@@ -684,12 +684,12 @@
         scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
         // ⭐⭐⭐ 新增：第三角色 (David) 的專屬聚光燈群組 ⭐⭐⭐
-        // ⭐ 修改：為了讓額頭容光煥發且避開鼻子，改用微暖膚色，並縮小照射範圍
-        const dLight1 = new THREE.SpotLight(0xffeedd, 0.15); // ⭐ 再次調降額頭聚光亮度 (原本 0.35 -> 降至 0.15)
-        dLight1.angle = Math.PI / 3.0; // 稍微收束角度，讓光集中在額頭
-        dLight1.penumbra = 1.0; 
-        dLight1.distance = 2.0; // ⭐ 縮短光線衰減距離，讓光線在照到鼻子前就自然變弱
-        dLight1.decay = 2.0;
+        // ⭐ 修改：調降頭部聚光燈的亮度，保留柔和好氣色但避免過曝
+        const dLight1 = new THREE.SpotLight(0xfff5e6, 1.0); // ⭐ 將亮度由 3.5 大幅調降至 1.0
+        dLight1.angle = Math.PI / 2.5; // 放寬角度，讓光線均勻覆蓋整個臉龐
+        dLight1.penumbra = 0.8; // 光線邊緣過渡更柔和自然
+        dLight1.distance = 2.5; // 稍微延長照射距離
+        dLight1.decay = 1.5; // 減緩光線衰減，讓臉部立體感更好
         scene.add(dLight1); scene.add(dLight1.target);
 
         // ⭐⭐⭐ 2. 衣服專屬聚光燈 (往下打光，絕對避開臉部) ⭐⭐⭐
@@ -1105,9 +1105,9 @@
 
                         // ⭐ 核心修正：局部 Z 軸的負方向 (-Z) 才是角色的「正前方」！
 
-                        // 1. 額頭燈光 (隱藏線框)
-                        const d1PosOffset = new THREE.Vector3(0, 0.85, -0.35).applyQuaternion(spineQuat); // 改為負值
-                        const d1TargetOffset = new THREE.Vector3(0, 0.7, 0).applyQuaternion(spineQuat);
+                        // 1. 頭部燈光 (隱藏線框)
+                        const d1PosOffset = new THREE.Vector3(0, 0.85, -0.4).applyQuaternion(spineQuat); // 光源稍微往遠拉一點，讓打光更柔和
+                        const d1TargetOffset = new THREE.Vector3(0, 0.65, 0).applyQuaternion(spineQuat); // 目標稍微下移對準臉部正中心
                         dLight1.position.copy(tPos).add(d1PosOffset);
                         dLight1.target.position.copy(tPos).add(d1TargetOffset);
 
