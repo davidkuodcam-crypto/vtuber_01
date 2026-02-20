@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <title>AI VTuber - Golden New Year (Voice Enabled)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<!-- 引入 FontAwesome 用於麥克風圖示 -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
     /* 全域設定：確保邊框計算不影響寬度 */
@@ -406,7 +405,6 @@
 
 </style>
 
-<!-- ⭐ 新增: ES Module Shims，確保 importmap 在所有瀏覽器都能正常運作 -->
 <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
 
 <script type="importmap">
@@ -429,7 +427,6 @@
         <button id="start-btn">開始新年對話</button>
     </div>
 
-    <!-- 瀏覽器不支援警告 -->
     <div id="browser-warning">
         <h3>⚠️ 瀏覽器功能限制</h3>
         <p>檢測到目前的瀏覽器 (例如 LINE/FB 內建瀏覽器) 不支援語音功能。</p>
@@ -446,7 +443,6 @@
         <span id="status-msg">連線中...</span>
     </div>
     
-    <!-- Android 語音診斷面板 (預設隱藏) -->
     <div id="tts-debug">TTS 系統診斷中...</div>
     
     <div id="emotion-debug">
@@ -454,24 +450,20 @@
         動作: None
     </div>
 
-    <!-- ⭐⭐⭐ 新增：動作指令監控面板 (Action Debug Panel) ⭐⭐⭐ -->
     <div id="action-debug-panel">等待動作指令...</div>
 
     <div id="chat-container">
         <div id="chat-display">
-            <!-- 訊息將由 JavaScript 動態加入 -->
-        </div>
+            </div>
         <div id="input-area">
             <button id="dance-btn" class="control-btn" title="熱舞組曲">💃</button>
             <button id="mute-btn" class="control-btn" title="切換聲音">🔊</button>
             
-            <!-- ⭐⭐⭐ 輸入框包裹區與語音波動條 ⭐⭐⭐ -->
             <div class="input-wrapper">
                 <input type="text" id="user-input" placeholder="請輸入訊息..." disabled>
                 <div id="voice-overlay"></div>
             </div>
 
-            <!-- ⭐⭐⭐ 新增麥克風按鈕 ⭐⭐⭐ -->
             <button id="mic-btn" class="control-btn" title="語音輸入"><i class="fa-solid fa-microphone"></i></button>
 
             <button id="send-btn" disabled>發送</button>
@@ -1547,20 +1539,27 @@
             }, 500);
             
             // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose
-            if (idleActionC) {
-                idleActionC.reset();
-                idleActionC.setEffectiveWeight(1);
-                idleActionC.fadeIn(0.5).play();
-            }
-            if (idleActionW) {
-                idleActionW.reset();
-                idleActionW.setEffectiveWeight(1);
-                idleActionW.fadeIn(0.5).play();
-            }
-            if (idleActionD) {
-                idleActionD.reset();
-                idleActionD.setEffectiveWeight(1);
-                idleActionD.fadeIn(0.5).play();
+            // ⭐ 修復：如果手動停止跳舞時 AI 還在講話，恢復說話動作，反之恢復閒置
+            if (isSpeaking) {
+                if (talkingActionC) { talkingActionC.reset(); talkingActionC.setEffectiveWeight(1); talkingActionC.fadeIn(0.5).play(); }
+                if (talkingActionW) { talkingActionW.reset(); talkingActionW.setEffectiveWeight(1); talkingActionW.fadeIn(0.5).play(); }
+                if (talkingActionD) { talkingActionD.reset(); talkingActionD.setEffectiveWeight(1); talkingActionD.fadeIn(0.5).play(); }
+            } else {
+                if (idleActionC) {
+                    idleActionC.reset();
+                    idleActionC.setEffectiveWeight(1);
+                    idleActionC.fadeIn(0.5).play();
+                }
+                if (idleActionW) {
+                    idleActionW.reset();
+                    idleActionW.setEffectiveWeight(1);
+                    idleActionW.fadeIn(0.5).play();
+                }
+                if (idleActionD) {
+                    idleActionD.reset();
+                    idleActionD.setEffectiveWeight(1);
+                    idleActionD.fadeIn(0.5).play();
+                }
             }
         }
 
@@ -1756,9 +1755,16 @@
                 setTimeout(() => updateCameraPosition(), 500);
                 
                 // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，防止卡在 T-pose
-                if (idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
-                if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
-                if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
+                // ⭐ 新增：如果跳舞結束時 AI 還在講話，則恢復說話動作，否則恢復閒置動作
+                if (isSpeaking) {
+                    if (talkingActionC) { talkingActionC.reset(); talkingActionC.setEffectiveWeight(1); talkingActionC.fadeIn(0.5).play(); }
+                    if (talkingActionW) { talkingActionW.reset(); talkingActionW.setEffectiveWeight(1); talkingActionW.fadeIn(0.5).play(); }
+                    if (talkingActionD) { talkingActionD.reset(); talkingActionD.setEffectiveWeight(1); talkingActionD.fadeIn(0.5).play(); }
+                } else {
+                    if (idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
+                    if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                    if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
+                }
                 
                 // 當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
                 if (window.pendingMicResume) {
@@ -2384,7 +2390,8 @@
                     // 恢復閒置
                     // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
-                        // ⭐ 修復：移除 reset() 以避免動畫跳回第一幀造成的抽搐
+                        // ⭐ 修復：加入 setEffectiveWeight 徹底解決 David 突然舉手的問題
+                        // ⭐ 移除 .reset() 防止強制跳回第一幀造成的瞬間舉手/閃爍
                         if (idleActionC) {
                             idleActionC.setEffectiveWeight(1);
                             idleActionC.fadeIn(0.5).play();
