@@ -2384,19 +2384,16 @@
                     // 恢復閒置
                     // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
-                        // ⭐ 修復：加入 setEffectiveWeight 徹底解決 David 突然舉手的問題
+                        // ⭐ 修復：移除 reset() 以避免動畫跳回第一幀造成的抽搐
                         if (idleActionC) {
-                            idleActionC.reset(); 
                             idleActionC.setEffectiveWeight(1);
                             idleActionC.fadeIn(0.5).play();
                         }
                         if (idleActionW) {
-                            idleActionW.reset(); 
                             idleActionW.setEffectiveWeight(1);
                             idleActionW.fadeIn(0.5).play();
                         }
                         if (idleActionD) {
-                            idleActionD.reset(); 
                             idleActionD.setEffectiveWeight(1);
                             idleActionD.fadeIn(0.5).play();
                         }
