@@ -691,7 +691,31 @@
         dLight1.distance = 2.0; // ⭐ 縮短光線衰減距離，讓光線在照到鼻子前就自然變弱
         dLight1.decay = 2.0;
         scene.add(dLight1); scene.add(dLight1.target);
+        // 🟥 紅色線框：讓您親眼看見「額頭燈」的影響範圍
+        const light1Helper = new THREE.SpotLightHelper(dLight1, 0xff0000); 
+        scene.add(light1Helper);
 
+        // ⭐⭐⭐ 2. 衣服專屬聚光燈 (往下打光，絕對避開臉部) ⭐⭐⭐
+        const dLightBody = new THREE.SpotLight(0xffffff, 120.0); // ⭐ 依要求再次加強綠線聚光燈亮度 (由 60.0 提升至 120.0)
+        dLightBody.angle = Math.PI / 7.0; // ⭐ 關鍵修正：收窄照射角度，讓光錐更集中，避免向上溢出照到臉
+        dLightBody.penumbra = 0.5;
+        dLightBody.distance = 1.5; // 縮短距離，確保不波及他人
+        dLightBody.decay = 1.0;
+        scene.add(dLightBody); scene.add(dLightBody.target);
+        // 🟩 綠色線框：讓您親眼看見「衣服燈」的影響範圍
+        const bodyLightHelper = new THREE.SpotLightHelper(dLightBody, 0x00ff00); 
+        scene.add(bodyLightHelper);
+
+        // ⭐⭐⭐ 3. 褲子專屬聚光燈 (往下打光，專注下半身) ⭐⭐⭐
+        const dLightLegs = new THREE.SpotLight(0xffffff, 0.5); // ⭐ 依要求進一步降低藍線聚光燈亮度 (由 3.0 降低至 0.5)
+        dLightLegs.angle = Math.PI / 4.0;
+        dLightLegs.penumbra = 0.5;
+        dLightLegs.distance = 1.5;
+        dLightLegs.decay = 1.0;
+        scene.add(dLightLegs); scene.add(dLightLegs.target);
+        // 🟦 藍色線框：讓您親眼看見「褲子燈」的影響範圍
+        const legsLightHelper = new THREE.SpotLightHelper(dLightLegs, 0x00aaff); 
+        scene.add(legsLightHelper);
 
         // --- 新年特效：飄落金粉/紅紙屑 ---
         let particlesMesh;
@@ -867,6 +891,7 @@
                         // ⭐ 恢復材質提亮：這是讓角色「容光煥發」的關鍵，從根本解決衣服與皮膚暗沉
                         vrm.scene.traverse((object) => {
                             if (object.isMesh) {
+                                object.layers.enable(1); // ⭐ 關鍵修復：將 David 加入 Layer 1，讓他能獨佔接收上述的聚光燈
                                 const materials = Array.isArray(object.material) ? object.material : [object.material];
                                 materials.forEach((mat) => {
                                     if (mat.color) {
@@ -1069,20 +1094,45 @@
                 if(!vrm) return; // 避免陣列有空洞
                 vrm.update(deltaTime);
                 
-                // ⭐⭐⭐ 讓第三角色 (David) 的專屬聚光燈無縫跟隨他移動 ⭐⭐⭐
+                // ⭐⭐⭐ 讓第三角色 (David) 的專屬聚光燈無縫跟隨他移動與翻轉 ⭐⭐⭐
                 if (index === 2 && typeof dLight1 !== 'undefined') {
                     const spine = vrm.humanoid.getNormalizedBoneNode('spine');
-                    if (spine) {
+                    const hips = vrm.humanoid.getNormalizedBoneNode('hips');
+                    if (spine && hips) {
+                        // 取出脊椎位置與 3D 旋轉角度 (四元數)
                         const tPos = new THREE.Vector3();
                         spine.getWorldPosition(tPos);
+                        const spineQuat = new THREE.Quaternion();
+                        spine.getWorldQuaternion(spineQuat);
 
-                        // ⭐ 修改：精準鎖定「額頭」高度
-                        const foreheadY = tPos.y + 0.7;
-                        dLight1.target.position.set(tPos.x, foreheadY, tPos.z);
+                        // 取出骨盆位置與 3D 旋轉角度 (四元數)
+                        const hipsPos = new THREE.Vector3();
+                        hips.getWorldPosition(hipsPos);
+                        const hipsQuat = new THREE.Quaternion();
+                        hips.getWorldQuaternion(hipsQuat);
 
-                        // ⭐ 修改：將光源架設在額頭的「正前方極近距離，稍微偏上方」
-                        // 配合較短的 distance 衰減，讓額頭吃到最多光，鼻子則處於餘光陰影區
-                        dLight1.position.set(tPos.x, foreheadY + 0.15, tPos.z + 0.35); 
+                        // ⭐ 核心修正：局部 Z 軸的負方向 (-Z) 才是角色的「正前方」！
+
+                        // 1. 額頭燈光 (紅色線框)
+                        const d1PosOffset = new THREE.Vector3(0, 0.85, -0.35).applyQuaternion(spineQuat); // 改為負值
+                        const d1TargetOffset = new THREE.Vector3(0, 0.7, 0).applyQuaternion(spineQuat);
+                        dLight1.position.copy(tPos).add(d1PosOffset);
+                        dLight1.target.position.copy(tPos).add(d1TargetOffset);
+                        light1Helper.update(); 
+
+                        // ⭐ 2. 衣服光 (綠色線框)：跟隨脊椎一起彎腰與翻轉
+                        const bodyPosOffset = new THREE.Vector3(0, 0.3, -0.7).applyQuaternion(spineQuat); // 改為負值
+                        const bodyTargetOffset = new THREE.Vector3(0, 0.15, 0).applyQuaternion(spineQuat);
+                        dLightBody.position.copy(tPos).add(bodyPosOffset);
+                        dLightBody.target.position.copy(tPos).add(bodyTargetOffset);
+                        bodyLightHelper.update(); 
+
+                        // ⭐ 3. 褲子光 (藍色線框)：跟隨下半身骨盆一起旋轉
+                        const legsPosOffset = new THREE.Vector3(0, 0, -0.8).applyQuaternion(hipsQuat); // 改為負值
+                        const legsTargetOffset = new THREE.Vector3(0, -0.5, 0).applyQuaternion(hipsQuat);
+                        dLightLegs.position.copy(hipsPos).add(legsPosOffset);
+                        dLightLegs.target.position.copy(hipsPos).add(legsTargetOffset);
+                        legsLightHelper.update(); 
                     }
                 }
 
