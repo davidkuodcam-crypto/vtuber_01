@@ -1146,8 +1146,8 @@
                     }
                 }
 
-                // 說話嘴型同步 (所有角色一起對嘴)
-                if (isSpeaking && !isMuted) {
+                // ⭐ 說話嘴型同步 (修改：限定只有第2個角色 index === 1 才會對嘴)
+                if (isSpeaking && !isMuted && index === 1) {
                     const s = Math.sin(elapsedTime * 18); // 說話速度微調
                     vrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
                 } else {
