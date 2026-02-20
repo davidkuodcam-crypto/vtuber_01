@@ -496,9 +496,9 @@
 
         // Global flag for auto-resuming mic
         window.shouldResumeMic = false;
-        window.pendingMicResume = false; // ⭐ 新增：用於標記跳舞結束後才啟動麥克風的排程
+        window.pendingMicResume = false; // 用於標記跳舞結束後才啟動麥克風的排程
 
-        // ⭐⭐⭐ NEW: 用於暫存 AI 給的舞蹈序列，確保講完話才跳舞 ⭐⭐⭐
+        // ⭐⭐⭐ NEW: Global flag to delay dancing until TTS finishes ⭐⭐⭐
         window.pendingDanceSeq = null;
 
         // Android Debug Logger Setup
@@ -620,6 +620,7 @@
         
         // ⭐⭐⭐ 新增：連續舞步播放佇列 ⭐⭐⭐
         let currentDanceQueue = [];
+        let currentPlayingDanceData = null; 
         
         // ⭐ 修改：全域變數改為陣列，精準記錄每位角色「目前正在跳」的動作
         let currentActiveActions = [null, null, null];
@@ -1539,36 +1540,27 @@
             
             // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
             currentDanceQueue = [];
+            currentPlayingDanceData = null; 
             currentActiveActions = [null, null, null]; // ⭐ 清空追蹤
+            window.pendingMicResume = false; // 取消等待中的麥克風自動開啟任務
             
             // 重置相機
             setTimeout(() => {
                 updateCameraPosition();
             }, 500);
             
-            // ⭐ 恢復閒置動作 (加入 reset() 與滿權重解決 T-pose 問題)
+            // ⭐ 恢復閒置動作 (移除 reset() 避免骨骼抽搐)
             if (idleActionC) {
-                idleActionC.reset();
                 idleActionC.setEffectiveWeight(1);
                 idleActionC.fadeIn(0.5).play();
             }
             if (idleActionW) {
-                idleActionW.reset();
                 idleActionW.setEffectiveWeight(1);
                 idleActionW.fadeIn(0.5).play();
             }
             if (idleActionD) {
-                idleActionD.reset();
                 idleActionD.setEffectiveWeight(1);
                 idleActionD.fadeIn(0.5).play();
-            }
-
-            // ⭐⭐⭐ 檢查並恢復麥克風 (完全保留您原本的機制) ⭐⭐⭐
-            if (window.pendingMicResume) {
-                window.pendingMicResume = false;
-                setTimeout(() => {
-                    if (!isRecording) startRecording();
-                }, 500);
             }
         }
 
@@ -1722,7 +1714,6 @@
                     let stepArray = [];
                     for (let c = 0; c < 3; c++) { 
                         let charSeq = seq[c] || [];
-                        // ⭐ 終極修復：如果這回合該角色已經沒有動作了，強制指派 99 (原地不動)
                         let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
                         if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
                         stepArray.push(danceId);
@@ -1762,12 +1753,12 @@
 
                 setTimeout(() => updateCameraPosition(), 500);
                 
-                // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，並加入 reset 喚醒已停止的動畫避免 T-pose
-                if (idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
-                if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
-                if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
+                // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，並移除 reset 避免抽搐
+                if (idleActionC) { idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
+                if (idleActionW) { idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                if (idleActionD) { idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
                 
-                // ⭐⭐⭐ 關鍵修復：當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
+                // 當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
                 if (window.pendingMicResume) {
                     window.pendingMicResume = false;
                     setTimeout(() => {
@@ -1798,6 +1789,8 @@
                 }
             }
             
+            currentPlayingDanceData = nextData; 
+
             // ⭐ 核心：追蹤三位舞者的進度，確保同步
             let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數不足會卡死的問題)
             let anyoneDancing = false;
@@ -1823,7 +1816,7 @@
                     }
                     
                     if (idleA && oldAction !== idleA) {
-                        idleA.reset(); // ⭐ 必須 reset 才能從跳舞動作中喚醒 Idle
+                        // idleA.reset(); // 移除 reset 避免抽搐
                         idleA.setEffectiveWeight(1); // ⭐ 防止無動畫
                         idleA.fadeIn(0.5).play();
                         currentActiveActions[vrmIndex] = idleA;
@@ -2346,23 +2339,6 @@
                     if (talkingActionW) talkingActionW.fadeOut(0.5); 
                     if (talkingActionD) talkingActionD.fadeOut(0.5); 
                     
-                    // 恢復閒置
-                    if (!isDancing) {
-                        // 因為前面沒 fadeOut，這裡不用 reset，只要把權重拉滿並平滑接軌即可，完美解決抽搐！
-                        if (idleActionC) {
-                            idleActionC.setEffectiveWeight(1); 
-                            idleActionC.fadeIn(0.5).play();
-                        }
-                        if (idleActionW) {
-                            idleActionW.setEffectiveWeight(1); 
-                            idleActionW.fadeIn(0.5).play();
-                        }
-                        if (idleActionD) {
-                            idleActionD.setEffectiveWeight(1); 
-                            idleActionD.fadeIn(0.5).play();
-                        }
-                    }
-
                     // ⭐ 核心修復 1：只有等整段話講完 (onend)，才真正開始播放 AI 給的跳舞排程！
                     if (window.pendingDanceSeq) {
                         playDanceSequence(window.pendingDanceSeq);
