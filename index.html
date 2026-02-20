@@ -375,7 +375,6 @@
 
     /* ⭐⭐⭐ 新增：畫面上方的動作指令監控面板 ⭐⭐⭐ */
     #action-debug-panel {
-        display: none; /* ⭐ 已隱藏正上方的監控面板 */
         position: absolute;
         top: 15px;
         left: 50%;
@@ -2251,7 +2250,7 @@
                 addMessage(displayText, 'ai');
 
             } catch (error) {
-                consoleerror(error);
+                console.error(error);
                 removeMessage(loadingMsg);
                 if (error.name === 'AbortError') {
                     addMessage(`錯誤: 連線逾時 (Timeout)，請重試。`, 'system');
