@@ -1539,6 +1539,11 @@
                 return [[-1, -1, -1], [-1, -1, -1], [-1, -1, -1]]; 
             }
 
+            // ⭐ 終極修復：優先判定「定格B」，避免被下方的「霹靂」關鍵字攔截變成 0
+            if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
+                return [3];
+            }
+
             const map = {
                 "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
                 "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
@@ -1655,11 +1660,14 @@
             if (Array.isArray(nextData)) {
                 nextData = nextData.map(val => {
                     let v = parseInt(val);
+                    if (v === 99) return 99; // ⭐ 支援 99 (站在原地不跳舞)
                     return (isNaN(v) || v < 0 || v >= DANCE_URLS.length) ? Math.floor(Math.random() * DANCE_URLS.length) : v;
                 });
             } else {
                 let v = parseInt(nextData);
-                if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
+                if (v === 99) {
+                    nextData = 99; // ⭐ 支援 99 (站在原地不跳舞)
+                } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
                     nextData = Math.floor(Math.random() * DANCE_URLS.length);
                 } else {
                     nextData = v;
@@ -1676,6 +1684,14 @@
                 if (!vrm || !vrm.userData.mixer) return;
                 
                 let nextIndex = Array.isArray(nextData) ? nextData[vrmIndex] : nextData;
+                
+                // ⭐ 單獨跳舞邏輯：如果這個人的動作是 99，就代表他這回合站在原地不動！
+                if (nextIndex === 99) {
+                    dancersFinished[vrmIndex] = true;
+                    currentActiveActions[vrmIndex] = null;
+                    return;
+                }
+                
                 const action = danceActionsMap[nextIndex]?.[vrmIndex];
                 
                 if (action) {
@@ -1997,25 +2013,6 @@
             if (externalKnowledge) {
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
-
-            // ⭐⭐⭐ 修改 Prompt: 強制限定 JSON 輸出並防止 AI 幻覺漏逗號 ⭐⭐⭐
-            finalSystemInstruction += `
-【CRITICAL INSTRUCTIONS】
-1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json. The system will crash if you output plain text or invalid JSON.
-2. **PERSONA**: You are a virtual AI character accompanied by two companions. Keep responses natural, conversational, and concise. Do NOT refer to yourself as code or mention JSON format to the user.
-3. **DANCE SYSTEM**:
-   - Dance IDs available: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B).
-   - "action" must be "dance_sequence".
-   - **SYNC DANCE (齊舞)**: Return a 1D array. Ex: "跳三次" -> "dance_list": [1, 1, 1].
-   - **INDEPENDENT DANCE (各自跳)**: If the user asks for "各自" (independently/respectively), return a 2D array with exactly 3 sub-arrays (for the 3 characters). YOU must randomly pick the IDs (0-3) according to the user's constraints.
-     * Ex: "各自隨機選1種舞蹈各跳1次" -> "dance_list": [[2], [0], [3]]
-     * Ex: "各自隨機選2種舞蹈各跳1次" -> "dance_list": [[1, 2], [3, 0], [2, 1]]
-     * Ex: "各自隨機選1種舞蹈各跳2次" -> "dance_list": [[3, 3], [1, 1], [0, 0]]
-     * Ex: "各自隨機選3種舞蹈各跳2次" -> "dance_list": [[1,1,2,2,0,0], [3,3,1,1,2,2], [0,0,3,3,1,1]] (CRITICAL: Do NOT forget commas between the sub-arrays!)
-   - **SPEECH CONSISTENCY (CRITICAL)**: Your "text" value MUST perfectly match the number of dances you scheduled in "dance_list". Do not hallucinate different numbers.
-4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
-   Example structure: { "text": "沒問題！我們這就各自為您展現一段隨機舞步！", "emotion": "happy", "action": "dance_sequence", "dance_list": [[2], [0], [3]], "corrected_text": "已修正語句" }
-`;
 
             // Add AbortController for timeout
             const controller = new AbortController();
