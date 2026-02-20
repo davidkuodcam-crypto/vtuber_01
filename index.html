@@ -1355,6 +1355,7 @@
 
             let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數少於 3 會卡死的問題)
             let anyoneDancing = false;
+            let stepTriggered = false; // ⭐ 加入單次鎖定，防止同步跳完時發生雙重觸發 Bug
 
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
@@ -1382,8 +1383,10 @@
 
                             dancersFinished[vrmIndex] = true; // 標記這個角色已跳完
 
-                            // ⭐ 只有當「三個人都跳完」時，才一起進入下一步！(解決動作中斷問題)
-                            if (dancersFinished.every(v => v)) {
+                            // ⭐ 只有當「三個人都跳完」且「尚未觸發過下一步」時，才一起進入下一步！
+                            if (dancersFinished.every(v => v) && !stepTriggered) {
+                                stepTriggered = true; // 鎖定，防止同幀內的其他人再次觸發
+                                
                                 // 淡出這回合的所有動作
                                 currentVrms.forEach((v, i) => {
                                     const fadeAction = currentActiveActions[i];
@@ -1413,7 +1416,8 @@
             });
 
             // 防呆：如果完全沒人有動作，延遲後直接跳過
-            if (!anyoneDancing) {
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
                 setTimeout(() => {
                     danceStepIndex++;
                     if (danceStepIndex >= 4) {
@@ -1440,6 +1444,10 @@
             // 停止所有動作
             danceActionsMap.forEach(group => {
                 group.forEach(action => action.fadeOut(0.5));
+            });
+            // 停止可能被掛載為 Active 的 Idle 動作
+            currentActiveActions.forEach(action => {
+                if (action) action.fadeOut(0.5);
             });
             
             // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
@@ -1495,6 +1503,9 @@
                 // ⭐ 終極修復 2 (拯救矩陣)：AI 常常忘記二維陣列中間的逗號，例如 [[1,2][3,4]]，幫它補上變成 [[1,2], [3,4]]
                 jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
                 
+                // ⭐ 終極修復 3 (防止單引號搗亂)
+                jsonStr = jsonStr.replace(/'/g, '"');
+                
                 // 修復常見壞 JSON
                 jsonStr = jsonStr
                     .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') // 修復空值
@@ -1534,8 +1545,8 @@
             if (!text) return null;
             const lowerText = text.toLowerCase();
             
-            // 如果關鍵字有「各自」或「分別」，兜底返回二維陣列的隨機指示 (給予3個動作長度避免太快結束)
-            if (lowerText.includes("各自") || lowerText.includes("分別")) {
+            // 如果關鍵字有「各自」或「分別」或「每個人」，兜底返回二維陣列的隨機指示 (給予3個動作長度避免太快結束)
+            if (lowerText.includes("各自") || lowerText.includes("分別") || lowerText.includes("每個人")) {
                 return [[-1, -1, -1], [-1, -1, -1], [-1, -1, -1]]; 
             }
 
@@ -1559,7 +1570,7 @@
             return null;
         }
 
-        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（強大升級版：支援每個角色各自不同的舞步） ⭐⭐⭐
+        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（強大升級版：支援每個角色各自不同的舞步與長度） ⭐⭐⭐
         async function playDanceSequence(sequence) {
             // 在 await 之前先將狀態設為 true
             isDancing = true;
@@ -1612,7 +1623,8 @@
                     let stepArray = [];
                     for (let c = 0; c < 3; c++) { 
                         let charSeq = seq[c] || [];
-                        let danceId = charSeq[step] !== undefined ? charSeq[step] : -1;
+                        // ⭐ 終極修復：如果這回合該角色已經沒有動作了，強制指派 99 (原地不動)，而不是亂給隨機舞蹈！
+                        let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
                         if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
                         stepArray.push(danceId);
                     }
@@ -1638,6 +1650,12 @@
                 bgm.pause();
                 bgm.currentTime = 0;
                 danceBtn.classList.remove('active');
+
+                // Fade out current active actions
+                currentVrms.forEach((v, i) => {
+                    const fadeAction = currentActiveActions[i];
+                    if (fadeAction) fadeAction.fadeOut(0.5);
+                });
 
                 setTimeout(() => updateCameraPosition(), 500);
                 if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
@@ -1679,17 +1697,30 @@
             // ⭐ 核心：追蹤三位舞者的進度，確保同步
             let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數不足會卡死的問題)
             let anyoneDancing = false;
+            let stepTriggered = false; // ⭐ 加入單次鎖定，防止同步跳完時發生雙重觸發 Bug
 
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
                 
                 let nextIndex = Array.isArray(nextData) ? nextData[vrmIndex] : nextData;
                 
-                // ⭐ 單獨跳舞邏輯：如果這個人的動作是 99，就代表他這回合站在原地不動！
+                // ⭐ 單獨跳舞邏輯：如果這個人的動作是 99，代表他這回合原地不動，我們幫他播放 Idle 動作！
                 if (nextIndex === 99) {
                     dancersFinished[vrmIndex] = true;
-                    currentActiveActions[vrmIndex] = null;
-                    return;
+                    
+                    let idleA = null;
+                    if (vrmIndex === 0) idleA = idleActionC;
+                    if (vrmIndex === 1) idleA = idleActionW;
+                    if (vrmIndex === 2) idleA = idleActionD;
+                    
+                    if (idleA) {
+                        idleA.reset();
+                        idleA.fadeIn(0.5).play();
+                        currentActiveActions[vrmIndex] = idleA;
+                    } else {
+                        currentActiveActions[vrmIndex] = null;
+                    }
+                    return; // 99 的人不會觸發 onFinished
                 }
                 
                 const action = danceActionsMap[nextIndex]?.[vrmIndex];
@@ -1713,8 +1744,9 @@
 
                             dancersFinished[vrmIndex] = true; // 此人跳完
 
-                            // ⭐ 當三個人都完成動作後，再一起淡出換下一個！
-                            if (dancersFinished.every(v => v)) {
+                            // ⭐ 當三個人都完成動作後，且尚未觸發過下一步時，再一起淡出！
+                            if (dancersFinished.every(v => v) && !stepTriggered) {
+                                stepTriggered = true; // 鎖定
                                 currentVrms.forEach((v, i) => {
                                     const fadeAction = currentActiveActions[i];
                                     if (fadeAction) fadeAction.fadeOut(0.5);
@@ -1729,8 +1761,9 @@
                 }
             });
 
-            // 如果完全沒人有動作，直接進行下一步
-            if (!anyoneDancing) {
+            // 如果完全沒人有動作，延遲後直接進行下一步
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
                 setTimeout(() => playNextDanceInQueue(), 50);
             }
         }
@@ -2013,6 +2046,25 @@
             if (externalKnowledge) {
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
+
+            // ⭐⭐⭐ 修改 Prompt: 強制限定 JSON 輸出並防止 AI 幻覺漏逗號 ⭐⭐⭐
+            finalSystemInstruction += `
+【CRITICAL INSTRUCTIONS】
+1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json. The system will crash if you output plain text or invalid JSON.
+2. **PERSONA**: You are a virtual AI character accompanied by two companions. Keep responses natural, conversational, and concise. Do NOT refer to yourself as code or mention JSON format to the user.
+3. **DANCE SYSTEM**:
+   - Dance IDs available: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B), 99(不跳舞/原地待命).
+   - "action" must be "dance_sequence".
+   - **預設齊舞 (1D Array)**: 這是系統的【預設模式】。除非使用者明確說出「各自」、「分別」、「單獨」等字眼，否則你【絕對只能】回傳一維陣列 (1D Array)，讓所有人同步跳一樣的舞！ Ex: "跳兩次" -> "dance_list": [1, 1].
+   - **各自跳舞 (2D Array)**: 只有當使用者特別要求「各自跳」時，才回傳 2D 陣列 (包含 3 個子陣列，依序對應 C、W、David)。若某人被要求「單獨跳」，其他人請填寫 99。
+     * Ex: "各自隨機選1種舞蹈各跳1次" -> "dance_list": [[2], [0], [3]]
+     * Ex: "第一人單獨跳嘻哈，其他不動" -> "dance_list": [[2], [99], [99]]
+     * Ex: "各自隨機選1種舞蹈各跳2次" -> "dance_list": [[3, 3], [1, 1], [0, 0]]
+     * Ex: "各自隨機選3種舞蹈各跳2次" -> "dance_list": [[1,1,2,2,0,0], [3,3,1,1,2,2], [0,0,3,3,1,1]] (CRITICAL: 子陣列之間必須加逗號!)
+   - **SPEECH CONSISTENCY (CRITICAL)**: Your "text" value MUST perfectly match the number of dances you scheduled in "dance_list". Do not hallucinate different numbers.
+4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
+   Example structure: { "text": "沒問題！我們這就為您跳舞！", "emotion": "happy", "action": "dance_sequence", "dance_list": [2, 0], "corrected_text": "已修正語句" }
+`;
 
             // Add AbortController for timeout
             const controller = new AbortController();
