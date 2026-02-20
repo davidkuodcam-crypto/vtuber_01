@@ -496,7 +496,7 @@
 
         // Global flag for auto-resuming mic
         window.shouldResumeMic = false;
-        window.pendingMicResume = false; // 用於標記跳舞結束後才啟動麥克風的排程
+        window.pendingMicResume = false; // ⭐ 新增：用於標記跳舞結束後才啟動麥克風的排程
 
         // ⭐⭐⭐ NEW: Global flag to delay dancing until TTS finishes ⭐⭐⭐
         window.pendingDanceSeq = null;
@@ -1549,16 +1549,19 @@
                 updateCameraPosition();
             }, 500);
             
-            // ⭐ 恢復閒置動作 (移除 reset() 避免骨骼抽搐)
+            // ⭐ 恢復閒置動作 (加入 reset() 解決 T-pose 問題)
             if (idleActionC) {
+                idleActionC.reset();
                 idleActionC.setEffectiveWeight(1);
                 idleActionC.fadeIn(0.5).play();
             }
             if (idleActionW) {
+                idleActionW.reset();
                 idleActionW.setEffectiveWeight(1);
                 idleActionW.fadeIn(0.5).play();
             }
             if (idleActionD) {
+                idleActionD.reset();
                 idleActionD.setEffectiveWeight(1);
                 idleActionD.fadeIn(0.5).play();
             }
@@ -1714,6 +1717,7 @@
                     let stepArray = [];
                     for (let c = 0; c < 3; c++) { 
                         let charSeq = seq[c] || [];
+                        // ⭐ 終極修復：如果這回合該角色已經沒有動作了，強制指派 99 (原地不動)，而不是亂給隨機舞蹈！
                         let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
                         if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
                         stepArray.push(danceId);
@@ -1753,10 +1757,10 @@
 
                 setTimeout(() => updateCameraPosition(), 500);
                 
-                // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，並移除 reset 避免抽搐
-                if (idleActionC) { idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
-                if (idleActionW) { idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
-                if (idleActionD) { idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
+                // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，並加入 reset 喚醒已停止的動畫避免 T-pose
+                if (idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
+                if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
                 
                 // 當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
                 if (window.pendingMicResume) {
@@ -1816,7 +1820,7 @@
                     }
                     
                     if (idleA && oldAction !== idleA) {
-                        // idleA.reset(); // 移除 reset 避免抽搐
+                        idleA.reset(); // ⭐ 必須 reset 才能從跳舞動作中喚醒 Idle
                         idleA.setEffectiveWeight(1); // ⭐ 防止無動畫
                         idleA.fadeIn(0.5).play();
                         currentActiveActions[vrmIndex] = idleA;
@@ -1971,6 +1975,8 @@
             statusMsg.innerText = "連線測試...";
             statusDot.className = 'status-dot'; 
             
+            // **關鍵修改**：強制在 1 秒後解鎖輸入框，不管連線測試結果如何
+            // 避免 Android 或網路慢時，使用者被卡住無法輸入
             setTimeout(() => {
                  if (userInput.disabled) {
                      userInput.disabled = false; 
@@ -1978,8 +1984,9 @@
                  }
             }, 1000);
 
+            // Add Timeout to prevent hanging
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); 
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
             try {
                 const response = await fetch(API_URL, {
@@ -1998,9 +2005,12 @@
                 }
             } catch (e) {
                 statusDot.classList.add('status-error');
-                statusMsg.innerText = "連線失敗 (可離線輸入)"; 
+                statusMsg.innerText = "連線失敗 (可離線輸入)"; // Inform user they can still type
                 console.error("API Test Failed:", e);
+                // Don't spam the chat with system message immediately, maybe just log or small note
+                // addMessage(`連線測試失敗: ${e.message}`, 'system'); 
             } finally {
+                // ALWAYS unlock inputs so user can try anyway
                 userInput.disabled = false; 
                 sendBtn.disabled = false;
             }
@@ -2012,21 +2022,25 @@
             muteBtn.classList.toggle('muted', isMuted);
             muteBtn.innerText = isMuted ? '🔇' : '🔊';
             if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
+            // 連動背景音樂靜音
             bgm.muted = isMuted;
         });
 
+        // 解鎖語音函式 (Android 必須)
         async function unlockTTS() {
             logTTS("正在解鎖語音...");
             return new Promise(resolve => {
                 try {
                     const u = new SpeechSynthesisUtterance(" ");
+                    // ⭐⭐⭐ 修復：防止 GC 回收 ⭐⭐⭐
                     window.currentUtterance = u; 
-                    u.volume = 0; 
-                    u.rate = 10; 
+                    u.volume = 0; // 靜音
+                    u.rate = 10; // 超快
                     u.onend = () => {
                         logTTS("語音解鎖完成 (onend)");
                         resolve();
                     };
+                    //有些瀏覽器 onend 不會觸發如果 volume 是 0，加個 timeout 保險
                     setTimeout(() => {
                         logTTS("語音解鎖完成 (timeout)");
                         resolve();
@@ -2339,6 +2353,26 @@
                     if (talkingActionW) talkingActionW.fadeOut(0.5); 
                     if (talkingActionD) talkingActionD.fadeOut(0.5); 
                     
+                    // 恢復閒置
+                    // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
+                    if (!isDancing) {
+                        // ⭐ 修復抽搐：講完話恢復閒置動作時，絕對 **不要** 呼叫 reset()！
+                        // 因為說話時閒置動作還在背景播放 (只是被 fadeOut(0.2) 降低權重)
+                        // 如果 reset 會導致動作瞬間切回第0幀而產生抽搐。
+                        if (idleActionC) {
+                            idleActionC.setEffectiveWeight(1); 
+                            idleActionC.fadeIn(0.5).play();
+                        }
+                        if (idleActionW) {
+                            idleActionW.setEffectiveWeight(1); 
+                            idleActionW.fadeIn(0.5).play();
+                        }
+                        if (idleActionD) {
+                            idleActionD.setEffectiveWeight(1); 
+                            idleActionD.fadeIn(0.5).play();
+                        }
+                    }
+
                     // ⭐ 核心修復 1：只有等整段話講完 (onend)，才真正開始播放 AI 給的跳舞排程！
                     if (window.pendingDanceSeq) {
                         playDanceSequence(window.pendingDanceSeq);
