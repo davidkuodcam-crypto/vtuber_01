@@ -373,6 +373,37 @@
         opacity: 0.6; 
     }
 
+    /* ⭐⭐⭐ 新增：畫面上方的動作指令監控面板 ⭐⭐⭐ */
+    #action-debug-panel {
+        position: absolute;
+        top: 15px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.85);
+        color: #00ffcc; /* 螢光綠色，方便錄影時看清楚 */
+        font-family: "Courier New", monospace;
+        font-size: 11px;
+        padding: 10px;
+        border-radius: 8px;
+        width: 60%;
+        max-width: 500px;
+        max-height: 120px;
+        overflow-y: auto;
+        z-index: 10000;
+        pointer-events: auto; /* 允許滾動 */
+        border: 1px solid #00ffcc;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    @media (max-width: 600px) {
+        #action-debug-panel {
+            width: 90%;
+            top: 40px; /* 手機版往下挪一點避免與其他狀態重疊 */
+        }
+    }
+
 </style>
 
 <!-- ⭐ 新增: ES Module Shims，確保 importmap 在所有瀏覽器都能正常運作 -->
@@ -422,6 +453,9 @@
         情緒: Neutral<br>
         動作: None
     </div>
+
+    <!-- ⭐⭐⭐ 新增：動作指令監控面板 (Action Debug Panel) ⭐⭐⭐ -->
+    <div id="action-debug-panel">等待動作指令...</div>
 
     <div id="chat-container">
         <div id="chat-display">
@@ -483,6 +517,16 @@
 
         // 立即測試 Log 功能
         logTTS("腳本載入... 檢查 API");
+
+        // ⭐⭐⭐ 新增：動作監控寫入函式 ⭐⭐⭐
+        function logAction(msg) {
+            const panel = document.getElementById('action-debug-panel');
+            if (panel) {
+                const time = new Date().toTimeString().split(' ')[0];
+                // 將新訊息加在最上方
+                panel.innerHTML = `[${time}] ${msg}\n-------------------\n` + panel.innerHTML;
+            }
+        }
 
         // ⭐⭐⭐ 瀏覽器功能檢查與相容性修復 ⭐⭐⭐
         let ttsSupported = true;
@@ -1674,6 +1718,8 @@
             }
             
             console.log("AI 舞步序列解碼完成 (Queue):", currentDanceQueue);
+            // ⭐ 將最終系統要執行的排程陣列印到監控面板
+            logAction(`執行 Queue: ${JSON.stringify(currentDanceQueue)}`);
             playNextDanceInQueue();
         }
 
@@ -1978,9 +2024,13 @@
         function handleAIResponse(aiText) {
             let result = safeParseAIJson(aiText);
             
+            // ⭐ 將 AI 原始文字與解析結果印到監控面板，方便錄影抓蟲
+            logAction(`Raw AI Text:\n${aiText}`);
+            
             let danceSeq = null;
 
             if (result) {
+                logAction(`Parsed Result:\nAction: ${result.action}\nDance List: ${JSON.stringify(result.dance_list)}`);
                 if (result.action === 'dance_sequence' || result.action === 'dance_random') {
                     if (Array.isArray(result.dance_list) && result.dance_list.length > 0) {
                         danceSeq = result.dance_list;
@@ -1992,6 +2042,7 @@
                     }
                 }
             } else {
+                logAction(`Parse Failed! 使用關鍵字兜底猜測`);
                 danceSeq = guessDanceFromText(aiText);
             }
 
