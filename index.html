@@ -1731,7 +1731,7 @@
             
             console.log("AI 舞步序列解碼完成 (Queue):", currentDanceQueue);
             // ⭐ 將最終系統要執行的排程陣列印到監控面板
-            logAction(`執行 Queue: ${JSON.stringify(currentDanceQueue)}`);
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
             playNextDanceInQueue();
         }
 
@@ -1771,6 +1771,7 @@
             }
 
             let nextData = currentDanceQueue.shift(); 
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
             
             // 安全性驗證與越界防呆
             if (Array.isArray(nextData)) {
