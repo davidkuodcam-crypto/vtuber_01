@@ -462,6 +462,7 @@
 
         // Global flag for auto-resuming mic
         window.shouldResumeMic = false;
+        window.pendingMicResume = false; // ⭐ 新增：用於標記跳舞結束後才啟動麥克風的排程
 
         // Android Debug Logger Setup
         const ttsDebug = document.getElementById('tts-debug');
@@ -554,6 +555,14 @@
         const bgm = new Audio(BGM_URL);
         bgm.loop = true; // 循環播放
         bgm.volume = 0.5; // 音量適中
+        // ⭐ 新增：雙重保險，確保因為某些瀏覽器不支援 loop 屬性時，音樂依然能無縫循環播到跳舞結束
+        bgm.addEventListener('ended', function() {
+            if (isDancing) {
+                this.currentTime = 0;
+                const p = this.play();
+                if(p) p.catch(e => console.warn(e));
+            }
+        });
         
         let danceActionsMap = []; // 儲存所有舞步的 Action，結構: [ [VRM1_Dance1, VRM2_Dance1], [VRM1_Dance2, VRM2_Dance2]... ]
         
@@ -1454,6 +1463,7 @@
             currentDanceQueue = [];
             currentPlayingDanceData = null; // ⭐ 重置播放資料
             currentActiveActionForListener = null;
+            window.pendingMicResume = false; // ⭐ 停止跳舞時一併取消等待中的麥克風自動開啟任務
             
             // 重置相機
             setTimeout(() => {
@@ -1657,6 +1667,14 @@
                 if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
                 if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
                 if (idleActionD) { idleActionD.reset(); idleActionD.fadeIn(0.5).play(); }
+                
+                // ⭐ 修正：當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！確保音樂不會中斷！
+                if (window.pendingMicResume) {
+                    window.pendingMicResume = false;
+                    setTimeout(() => {
+                        if (!isRecording) startRecording();
+                    }, 500);
+                }
                 return;
             }
 
@@ -2195,9 +2213,14 @@
 
                     // ⭐⭐⭐ Auto Resume Mic logic ⭐⭐⭐
                     if (window.shouldResumeMic) {
-                        setTimeout(() => {
-                            if (!isRecording) startRecording();
-                        }, 500);
+                        if (isDancing) {
+                            // ⭐ 修正：如果此時他們還在跳舞，就先不要自動開麥克風，等跳完再開，確保音樂不會被強制暫停！
+                            window.pendingMicResume = true;
+                        } else {
+                            setTimeout(() => {
+                                if (!isRecording) startRecording();
+                            }, 500);
+                        }
                     }
                 };
 
@@ -2347,6 +2370,11 @@
 
         // ⭐⭐⭐ [CRITICAL IOS FIX] 必須同步呼叫，移除 async/await ⭐⭐⭐
         function startRecording() {
+            // ⭐ 新增：如果手動點擊錄音時大家正在跳舞，強制中斷跳舞並停止音樂
+            if (isDancing) {
+                stopDance();
+            }
+
             // 1. 立即停止 TTS (同步執行)
             if (window.speechSynthesis) {
                 // 加個 try-catch 確保萬無一失
