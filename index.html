@@ -2000,11 +2000,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: chatHistory,
-                        systemInstruction: { parts: [{ text: finalSystemInstruction }] },
-                        // ⭐⭐⭐ 關鍵核心：強制設定 Gemini API 只輸出乾淨的 JSON，永遠消滅亂碼！
-                        generationConfig: {
-                            responseMimeType: "application/json"
-                        }
+                        systemInstruction: { parts: [{ text: finalSystemInstruction }] }
+                        // ⭐ 刪除 generationConfig，解決與 Google Search Tool 衝突造成的 500 Server Error
                     }),
                     signal: controller.signal
                 });
