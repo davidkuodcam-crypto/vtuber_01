@@ -490,28 +490,40 @@
         // --- 偵測作業系統 ---
         const isAndroid = /Android/i.test(navigator.userAgent);
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        // ⭐⭐⭐ 偵測是否為 LINE 或 Facebook 內建瀏覽器 ⭐⭐⭐
         const isLineApp = /Line/i.test(navigator.userAgent);
         const isFbApp = /FBAN|FBAV/i.test(navigator.userAgent);
 
+        // Global flag for auto-resuming mic
         window.shouldResumeMic = false;
-        window.pendingMicResume = false; 
+        window.pendingMicResume = false; // ⭐ 新增：用於標記跳舞結束後才啟動麥克風的排程
 
+        // Android Debug Logger Setup
         const ttsDebug = document.getElementById('tts-debug');
         
+        // 修正：如果偵測到是 Android，立刻顯示面板並寫入第一行 Log
         if (isAndroid) {
+            // ttsDebug.style.display = 'block'; // 修改：隱藏除錯面板
             ttsDebug.innerHTML = "=== Android Debug Log (Init) ===<br>";
         }
 
         function logTTS(msg) {
+            // 允許 Android/iOS 或強制開啟除錯時寫入
             if (!isAndroid && !isIOS) return;
             const time = new Date().toTimeString().split(' ')[0];
+            // 採用 append 方式，新的訊息在最上方
             ttsDebug.innerHTML = `[${time}] ${msg}<br>` + ttsDebug.innerHTML;
         }
 
+        // 立即測試 Log 功能
+        logTTS("腳本載入... 檢查 API");
+
+        // ⭐⭐⭐ 新增：動作監控寫入函式 ⭐⭐⭐
         function logAction(msg) {
             const panel = document.getElementById('action-debug-panel');
             if (panel) {
                 const time = new Date().toTimeString().split(' ')[0];
+                // 將新訊息加在最上方
                 panel.innerHTML = `[${time}] ${msg}\n-------------------\n` + panel.innerHTML;
             }
         }
@@ -520,30 +532,42 @@
         let ttsSupported = true;
 
         if (!window.speechSynthesis) {
+            // 嘗試舊版前綴
             if (window.webkitSpeechSynthesis) {
                 window.speechSynthesis = window.webkitSpeechSynthesis;
                 window.SpeechSynthesisUtterance = window.webkitSpeechSynthesisUtterance;
+                logTTS("⚠️ 使用 webkitSpeechSynthesis 相容模式");
             } else {
+                logTTS("❌ 錯誤: 不支援 speechSynthesis");
                 ttsSupported = false;
             }
-        } 
-        if (ttsSupported && !window.SpeechSynthesisUtterance) {
-             ttsSupported = false;
+        } else {
+            logTTS("✅ 支援 speechSynthesis");
         }
 
+        if (ttsSupported && !window.SpeechSynthesisUtterance) {
+             logTTS("❌ 錯誤: 不支援 SpeechSynthesisUtterance");
+             ttsSupported = false;
+        } else if (ttsSupported) {
+             logTTS("✅ 支援 SpeechSynthesisUtterance");
+        }
+
+        // 如果不支援，顯示警告面板
         if (!ttsSupported && isAndroid) {
             document.getElementById('browser-warning').style.display = 'block';
+            logTTS(">> 已顯示瀏覽器更換提示 <<");
         }
 
-        // --- 隨機角色選擇邏輯 ---
+        // --- 隨機角色選擇邏輯 (新增第三位角色) ---
         const VRM_MODELS = [
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_C.vrm', // 角色 0: C
             'https://davidkuodcam-crypto.github.io/VTuber/AvatarSample_W.vrm', // 角色 1: W
-            'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_07.vrm'    // 角色 2: David 
+            'https://davidkuodcam-crypto.github.io/VTuber/David_Kuo_07.vrm'    // 角色 2: David (新增)
         ];
         
-        let currentVrms = []; 
-        let mixers = [];      
+        // 變數修改：支援多角色
+        let currentVrms = []; // 改為陣列
+        let mixers = [];      // 動畫混合器陣列
         let isDancing = false;
         
         // --- 舞步清單 ---
@@ -554,26 +578,28 @@
             'https://davidkuodcam-crypto.github.io/VTuber/Breakdance_Freeze_Var_1.vrma'  // 3: 霹靂舞定格B
         ];
         
-        // --- 動作設定 (說話 / 閒置) ---
+        // --- 動作設定 (說話 / 閒置) (新增第三位) ---
         const TALK_ANIMATION_C_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Breathing_Idle.vrma';
         const TALK_ANIMATION_W_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Talking_01.vrma';
-        const TALK_ANIMATION_D_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Breathing_Idle.vrma'; 
+        const TALK_ANIMATION_D_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Breathing_Idle.vrma'; // 新增 D
         
-        const IDLE_ANIMATION_C_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Taunt_with_Skin.vrma'; 
-        const IDLE_ANIMATION_W_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle_01.vrma'; 
-        const IDLE_ANIMATION_D_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle.vrma'; 
+        const IDLE_ANIMATION_C_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Taunt_with_Skin.vrma'; // C 的閒置動作
+        const IDLE_ANIMATION_W_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle_01.vrma'; // W 的閒置動作
+        const IDLE_ANIMATION_D_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Idle.vrma'; // 新增 D 的閒置動作
         
         let talkingActionC = null;
         let talkingActionW = null;
-        let talkingActionD = null; 
+        let talkingActionD = null; // 新增 D
         let idleActionC = null;    
         let idleActionW = null;    
-        let idleActionD = null;    
+        let idleActionD = null;    // 新增 D
 
+        // --- BGM 設定 ---
         const BGM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/Happy_new_year.mp3';
         const bgm = new Audio(BGM_URL);
-        bgm.loop = true; 
-        bgm.volume = 0.5; 
+        bgm.loop = true; // 循環播放
+        bgm.volume = 0.5; // 音量適中
+        // ⭐ 新增：雙重保險，確保因為某些瀏覽器不支援 loop 屬性時，音樂依然能無縫循環播到跳舞結束
         bgm.addEventListener('ended', function() {
             if (isDancing) {
                 this.currentTime = 0;
@@ -582,23 +608,26 @@
             }
         });
         
-        let danceActionsMap = []; 
+        let danceActionsMap = []; // 儲存所有舞步的 Action，結構: [ [VRM1_Dance1, VRM2_Dance1], [VRM1_Dance2, VRM2_Dance2]... ]
         
-        // 手動回合制與隨機邏輯變數
-        let danceRound = 1;        
-        let danceStepIndex = 0;    
-        let vrmDanceSequences = []; 
+        // ⭐⭐⭐ 新增：回合制與隨機邏輯變數 ⭐⭐⭐
+        let danceRound = 1;        // 目前回合數 (1, 2, 3...)
+        let danceStepIndex = 0;    // 目前跳到該回合的第幾個動作 (0~3)
+        let vrmDanceSequences = []; // 儲存每個 VRM 在該回合的動作順序 [VRM1_Seq, VRM2_Seq]
         
-        // AI 連續舞步播放佇列
+        // ⭐⭐⭐ 新增：連續舞步播放佇列 ⭐⭐⭐
         let currentDanceQueue = [];
         let currentPlayingDanceData = null; 
         
+        // ⭐ 修改：全域變數改為陣列，精準記錄每位角色「目前正在跳」的動作
         let currentActiveActions = [null, null, null];
+        
+        // ⭐ 終極防呆：儲存所有的事件監聽器，防止 Three.js 發生 Memory Leak 與動作雙重觸發的 Bug
         let currentDanceListeners = [null, null, null];
 
         let chatHistory = [];
         let isSpeaking = false;
-        let isOpeningRemark = false; 
+        let isOpeningRemark = false; // ⭐ 新增：標記是否正在講開場白
         let currentEmotion = 'neutral';
         let isMuted = false;
         
@@ -608,56 +637,86 @@
         function updateVoices() {
             if (!window.speechSynthesis) return;
             const voices = window.speechSynthesis.getVoices();
+            // console.log("Voices loaded:", voices.length); // Debug
             if (voices.length > 0) {
+                // Android 優先策略：
+                // 1. 本地 (localService) 的繁體中文
+                // 2. 任何繁體中文 (zh-TW)
+                // 3. 任何中文 (zh) - 避免無聲
                 preferredVoice = voices.find(v => (v.lang === 'zh-TW' || v.lang.includes('zh-TW')) && v.localService) ||
                                  voices.find(v => v.lang === 'zh-TW' || v.lang.includes('zh-TW')) ||
                                  voices.find(v => v.lang.includes('zh'));
+                
+                if (preferredVoice) {
+                    logTTS(`選定: ${preferredVoice.name} (${preferredVoice.lang})`);
+                } else {
+                    logTTS(`⚠️ 警告: 未找到合適中文語音`);
+                }
+            } else {
+                logTTS(`等待語音包載入...`);
             }
         }
         
+        // 確保語音列表載入 (Android 需要重試)
         if (window.speechSynthesis) {
-            window.speechSynthesis.onvoiceschanged = () => { updateVoices(); };
+            window.speechSynthesis.onvoiceschanged = () => {
+                logTTS("Event: voiceschanged");
+                updateVoices();
+            };
             updateVoices(); 
+            // 強制重試機制，每秒檢查一次，直到抓到語音或過了 5 秒
             let voiceRetryCount = 0;
             const voiceInterval = setInterval(() => {
                 updateVoices();
                 voiceRetryCount++;
                 if ((preferredVoice && preferredVoice.lang) || voiceRetryCount > 8) {
                     clearInterval(voiceInterval);
+                    logTTS(`語音掃描結束 (嘗試 ${voiceRetryCount} 次)`);
                 }
             }, 1000);
         }
 
         let externalSystemPrompt = ""; 
         let externalKnowledge = "";
-        let openingRemark = ""; 
+        let openingRemark = ""; // 儲存開場白
 
         const isPreviewEnv = window.location.protocol === 'blob:' || window.location.protocol === 'file:';
 
         // --- 場景初始化 ---
         const scene = new THREE.Scene();
+        // 修改：改為暖米黃色背景，與 CSS 亮金背景呼應
         scene.background = new THREE.Color(0xfff8e1); 
+        
+        // 霧氣改為暖米色
         scene.fog = new THREE.Fog(0xfff8e1, 5, 15);
+        
+        // 修改：網格線改為亮紅色 (Red) 和 深橘色 (Deep Orange)，在亮地板上清晰可見
         scene.add(new THREE.GridHelper(20, 20, 0xd32f2f, 0xffcc80)); 
 
         const camera = new THREE.PerspectiveCamera(30.0, window.innerWidth / window.innerHeight, 0.1, 20.0);
         
+        // **相機位置邏輯 (支援跳舞時自動運鏡並適應 3 人陣型)**
         function updateCameraPosition() {
             const aspect = window.innerWidth / window.innerHeight;
             if (aspect < 0.8) {
+                // 手機直立模式
                 if (isDancing) {
+                    // 跳舞時：相機大幅拉遠、視點降低，確保地板動作與全身入鏡 (因 3 人縱深較大，退更遠)
                     camera.position.set(0.0, 1.2, 8.5); 
-                    controls.target.set(0.0, 0.8, -0.5); 
+                    controls.target.set(0.0, 0.8, -0.5); // 瞄準陣型中心
                 } else {
+                    // 對話時：相機拉近、視點提高，特寫上半身
                     camera.position.set(0.0, 1.35, 3.2); 
                     controls.target.set(0.0, 1.2, -0.5);
                 }
             } else {
+                // 桌面寬螢幕模式
                 if (isDancing) {
                      camera.position.set(0.0, 1.0, 7.0);
                      controls.target.set(0.0, 0.8, -0.5);
                 } else {
-                     camera.position.set(0.0, 1.3, 2.8); 
+                     // ⭐⭐⭐ 修改：將 PC 預設模式的攝影機大幅拉近，並稍微降低視角中心
+                     camera.position.set(0.0, 1.3, 2.8); // 將 Z 軸從 3.8 縮短至 2.8 讓角色更靠近
                      controls.target.set(0.0, 1.1, -0.5); 
                 }
             }
@@ -670,53 +729,69 @@
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
         document.body.appendChild(renderer.domElement);
 
-        const directionalLight = new THREE.DirectionalLight(0xffedd5, 1.5); 
+        // 燈光優化：暖色光 (影響 Layer 0)
+        const directionalLight = new THREE.DirectionalLight(0xffedd5, 1.5); // 暖白光
         directionalLight.position.set(-1.0, 2.0, 1.0).normalize();
         scene.add(directionalLight);
         
+        // 補光 (金色) (影響 Layer 0)
         const fillLight = new THREE.DirectionalLight(0xffd700, 0.6);
         fillLight.position.set(1.0, 1.0, 1.0).normalize();
         scene.add(fillLight);
         
         scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-        const dLight1 = new THREE.SpotLight(0xfff5e6, 0.7); 
-        dLight1.angle = Math.PI / 2.5; 
-        dLight1.penumbra = 0.8; 
-        dLight1.distance = 2.5; 
-        dLight1.decay = 1.5; 
+        // ⭐⭐⭐ 新增：第三角色 (David) 的專屬聚光燈群組 ⭐⭐⭐
+        // ⭐ 修改：調降頭部聚光燈的亮度，保留柔和好氣色但避免過曝
+        const dLight1 = new THREE.SpotLight(0xfff5e6, 0.7); // ⭐ 將亮度由 0.5 微調至 0.7
+        dLight1.angle = Math.PI / 2.5; // 放寬角度，讓光線均勻覆蓋整個臉龐
+        dLight1.penumbra = 0.8; // 光線邊緣過渡更柔和自然
+        dLight1.distance = 2.5; // 稍微延長照射距離
+        dLight1.decay = 1.5; // 減緩光線衰減，讓臉部立體感更好
         scene.add(dLight1); scene.add(dLight1.target);
 
-        const dLightBody = new THREE.SpotLight(0xffffff, 120.0); 
-        dLightBody.angle = Math.PI / 7.0; 
+        // ⭐⭐⭐ 2. 衣服專屬聚光燈 (往下打光，絕對避開臉部) ⭐⭐⭐
+        const dLightBody = new THREE.SpotLight(0xffffff, 120.0); // ⭐ 依要求再次加強綠線聚光燈亮度 (由 60.0 提升至 120.0)
+        dLightBody.angle = Math.PI / 7.0; // ⭐ 關鍵修正：收窄照射角度，讓光錐更集中，避免向上溢出照到臉
         dLightBody.penumbra = 0.5;
-        dLightBody.distance = 1.5; 
+        dLightBody.distance = 1.5; // 縮短距離，確保不波及他人
         dLightBody.decay = 1.0;
         scene.add(dLightBody); scene.add(dLightBody.target);
 
-        const dLightLegs = new THREE.SpotLight(0xffffff, 0.5); 
+        // ⭐⭐⭐ 3. 褲子專屬聚光燈 (往下打光，專注下半身) ⭐⭐⭐
+        const dLightLegs = new THREE.SpotLight(0xffffff, 0.5); // ⭐ 依要求進一步降低藍線聚光燈亮度 (由 3.0 降低至 0.5)
         dLightLegs.angle = Math.PI / 4.0;
         dLightLegs.penumbra = 0.5;
         dLightLegs.distance = 1.5;
         dLightLegs.decay = 1.0;
         scene.add(dLightLegs); scene.add(dLightLegs.target);
 
+
+        // --- 新年特效：飄落金粉/紅紙屑 ---
         let particlesMesh;
-        const particlesCount = 300; 
+        const particlesCount = 300; // 粒子數量
         function createFestiveParticles() {
             const geometry = new THREE.BufferGeometry();
             const posArray = new Float32Array(particlesCount * 3);
             const colorArray = new Float32Array(particlesCount * 3);
             
             for(let i = 0; i < particlesCount * 3; i+=3) {
-                posArray[i] = (Math.random() - 0.5) * 15; 
-                posArray[i+1] = Math.random() * 10;       
-                posArray[i+2] = (Math.random() - 0.5) * 15; 
+                // 隨機位置
+                posArray[i] = (Math.random() - 0.5) * 15; // X
+                posArray[i+1] = Math.random() * 10;       // Y
+                posArray[i+2] = (Math.random() - 0.5) * 15; // Z
 
+                // 修改：顏色對比度調整
                 if (Math.random() > 0.5) {
-                    colorArray[i] = 0.9; colorArray[i+1] = 0.1; colorArray[i+2] = 0.1;
+                    // 正紅色 (在淺色背景很明顯)
+                    colorArray[i] = 0.9;
+                    colorArray[i+1] = 0.1;
+                    colorArray[i+2] = 0.1;
                 } else {
-                    colorArray[i] = 0.8; colorArray[i+1] = 0.6; colorArray[i+2] = 0.0;
+                    // 深金色 (避免太亮看不見)
+                    colorArray[i] = 0.8;
+                    colorArray[i+1] = 0.6;
+                    colorArray[i+2] = 0.0;
                 }
             }
             
@@ -724,10 +799,11 @@
             geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
             
             const material = new THREE.PointsMaterial({
-                size: 0.15, 
+                size: 0.15, // 稍微加大粒子
                 vertexColors: true,
                 transparent: true,
                 opacity: 0.8,
+                // blending: THREE.AdditiveBlending // 在淺色背景取消 Additive，不然會變白
             });
             
             particlesMesh = new THREE.Points(geometry, material);
@@ -735,6 +811,7 @@
         }
         createFestiveParticles();
 
+        // --- 控制器設定 (OrbitControls) ---
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enablePan = true; 
         controls.screenSpacePanning = true; 
@@ -747,6 +824,7 @@
 
         updateCameraPosition(); 
 
+        // --- 檔案讀取 (左上角狀態) ---
         async function loadExternalData() {
             const statusText = document.getElementById('status-text');
             const fileStatusDiv = document.getElementById('file-status');
@@ -794,6 +872,7 @@
                     let usedPath = fileNameFolder;
                     
                     if (!res.ok) {
+                         // 嘗試從根目錄讀取
                          try {
                              const resRoot = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
                              if (resRoot.ok) {
@@ -816,6 +895,7 @@
                             fileIndex++;
                         }
                     } else {
+                        // 404 is expected when no more files
                         keepLoading = false;
                     }
                 } catch (e) {
@@ -832,11 +912,14 @@
             statusText.innerText = "系統就緒！";
         }
 
+        // --- VRM 載入 (修改：同時載入多個角色) ---
         const loader = new GLTFLoader();
         loader.crossOrigin = 'anonymous';
+        // 註冊 VRM 與 VRM 動畫插件
         loader.register((parser) => new VRMLoaderPlugin(parser));
         loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
+        // 使用 Promise.all 同時載入所有模型
         const loadPromises = VRM_MODELS.map((url, index) => {
             return new Promise((resolve) => {
                 loader.load(url, (gltf) => {
@@ -844,48 +927,59 @@
                     VRMUtils.rotateVRM0(vrm);
                     scene.add(vrm.scene);
                     
+                    // --- ⭐⭐⭐ 隊形排列 (防穿模且美觀) ⭐⭐⭐ ---
                     if (index === 0) {
+                        // 第一個角色：靠近中線，稍微往前
                         vrm.scene.position.set(-0.25, 0.0, 0.4);
                     } else if (index === 1) {
+                        // 第二個角色：靠近中線，稍微往後 (拉大與角色 1 距離)
                         vrm.scene.position.set(0.25, 0.0, -0.4);
                     } else if (index === 2) {
+                        // 第三個角色：在中線上，向後拉開與角色 2 距離 (保持跳舞不穿模)
                         vrm.scene.position.set(0.0, 0.0, -1.5);
                         
+                        // ⭐ 恢復材質提亮：這是讓角色「容光煥發」的關鍵，從根本解決衣服與皮膚暗沉
                         vrm.scene.traverse((object) => {
                             if (object.isMesh) {
                                 const materials = Array.isArray(object.material) ? object.material : [object.material];
                                 materials.forEach((mat) => {
                                     if (mat.color) {
-                                        mat.color.multiplyScalar(1.1); 
+                                        mat.color.multiplyScalar(1.1); // 微調底色，從1.2降至1.1，避免光線打上後過曝
                                     }
                                 });
                             }
                         });
                     }
 
+                    // 調整手臂
                     const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
                     const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
                     if (leftUpperArm) { leftUpperArm.rotation.z = -1.1; leftUpperArm.rotation.x = 0.15; }
                     if (rightUpperArm) { rightUpperArm.rotation.z = 1.1; rightUpperArm.rotation.x = 0.15; }
 
+                    // --- 重要修改：為每個角色預先建立 Mixer，避免重複建立 ---
                     const mixer = new THREE.AnimationMixer(vrm.scene);
                     
+                    // ⭐ FIX: 確保 userData 存在，避免崩潰 ⭐
                     if (!vrm.userData) {
                         vrm.userData = {};
                     }
                     vrm.userData.mixer = mixer;
                     
-                    mixers.push(mixer); 
+                    mixers.push(mixer); // 加入全域 mixers 以便 update
+
+                    // 修改：依索引指定陣列位置，確保順序正確
                     currentVrms[index] = vrm; 
-                    startBlinking(vrm);    
+                    startBlinking(vrm);    // 個別啟動眨眼
                     resolve();
                 }, undefined, (e) => {
                     console.error("VRM Load Error:", e);
-                    resolve(); 
+                    resolve(); // 失敗也 resolve，避免卡住
                 });
             });
         });
 
+        // 獨立載入說話動作
         function loadTalkAnimations() {
             const pC = new Promise((resolve) => {
                 loader.load(TALK_ANIMATION_C_URL, (gltf) => {
@@ -926,6 +1020,7 @@
             return Promise.all([pC, pW, pD]);
         }
 
+        // ⭐⭐⭐ 獨立載入閒置動作 (Taunt & Idle) ⭐⭐⭐
         function loadIdleAnimations() {
             const pC = new Promise((resolve) => {
                 loader.load(IDLE_ANIMATION_C_URL, (gltf) => {
@@ -970,27 +1065,36 @@
         }
 
         Promise.all([...loadPromises, loadExternalData()]).then(() => {
+            // 定義啟動函式
             const handleStart = (e) => {
+                // 1. UI First: 確保畫面先有反應
                 const loadingScreen = document.getElementById('loading-screen');
-                if (loadingScreen.style.opacity === '0') return; 
+                if (loadingScreen.style.opacity === '0') return; // 避免重複觸發
 
                 loadingScreen.style.opacity = 0;
-                loadingScreen.style.pointerEvents = 'none'; 
+                loadingScreen.style.pointerEvents = 'none'; // 防止連點
                 setTimeout(() => loadingScreen.style.display = 'none', 500);
                 
+                // 確保語音列表已載入
                 updateVoices();
 
+                // 2. Audio Unlock (修正：直接在點擊事件中呼叫 speak，不使用 setTimeout，以符合瀏覽器自動播放策略)
                 const introText = openingRemark || "（未讀取到 KnowledgeBase01.txt，請檢查檔案）";
-                isOpeningRemark = true; 
+                
+                isOpeningRemark = true; // ⭐ 標記開始講開場白
 
+                // 直接播放，不要延遲，否則在行動裝置會被擋
                 speak(introText);
 
+                // 3. Logic
                 addMessage(introText, 'ai');
+                
                 chatHistory.push({ role: "model", parts: [{ text: introText }] });
                 
                 testApiConnection();
             };
 
+            // 確保說話和閒置動作載入
             Promise.all([loadTalkAnimations(), loadIdleAnimations()]).then(() => {
                 const loaderEl = document.getElementById('loader');
                 const statusText = document.getElementById('status-text');
@@ -1000,27 +1104,32 @@
                 statusText.innerText = `準備完成 (${currentVrms.length} 人)`;
                 startBtn.style.display = 'block';
                 
+                // 更新相機以對準陣型中心
                 updateCameraPosition();
                 
+                // 綁定事件：在這裡 startBtn 肯定已定義
                 startBtn.addEventListener('click', handleStart);
                 startBtn.addEventListener('touchend', (e) => {
-                    e.preventDefault(); 
+                    e.preventDefault(); // 防止觸發 click 導致雙重觸發，並提高反應速度
                     handleStart(e);
                 });
             });
         });
 
+        // --- 動畫 ---
         const clock = new THREE.Clock();
         function animate() {
             requestAnimationFrame(animate);
             const deltaTime = clock.getDelta();
             const elapsedTime = clock.elapsedTime;
 
+            // 粒子動畫 (緩緩飄落)
             if (particlesMesh) {
-                particlesMesh.rotation.y += 0.001; 
+                particlesMesh.rotation.y += 0.001; // 整體旋轉
                 const positions = particlesMesh.geometry.attributes.position.array;
                 for(let i = 1; i < particlesCount * 3; i+=3) {
-                    positions[i] -= 0.015; 
+                    positions[i] -= 0.015; // 向下飄落
+                    // 如果掉到地板以下，重置到上方隨機位置
                     if (positions[i] < 0) {
                         positions[i] = 10;
                     }
@@ -1028,49 +1137,61 @@
                 particlesMesh.geometry.attributes.position.needsUpdate = true;
             }
 
+            // 更新所有 動畫混合器
             mixers.forEach(mixer => mixer.update(deltaTime));
 
+            // 更新所有 VRM 角色
             currentVrms.forEach((vrm, index) => {
-                if(!vrm) return; 
+                if(!vrm) return; // 避免陣列有空洞
                 vrm.update(deltaTime);
                 
+                // ⭐⭐⭐ 讓第三角色 (David) 的專屬聚光燈無縫跟隨他移動與翻轉 ⭐⭐⭐
                 if (index === 2 && typeof dLight1 !== 'undefined') {
                     const spine = vrm.humanoid.getNormalizedBoneNode('spine');
                     const hips = vrm.humanoid.getNormalizedBoneNode('hips');
                     if (spine && hips) {
+                        // 取出脊椎位置與 3D 旋轉角度 (四元數)
                         const tPos = new THREE.Vector3();
                         spine.getWorldPosition(tPos);
                         const spineQuat = new THREE.Quaternion();
                         spine.getWorldQuaternion(spineQuat);
 
+                        // 取出骨盆位置與 3D 旋轉角度 (四元數)
                         const hipsPos = new THREE.Vector3();
                         hips.getWorldPosition(hipsPos);
                         const hipsQuat = new THREE.Quaternion();
                         hips.getWorldQuaternion(hipsQuat);
 
-                        const d1PosOffset = new THREE.Vector3(0, 0.85, -0.4).applyQuaternion(spineQuat); 
-                        const d1TargetOffset = new THREE.Vector3(0, 0.65, 0).applyQuaternion(spineQuat); 
+                        // ⭐ 核心修正：局部 Z 軸的負方向 (-Z) 才是角色的「正前方」！
+
+                        // 1. 頭部燈光 (隱藏線框)
+                        const d1PosOffset = new THREE.Vector3(0, 0.85, -0.4).applyQuaternion(spineQuat); // 光源稍微往遠拉一點，讓打光更柔和
+                        const d1TargetOffset = new THREE.Vector3(0, 0.65, 0).applyQuaternion(spineQuat); // 目標稍微下移對準臉部正中心
                         dLight1.position.copy(tPos).add(d1PosOffset);
                         dLight1.target.position.copy(tPos).add(d1TargetOffset);
 
-                        const bodyPosOffset = new THREE.Vector3(0, 0.3, -0.7).applyQuaternion(spineQuat); 
+                        // ⭐ 2. 衣服光 (隱藏線框)：跟隨脊椎一起彎腰與翻轉
+                        const bodyPosOffset = new THREE.Vector3(0, 0.3, -0.7).applyQuaternion(spineQuat); // 改為負值
                         const bodyTargetOffset = new THREE.Vector3(0, 0.15, 0).applyQuaternion(spineQuat);
                         dLightBody.position.copy(tPos).add(bodyPosOffset);
                         dLightBody.target.position.copy(tPos).add(bodyTargetOffset);
 
-                        const legsPosOffset = new THREE.Vector3(0, 0, -0.8).applyQuaternion(hipsQuat); 
+                        // ⭐ 3. 褲子光 (隱藏線框)：跟隨下半身骨盆一起旋轉
+                        const legsPosOffset = new THREE.Vector3(0, 0, -0.8).applyQuaternion(hipsQuat); // 改為負值
                         const legsTargetOffset = new THREE.Vector3(0, -0.5, 0).applyQuaternion(hipsQuat);
                         dLightLegs.position.copy(hipsPos).add(legsPosOffset);
                         dLightLegs.target.position.copy(hipsPos).add(legsTargetOffset);
                     }
                 }
 
+                // 如果沒有在跳舞，才執行自然的呼吸動作
                 if (!isDancing) {
                     const isC = (index === 0);
                     const isW = (index === 1);
                     const isD = (index === 2);
                     let playBreathing = true;
 
+                    // 有閒置或說話動作時不觸發預設呼吸，避免動作衝突
                     if (isC && (idleActionC || (isSpeaking && talkingActionC))) playBreathing = false;
                     if (isW && (idleActionW || (isSpeaking && talkingActionW))) playBreathing = false;
                     if (isD && (idleActionD || (isSpeaking && talkingActionD))) playBreathing = false;
@@ -1084,15 +1205,18 @@
                     }
                 }
 
+                // ⭐ 說話嘴型同步 (修改：限定只有第2個角色 index === 1 才會對嘴)
                 if (isSpeaking && !isMuted) {
                     if (index === 1) {
-                        const s = Math.sin(elapsedTime * 18); 
+                        const s = Math.sin(elapsedTime * 18); // 說話速度微調
                         vrm.expressionManager.setValue('aa', (s + 1) / 2 * 0.6);
                     } else if (isOpeningRemark) {
                         if (index === 0) {
+                            // ⭐ 開場白時，第 1 位角色：開心大笑、張大嘴巴
                             vrm.expressionManager.setValue('happy', 1.0);
                             vrm.expressionManager.setValue('aa', 0.8);
                         } else if (index === 2) {
+                            // ⭐ 開場白時，第 3 位角色：微笑 (保持嘴巴閉合)
                             vrm.expressionManager.setValue('happy', 0.8); 
                             const currentVal = vrm.expressionManager.getValue('aa');
                             vrm.expressionManager.setValue('aa', THREE.MathUtils.lerp(currentVal, 0, 0.2));
@@ -1112,6 +1236,7 @@
         }
         animate();
 
+        // 修改：支援多角色獨立眨眼
         function startBlinking(vrm) {
             if(!vrm) return;
             const blinkLoop = () => {
@@ -1122,7 +1247,7 @@
                             vrm.expressionManager.setValue('blink', 0);
                             blinkLoop();
                         }, 120);
-                    }, Math.random() * 3000 + 2000); 
+                    }, Math.random() * 3000 + 2000); // 隨機時間，讓兩人眨眼不同步，更自然
                 } else {
                     setTimeout(blinkLoop, 1000);
                 }
@@ -1130,8 +1255,10 @@
             blinkLoop();
         }
 
+        // --- 跳舞邏輯 (回合制：奇數回合齊舞，偶數回合 Battle) ---
         const danceBtn = document.getElementById('dance-btn');
         
+        // 輔助函式：陣列洗牌
         function shuffleArray(array) {
             for (let i = array.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -1140,22 +1267,28 @@
             return array;
         }
 
+        // 核心邏輯：產生該回合的動作順序
         function generateSequences(round) {
             vrmDanceSequences = [];
-            const baseSequence = [0, 1, 2, 3]; 
+            const baseSequence = [0, 1, 2, 3]; // 對應 DANCE_URLS 的索引
             
+            // 為每個角色產生動作表
             currentVrms.forEach(() => {
                 if (round % 2 !== 0) {
+                    // 奇數回合：固定順序，齊舞
                     vrmDanceSequences.push([...baseSequence]);
                 } else {
+                    // 偶數回合：隨機順序，Battle
                     vrmDanceSequences.push(shuffleArray([...baseSequence]));
                 }
             });
             
+            // Debug: 顯示該回合模式
             const mode = round % 2 !== 0 ? "齊舞 (Sync)" : "Battle (Random)";
             console.log(`[Round ${round}] ${mode}`, vrmDanceSequences);
         }
 
+        // ⭐⭐⭐ 終極防呆：嚴格管理 Three.js Mixer 的事件監聽器，防止記憶體洩漏與動作快轉 ⭐⭐⭐
         function assignMixerListener(vrm, index, listener) {
             if (!vrm || !vrm.userData.mixer) return;
             if (currentDanceListeners[index]) {
@@ -1174,12 +1307,18 @@
             });
         }
 
+        // ⭐⭐⭐ 修正：將載入邏輯獨立為 loadDanceAssets，以便 AI 指令呼叫 ⭐⭐⭐
         async function loadDanceAssets() {
-            if (danceActionsMap.length > 0) return;
+            // 如果已經載入過動畫，直接返回
+            if (danceActionsMap.length > 0) {
+                return;
+            }
+
             if (currentVrms.length === 0) return;
 
             addMessage("準備熱舞資料中...", "system");
             
+            // 使用 Promise.all 一次載入所有舞步
             const promises = DANCE_URLS.map(url => new Promise((resolve, reject) => {
                 loader.load(url, (gltf) => {
                      const vrmAnimations = gltf.userData.vrmAnimations;
@@ -1190,11 +1329,12 @@
                      }
                 }, undefined, (e) => {
                     console.error("Dance Load Error:", url, e);
-                    resolve(null); 
+                    resolve(null); // 錯誤時回傳 null，避免卡死
                 });
             }));
 
             const animationClips = await Promise.all(promises);
+            // 過濾掉載入失敗的
             const validClips = animationClips.filter(c => c);
             
             if (validClips.length === 0) {
@@ -1202,10 +1342,14 @@
                 return;
             }
 
+            // 為每個舞步、每個角色建立 Action
             validClips.forEach(clipData => {
                 const actionsForThisDance = [];
                 currentVrms.forEach(vrm => {
+                    // FIX: 安全讀取 userData
                     if (!vrm || !vrm.userData || !vrm.userData.mixer) return;
+                    
+                    // 建立 Clip 與 Action
                     const clip = createVRMAnimationClip(clipData, vrm);
                     const action = vrm.userData.mixer.clipAction(clip);
                     actionsForThisDance.push(action);
@@ -1217,6 +1361,7 @@
             console.log("Assets Loaded!");
         }
 
+        // 修改後的按鈕邏輯：呼叫 loadDanceAssets 後再 startDance
         async function loadAndPlayDance() {
             await loadDanceAssets();
             if (danceActionsMap.length > 0) {
@@ -1224,17 +1369,21 @@
             }
         }
 
+        // 開始跳舞流程
         function startDance() {
             isDancing = true;
             danceBtn.classList.add('active'); 
             
+            // ⭐⭐⭐ 強制停止說話 (修正) ⭐⭐⭐
             if (isSpeaking) {
                 window.speechSynthesis.cancel();
                 isSpeaking = false;
             }
 
+            // 觸發動態運鏡
             updateCameraPosition();
             
+            // 停止所有閒置和說話動作
             if (idleActionC) idleActionC.fadeOut(0.5);
             if (idleActionW) idleActionW.fadeOut(0.5); 
             if (idleActionD) idleActionD.fadeOut(0.5); 
@@ -1242,27 +1391,40 @@
             if (talkingActionW) talkingActionW.fadeOut(0.5);
             if (talkingActionD) talkingActionD.fadeOut(0.5);
             
+            // 播放 BGM
             bgm.currentTime = 0;
             bgm.muted = isMuted;
+            
+            // ⭐⭐⭐ FIX: 增強的 BGM 播放 (防止中斷錯誤) ⭐⭐⭐
             const playPromise = bgm.play();
             if (playPromise !== undefined) {
-                playPromise.catch(error => console.error("BGM Play Error:", error));
+                playPromise.catch(error => {
+                    console.error("BGM Play Error:", error);
+                    // 自動重試或忽略
+                });
             }
 
+            // 重置狀態到第 1 回合
             danceRound = 1;
             danceStepIndex = 0;
 
+            // 產生第 1 回合的動作表
             generateSequences(danceRound);
+
+            // 清理任何殘留的監聽器
             clearAllMixerListeners();
+
+            // 開始播放
             playCurrentStep();
         }
 
+        // ⭐⭐⭐ 手動跳舞按鈕引擎：全同步等待機制 ⭐⭐⭐
         function playCurrentStep() {
             if (!isDancing) return;
 
-            let dancersFinished = [true, true, true]; 
+            let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數少於 3 會卡死的問題)
             let anyoneDancing = false;
-            let stepTriggered = false; 
+            let stepTriggered = false; // ⭐ 加入單次鎖定，防止同步跳完時發生雙重觸發 Bug
 
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
@@ -1273,29 +1435,30 @@
 
                 if (action) {
                     anyoneDancing = true;
-                    dancersFinished[vrmIndex] = false; 
-
+                    dancersFinished[vrmIndex] = false; // 有動作的人標為未完成
+                    
                     // ⭐ 核心修復：如果新舊動作不同，淡出舊的；如果相同，強制 Stop 重置，防止權重抵消卡死
                     if (oldAction && oldAction !== action) {
                         oldAction.fadeOut(0.5);
                     }
 
                     if (oldAction === action) {
-                        action.stop();
+                        action.stop(); // 停止先前的停格狀態
                         action.reset();
-                        action.setEffectiveWeight(1);
+                        action.setEffectiveWeight(1); // 滿權重重啟
                         action.play();
                     } else {
                         action.reset();
                         action.setLoop(THREE.LoopOnce); 
-                        action.clampWhenFinished = true; 
+                        action.clampWhenFinished = true; // ⭐ 完美停格等待：播完停在最後一幀定格
                         action.setEffectiveWeight(1);
                         action.fadeIn(0.5); 
                         action.play();
                     }
                     
-                    currentActiveActions[vrmIndex] = action; 
+                    currentActiveActions[vrmIndex] = action; // 記錄目前動作
 
+                    // 為每個角色的 Mixer 獨立掛上一次性監聽器 (使用安全函式防止 Memory Leak)
                     const onFinished = (e) => {
                         if (e.action === action) {
                             if (currentDanceListeners[vrmIndex]) {
@@ -1304,13 +1467,15 @@
                             }
 
                             if (!isDancing) return;
-                            if (currentActiveActions[vrmIndex] !== action) return; 
+                            if (currentActiveActions[vrmIndex] !== action) return; // 忽略舊動作
 
-                            dancersFinished[vrmIndex] = true; 
+                            dancersFinished[vrmIndex] = true; // 標記這個角色已跳完
 
+                            // ⭐ 只有當「三個人都跳完」且「尚未觸發過下一步」時，才一起進入下一步！
                             if (dancersFinished.every(v => v) && !stepTriggered) {
-                                stepTriggered = true; 
+                                stepTriggered = true; // 鎖定，防止同幀內的其他人再次觸發
                                 
+                                // 前進到下一步
                                 danceStepIndex++;
                                 if (danceStepIndex >= 4) {
                                     danceStepIndex = 0;
@@ -1332,6 +1497,7 @@
                 }
             });
 
+            // 防呆：如果完全沒人有動作，延遲後直接跳過
             if (!anyoneDancing && !stepTriggered) {
                 stepTriggered = true;
                 setTimeout(() => {
@@ -1346,37 +1512,56 @@
             }
         }
 
+        // 停止跳舞
         function stopDance() {
             if (!isDancing) return;
             
             isDancing = false;
             danceBtn.classList.remove('active');
             
+            // 停止 BGM
             bgm.pause();
             bgm.currentTime = 0;
             
+            // 停止所有動作
             danceActionsMap.forEach(group => {
                 group.forEach(action => action.fadeOut(0.5));
             });
+            // 停止可能被掛載為 Active 的 Idle 動作
             currentActiveActions.forEach(action => {
                 if (action) action.fadeOut(0.5);
             });
             
+            // ⭐⭐⭐ 徹底清除所有殘留的監聽器 ⭐⭐⭐
             clearAllMixerListeners();
             
+            // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
             currentDanceQueue = [];
             currentPlayingDanceData = null; 
-            currentActiveActions = [null, null, null]; 
-            window.pendingMicResume = false; 
+            currentActiveActions = [null, null, null]; // ⭐ 清空追蹤
+            window.pendingMicResume = false; // 取消等待中的麥克風自動開啟任務
             
+            // 重置相機
             setTimeout(() => {
                 updateCameraPosition();
             }, 500);
             
             // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose
-            if (idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
-            if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
-            if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
+            if (idleActionC) {
+                idleActionC.reset();
+                idleActionC.setEffectiveWeight(1);
+                idleActionC.fadeIn(0.5).play();
+            }
+            if (idleActionW) {
+                idleActionW.reset();
+                idleActionW.setEffectiveWeight(1);
+                idleActionW.fadeIn(0.5).play();
+            }
+            if (idleActionD) {
+                idleActionD.reset();
+                idleActionD.setEffectiveWeight(1);
+                idleActionD.fadeIn(0.5).play();
+            }
         }
 
         function toggleDance() {
@@ -1387,31 +1572,45 @@
             }
         }
 
+        // ⭐⭐⭐ 1️⃣ JSON 解析器（終極防呆破裂版：修復 AI 漏逗號的問題） ⭐⭐⭐
         function safeParseAIJson(text) {
             try {
+                // 清除可能包含的 Markdown 標記
                 let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                
+                // 尋找 JSON 的起點與終點
                 const start = cleanText.indexOf('{');
                 const end = cleanText.lastIndexOf('}');
                 if (start === -1 || end === -1) return null;
                 
                 let jsonStr = cleanText.substring(start, end + 1);
+                
+                // ⭐ 終極修復 1：把所有的真實換行符號替換成空格，避免字串內換行導致 JSON.parse 崩潰
                 jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                
+                // ⭐ 終極修復 2 (拯救矩陣)：AI 常常忘記二維陣列中間的逗號，例如 [[1,2][3,4]]，幫它補上變成 [[1,2], [3,4]]
                 jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
+                
+                // ⭐ 終極修復 3 (防止單引號搗亂)
                 jsonStr = jsonStr.replace(/'/g, '"');
+                
+                // 修復常見壞 JSON
                 jsonStr = jsonStr
-                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') 
-                    .replace(/,\s*}/g, '}') 
-                    .replace(/,\s*]/g, ']'); 
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') // 修復空值
+                    .replace(/,\s*}/g, '}') // 修復尾部逗號
+                    .replace(/,\s*]/g, ']'); // 修復陣列尾部逗號
                     
                 const result = JSON.parse(jsonStr);
                 
+                // 允許一維或二維陣列
                 if (result.action === "dance_sequence") {
                     if (typeof result.dance_list === "number") {
                         result.dance_list = [result.dance_list];
                     }
                     if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
-                        result.dance_list = null; 
+                        result.dance_list = null; // 設為 null，讓 handleAIResponse 用文字猜測
                     } else {
+                        // ⭐ 強制轉換所有元素為數字，防止 AI 塞文字進來
                         result.dance_list = result.dance_list.map(item => {
                             if (Array.isArray(item)) {
                                 return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
@@ -1429,14 +1628,17 @@
             }
         }
 
+        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（加入「各自跳」兜底處理） ⭐⭐⭐
         function guessDanceFromText(text) {
             if (!text) return null;
             const lowerText = text.toLowerCase();
             
+            // 如果關鍵字有「各自」或「分別」或「每個人」，兜底返回二維陣列的隨機指示 (給予3個動作長度避免太快結束)
             if (lowerText.includes("各自") || lowerText.includes("分別") || lowerText.includes("每個人")) {
                 return [[-1, -1, -1], [-1, -1, -1], [-1, -1, -1]]; 
             }
 
+            // ⭐ 終極修復：優先判定「定格B」，避免被下方的「霹靂」關鍵字攔截變成 0
             if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
                 return [3];
             }
@@ -1445,32 +1647,39 @@
                 "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
                 "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
                 "嘻哈": 2, "律動": 2, "hip hop": 2,
-                "跳舞": -1, "dance": -1, 
+                "跳舞": -1, "dance": -1, // Random
                 "隨機跳": -1, "隨便跳": -1
             };
             for (const key in map) {
                 if (lowerText.includes(key)) {
-                    return [map[key]]; 
+                    return [map[key]]; // 同步跳同一種
                 }
             }
             return null;
         }
 
+        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（強大升級版：支援每個角色各自不同的舞步與長度） ⭐⭐⭐
         async function playDanceSequence(sequence) {
+            // 在 await 之前先將狀態設為 true
             isDancing = true;
             danceBtn.classList.add('active');
 
+            // 清理可能殘留的監聽器，防止漏網之魚
             clearAllMixerListeners();
 
+            // 停止現有動作
              danceActionsMap.forEach(group => {
                 group.forEach(action => action.fadeOut(0.5));
             });
 
+            // 載入資源
             await loadDanceAssets(); 
             
+            // 再次確認狀態
             isDancing = true;
             updateCameraPosition();
             
+            // 淡出所有閒置與說話動作
             if (idleActionC) idleActionC.fadeOut(0.5);
             if (idleActionW) idleActionW.fadeOut(0.5);
             if (idleActionD) idleActionD.fadeOut(0.5);
@@ -1478,6 +1687,7 @@
             if (talkingActionW) talkingActionW.fadeOut(0.5);
             if (talkingActionD) talkingActionD.fadeOut(0.5);
             
+            // BGM 播放
             try {
                 if (!bgm.paused) bgm.pause();
                 bgm.currentTime = 0;
@@ -1488,17 +1698,23 @@
                 }
             } catch(e) { console.error("BGM Fatal Error:", e); }
 
+            // 轉換傳入的舞步陣列 (支援 1D 或 2D 陣列)
             let seq = Array.isArray(sequence) ? sequence : [];
             let is2D = seq.length > 0 && Array.isArray(seq[0]);
             
             currentDanceQueue = [];
             
             if (is2D) {
+                // 如果是 2D 陣列：[[人1舞步...], [人2舞步...], [人3舞步...]]
+                // 找出最長的那串舞步步數
                 let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                
+                // 將每個「步驟」打包成一個陣列推入 Queue
                 for (let step = 0; step < maxSteps; step++) {
                     let stepArray = [];
                     for (let c = 0; c < 3; c++) { 
                         let charSeq = seq[c] || [];
+                        // ⭐ 終極修復：如果這回合該角色已經沒有動作了，強制指派 99 (原地不動)，而不是亂給隨機舞蹈！
                         let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
                         if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
                         stepArray.push(danceId);
@@ -1506,6 +1722,7 @@
                     currentDanceQueue.push(stepArray); 
                 }
             } else {
+                // 1D 陣列 (所有人一起跳一樣的同步舞)
                 currentDanceQueue = seq.map(id => {
                     if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
                     return id;
@@ -1513,22 +1730,27 @@
             }
             
             console.log("AI 舞步序列解碼完成 (Queue):", currentDanceQueue);
+            // ⭐ 將最終系統要執行的排程陣列印到監控面板
             logAction(`執行 Queue: ${JSON.stringify(currentDanceQueue)}`);
             playNextDanceInQueue();
         }
 
+        // ⭐⭐⭐ AI 舞蹈引擎：全同步等待機制 ⭐⭐⭐
         function playNextDanceInQueue() {
             if (currentDanceQueue.length === 0) {
+                // 序列結束，自然恢復閒置
                 isDancing = false;
                 bgm.pause();
                 bgm.currentTime = 0;
                 danceBtn.classList.remove('active');
 
+                // 淡出所有進行中的動作
                 currentVrms.forEach((v, i) => {
                     const fadeAction = currentActiveActions[i];
                     if (fadeAction) fadeAction.fadeOut(0.5);
                 });
 
+                // 確保監聽器被清除
                 clearAllMixerListeners();
 
                 setTimeout(() => updateCameraPosition(), 500);
@@ -1538,6 +1760,7 @@
                 if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
                 if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
                 
+                // 當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
                 if (window.pendingMicResume) {
                     window.pendingMicResume = false;
                     setTimeout(() => {
@@ -1549,16 +1772,17 @@
 
             let nextData = currentDanceQueue.shift(); 
             
+            // 安全性驗證與越界防呆
             if (Array.isArray(nextData)) {
                 nextData = nextData.map(val => {
                     let v = parseInt(val);
-                    if (v === 99) return 99; 
+                    if (v === 99) return 99; // ⭐ 支援 99 (站在原地不跳舞)
                     return (isNaN(v) || v < 0 || v >= DANCE_URLS.length) ? Math.floor(Math.random() * DANCE_URLS.length) : v;
                 });
             } else {
                 let v = parseInt(nextData);
                 if (v === 99) {
-                    nextData = 99; 
+                    nextData = 99; // ⭐ 支援 99 (站在原地不跳舞)
                 } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
                     nextData = Math.floor(Math.random() * DANCE_URLS.length);
                 } else {
@@ -1568,9 +1792,10 @@
             
             currentPlayingDanceData = nextData; 
 
-            let dancersFinished = [true, true, true]; 
+            // ⭐ 核心：追蹤三位舞者的進度，確保同步
+            let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數不足會卡死的問題)
             let anyoneDancing = false;
-            let stepTriggered = false; 
+            let stepTriggered = false; // ⭐ 加入單次鎖定，防止同步跳完時發生雙重觸發 Bug
 
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
@@ -1578,27 +1803,35 @@
                 let nextIndex = Array.isArray(nextData) ? nextData[vrmIndex] : nextData;
                 const oldAction = currentActiveActions[vrmIndex];
 
+                // ⭐ 單獨跳舞邏輯：如果這個人的動作是 99，代表他這回合原地不動，我們幫他播放 Idle 動作！
                 if (nextIndex === 99) {
-                    dancersFinished[vrmIndex] = true; 
-                    let idleA = [idleActionC, idleActionW, idleActionD][vrmIndex];
+                    dancersFinished[vrmIndex] = true; // 設為 true 讓他不會阻礙其他人
+                    
+                    let idleA = null;
+                    if (vrmIndex === 0) idleA = idleActionC;
+                    if (vrmIndex === 1) idleA = idleActionW;
+                    if (vrmIndex === 2) idleA = idleActionD;
                     
                     if (oldAction && oldAction !== idleA) {
                         oldAction.fadeOut(0.5);
                     }
+                    
                     if (idleA && oldAction !== idleA) {
                         idleA.reset();
                         idleA.setEffectiveWeight(1); // ⭐ 防止無動畫
                         idleA.fadeIn(0.5).play();
                         currentActiveActions[vrmIndex] = idleA;
+                    } else if (!idleA) {
+                        currentActiveActions[vrmIndex] = null;
                     }
-                    return; 
+                    return; // 99 的人不需要綁定 onFinished 監聽器
                 }
                 
                 const action = danceActionsMap[nextIndex]?.[vrmIndex];
                 
                 if (action) {
                     anyoneDancing = true;
-                    dancersFinished[vrmIndex] = false; 
+                    dancersFinished[vrmIndex] = false; // ⭐ 有動作的人才標記為 false
                     
                     // ⭐ 核心修復：避免相同動畫的 CrossFade 導致權重抵消卡死
                     if (oldAction && oldAction !== action) {
@@ -1613,13 +1846,13 @@
                     } else {
                         action.reset();
                         action.setLoop(THREE.LoopOnce);
-                        action.clampWhenFinished = true; // 保持定格，等其他人跳完
+                        action.clampWhenFinished = true; // ⭐ 完美停格：保持定格，等其他人跳完
                         action.setEffectiveWeight(1);
                         action.fadeIn(0.5);
                         action.play();
                     }
                     
-                    currentActiveActions[vrmIndex] = action; 
+                    currentActiveActions[vrmIndex] = action; // 記錄目前動作
 
                     const onFinished = (e) => {
                         if (e.action === action) {
@@ -1629,13 +1862,14 @@
                             }
 
                             if (!isDancing) return;
-                            if (currentActiveActions[vrmIndex] !== action) return; 
+                            if (currentActiveActions[vrmIndex] !== action) return; // 忽略舊動作
 
-                            dancersFinished[vrmIndex] = true; 
+                            dancersFinished[vrmIndex] = true; // 此人跳完
 
+                            // ⭐ 當三個人都完成動作後，且尚未觸發過下一步時，再一起進入下一個動作！
                             if (dancersFinished.every(v => v) && !stepTriggered) {
-                                stepTriggered = true; 
-                                playNextDanceInQueue(); 
+                                stepTriggered = true; // 鎖定
+                                playNextDanceInQueue(); // 觸發下一輪
                             }
                         }
                     };
@@ -1645,6 +1879,7 @@
                 }
             });
 
+            // 如果完全沒人有動作，延遲後直接進行下一步
             if (!anyoneDancing && !stepTriggered) {
                 stepTriggered = true;
                 setTimeout(() => playNextDanceInQueue(), 50);
@@ -1657,6 +1892,7 @@
             toggleDance();
         });
 
+        // --- 情緒控制 ---
         const VALID_EMOTIONS = ['neutral', 'happy', 'angry', 'sad', 'relaxed', 'surprised'];
         function setEmotion(emotionName) {
             if (currentVrms.length === 0) return;
@@ -1667,6 +1903,7 @@
             
             updateDebugDisplay(emotionName, null);
             
+            // 套用到所有角色
             currentVrms.forEach(vrm => {
                 if(!vrm) return;
                 VALID_EMOTIONS.forEach(emo => vrm.expressionManager.setValue(emo, 0));
@@ -1716,12 +1953,13 @@
 
         function removeMessage(el) { if(el && el.parentNode) el.parentNode.removeChild(el); }
 
+        // --- API 連線檢查 (右上角) ---
         const statusDot = document.getElementById('status-dot');
         const statusMsg = document.getElementById('status-msg');
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
         const muteBtn = document.getElementById('mute-btn');
-        const micBtn = document.getElementById('mic-btn'); 
+        const micBtn = document.getElementById('mic-btn'); // 取得麥克風按鈕
 
         async function testApiConnection() {
             if (isPreviewEnv) {
@@ -1734,6 +1972,8 @@
             statusMsg.innerText = "連線測試...";
             statusDot.className = 'status-dot'; 
             
+            // **關鍵修改**：強制在 1 秒後解鎖輸入框，不管連線測試結果如何
+            // 避免 Android 或網路慢時，使用者被卡住無法輸入
             setTimeout(() => {
                  if (userInput.disabled) {
                      userInput.disabled = false; 
@@ -1741,8 +1981,9 @@
                  }
             }, 1000);
 
+            // Add Timeout to prevent hanging
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); 
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
             try {
                 const response = await fetch(API_URL, {
@@ -1761,34 +2002,42 @@
                 }
             } catch (e) {
                 statusDot.classList.add('status-error');
-                statusMsg.innerText = "連線失敗 (可離線輸入)"; 
+                statusMsg.innerText = "連線失敗 (可離線輸入)"; // Inform user they can still type
                 console.error("API Test Failed:", e);
+                // Don't spam the chat with system message immediately, maybe just log or small note
+                // addMessage(`連線測試失敗: ${e.message}`, 'system'); 
             } finally {
+                // ALWAYS unlock inputs so user can try anyway
                 userInput.disabled = false; 
                 sendBtn.disabled = false;
             }
         }
 
+        // --- 訊息發送與處理 ---
         muteBtn.addEventListener('click', () => {
             isMuted = !isMuted;
             muteBtn.classList.toggle('muted', isMuted);
             muteBtn.innerText = isMuted ? '🔇' : '🔊';
             if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
+            // 連動背景音樂靜音
             bgm.muted = isMuted;
         });
 
+        // 解鎖語音函式 (Android 必須)
         async function unlockTTS() {
             logTTS("正在解鎖語音...");
             return new Promise(resolve => {
                 try {
                     const u = new SpeechSynthesisUtterance(" ");
+                    // ⭐⭐⭐ 修復：防止 GC 回收 ⭐⭐⭐
                     window.currentUtterance = u; 
-                    u.volume = 0; 
-                    u.rate = 10; 
+                    u.volume = 0; // 靜音
+                    u.rate = 10; // 超快
                     u.onend = () => {
                         logTTS("語音解鎖完成 (onend)");
                         resolve();
                     };
+                    //有些瀏覽器 onend 不會觸發如果 volume 是 0，加個 timeout 保險
                     setTimeout(() => {
                         logTTS("語音解鎖完成 (timeout)");
                         resolve();
@@ -1801,9 +2050,11 @@
             });
         }
 
+        // ⭐⭐⭐ 4️⃣ 接收 AI 回應（修正誤判跳舞的最終版） ⭐⭐⭐
         function handleAIResponse(aiText) {
             let result = safeParseAIJson(aiText);
             
+            // ⭐ 將 AI 原始文字與解析結果印到監控面板，方便錄影抓蟲
             logAction(`Raw AI Text:\n${aiText}`);
             
             let danceSeq = null;
@@ -1825,19 +2076,23 @@
                 danceSeq = guessDanceFromText(aiText);
             }
 
+            // 如果判定要跳舞，執行跳舞
             if (danceSeq) {
                 playDanceSequence(danceSeq);
             } 
             
+            // ⭐⭐⭐ 防呆說話提取：絕對不讓使用者聽到/看到原始的 JSON 程式碼 ⭐⭐⭐
             let speakText = aiText;
             if (result && result.text) {
                 speakText = result.text;
             } else {
+                // 如果 JSON 徹底壞掉，嘗試用正則抓取裡面的 "text" 內容 (支援跳脫引號)
                 try {
                     const textMatch = aiText.match(/"text"\s*:\s*"((?:\\"|[^"])*)"/);
                     if (textMatch) {
                         speakText = textMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
                     } else {
+                        // 最後手段：剝離 markdown
                         speakText = aiText.replace(/```json/gi, '').replace(/```/g, ''); 
                     }
                 } catch (e) {
@@ -1846,6 +2101,7 @@
             }
             speak(speakText || "");
             
+            // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 ⭐⭐⭐
             if (result && result.corrected_text) {
                 const userMsgs = document.querySelectorAll('.message-user');
                 if (userMsgs.length > 0) {
@@ -1853,36 +2109,46 @@
                 }
             }
 
+            // 處理表情
             if (result && result.emotion) {
                 setEmotion(result.emotion);
             }
             
+            // 處理其他動作 (非舞蹈)
             if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) {
                 triggerAction(result.action, 2000);
             }
         }
 
+        // 移除獨立的 correctSpeechText 函式，改為合併處理
+
         async function handleSendMessage() {
+            // 防止重複點擊
             if (userInput.disabled || sendBtn.disabled) return;
 
             const text = userInput.value.trim();
             if (!text) return;
             
+            // ⭐⭐⭐ 發送訊息時，如果正在錄音，暫時停止，以免系統把自己的話錄進去 ⭐⭐⭐
             if (isRecording) {
                 stopRecording(); 
-                window.shouldResumeMic = true; 
+                window.shouldResumeMic = true; // 標記需要自動重啟
             } else {
                 window.shouldResumeMic = false;
             }
 
+            // ⭐ 若正在跳舞，先停止跳舞
             if (isDancing) stopDance();
 
+            // ⭐⭐⭐ 新增：發送訊息前，確保徹底停止上一次的語音 ⭐⭐⭐
             if (window.speechSynthesis) {
                 window.speechSynthesis.cancel();
             }
 
+            // ⭐⭐⭐ 每次發送訊息前都重新解鎖語音（Android 必須）
             if (!isMuted && ttsSupported) {
                 logTTS("開始訊息發送流程...");
+                // 用 race 避免 unlock 卡死
                 await Promise.race([
                     unlockTTS(),
                     new Promise(r => setTimeout(r, 300))
@@ -1904,6 +2170,7 @@
 
             let finalSystemInstruction = "";
             
+            // ⭐⭐⭐ 先加入外部 System Prompt，但後面會再加上強制指令 ⭐⭐⭐
             if (externalSystemPrompt) finalSystemInstruction += externalSystemPrompt;
             else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none" }`;
 
@@ -1925,8 +2192,9 @@
 4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
 `;
 
+            // Add AbortController for timeout
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); 
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
             try {
                 const response = await fetch(API_URL, {
@@ -1935,6 +2203,7 @@
                     body: JSON.stringify({
                         contents: chatHistory,
                         systemInstruction: { parts: [{ text: finalSystemInstruction }] }
+                        // ⭐ 刪除 generationConfig，解決與 Google Search Tool 衝突造成的 500 Server Error
                     }),
                     signal: controller.signal
                 });
@@ -1954,10 +2223,13 @@
                 
                 let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
                 
+                // 加入歷史紀錄
                 chatHistory.push({ role: "model", parts: [{ text: rawText }] });
                 
+                // 交給處理器分析舞步與說話
                 handleAIResponse(rawText);
                 
+                // ⭐ 顯示對話框：加上終極防呆機制，若發生奇蹟般的解析失敗，我們用正則擷取文字，絕對不顯示 JSON 程式碼
                 let tempResult = safeParseAIJson(rawText);
                 let displayText = rawText;
                 if (tempResult && tempResult.text) {
@@ -1996,11 +2268,13 @@
                 return;
             }
 
+            // 移除網址與符號，避免 Android TTS 當掉
             const cleanText = text
                 .replace(/\[.*?\]\(.*?\)/g, '')
                 .replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?！。，、…~]/g, '');
 
             if (!cleanText || cleanText.length === 0) {
+                // 如果沒話說，但原本需要重啟麥克風，則延遲重啟
                 if (window.shouldResumeMic) {
                      setTimeout(() => { if(!isRecording) startRecording(); }, 500);
                 }
@@ -2010,21 +2284,29 @@
             logTTS(`準備說話: ${cleanText.substring(0, 10)}...`);
 
             try {
+                // ⭐⭐⭐ 等待 voices 載入（Android 超重要）
                 if (speechSynthesis.getVoices().length === 0) {
                     logTTS("等待語音列表...");
                     await new Promise(r => setTimeout(r, 300));
                 }
 
+                // ⭐⭐⭐ 每次說話前都先 cancel（避免卡住）
                 speechSynthesis.cancel();
                 
+                // ⭐⭐⭐ 新增：等待微小延遲，避免連續調用造成 interrupted 錯誤 ⭐⭐⭐
                 await new Promise(r => setTimeout(r, 50));
 
                 const u = new SpeechSynthesisUtterance(cleanText);
                 
+                // ⭐⭐⭐ 關鍵修復：掛載到 global 變數，防止被 GC 回收 ⭐⭐⭐
                 window.currentUtterance = u; 
 
+                // ===== Android 專用強化 =====
                 if (isAndroid) {
+
                     const voices = speechSynthesis.getVoices();
+
+                    // 依優先順序找中文語音
                     const voice =
                         voices.find(v => v.lang === 'zh-TW') ||
                         voices.find(v => v.lang.includes('zh-TW')) ||
@@ -2040,7 +2322,9 @@
                         u.lang = 'zh-TW';
                         logTTS("Android 使用預設 zh-TW");
                     }
+
                 } else {
+                    // iPhone / PC 保持簡單即可
                     u.lang = 'zh-TW';
                 }
 
@@ -2049,45 +2333,78 @@
                 u.onstart = () => {
                     isSpeaking = true;
                     logTTS("開始播放 (onstart)");
+                    // ⭐⭐⭐ 新增：只有在沒有跳舞，且有專屬動作時才播放 ⭐⭐⭐
                     if (!isDancing) {
+                        // 淡出閒置
                         if (idleActionC) idleActionC.fadeOut(0.2);
                         if (idleActionW) idleActionW.fadeOut(0.2); 
-                        if (idleActionD) idleActionD.fadeOut(0.2); 
+                        if (idleActionD) idleActionD.fadeOut(0.2); // 新增 D
                         
                         // ⭐ 修復：加入 setEffectiveWeight 確保講話時不會掉回無動畫狀態
-                        if (talkingActionC) { talkingActionC.reset(); talkingActionC.setEffectiveWeight(1); talkingActionC.fadeIn(0.2).play(); }
-                        if (talkingActionW) { talkingActionW.reset(); talkingActionW.setEffectiveWeight(1); talkingActionW.fadeIn(0.2).play(); }
-                        if (talkingActionD) { talkingActionD.reset(); talkingActionD.setEffectiveWeight(1); talkingActionD.fadeIn(0.2).play(); }
+                        if (talkingActionC) {
+                            talkingActionC.reset();
+                            talkingActionC.setEffectiveWeight(1);
+                            talkingActionC.fadeIn(0.2).play();
+                        }
+                        if (talkingActionW) {
+                            talkingActionW.reset();
+                            talkingActionW.setEffectiveWeight(1);
+                            talkingActionW.fadeIn(0.2).play();
+                        }
+                        if (talkingActionD) {
+                            talkingActionD.reset();
+                            talkingActionD.setEffectiveWeight(1);
+                            talkingActionD.fadeIn(0.2).play();
+                        }
                     }
                 };
                 
                 u.onend   = () => {
                     isSpeaking = false;
                     logTTS("播放結束 (onend)");
+                    // 結束時讓所有角色閉嘴
                     currentVrms.forEach(vrm => {
                         if(vrm) {
                             vrm.expressionManager.setValue('aa', 0);
+                            // ⭐ 如果是開場白結束，清除其他角色的大笑表情
                             if (isOpeningRemark) {
                                 vrm.expressionManager.setValue('happy', 0);
                             }
                         }
                     });
                     
-                    isOpeningRemark = false; 
+                    isOpeningRemark = false; // ⭐ 重置開場白標記
                     
+                    // ⭐⭐⭐ 新增：停止說話動作，淡出回原本狀態 ⭐⭐⭐
                     if (talkingActionC) talkingActionC.fadeOut(0.5);
                     if (talkingActionW) talkingActionW.fadeOut(0.5); 
-                    if (talkingActionD) talkingActionD.fadeOut(0.5); 
+                    if (talkingActionD) talkingActionD.fadeOut(0.5); // 新增 D
                     
+                    // 恢復閒置
+                    // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
                         // ⭐ 修復：加入 setEffectiveWeight 徹底解決 David 突然舉手的問題
-                        if (idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
-                        if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
-                        if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
+                        if (idleActionC) {
+                            idleActionC.reset(); 
+                            idleActionC.setEffectiveWeight(1);
+                            idleActionC.fadeIn(0.5).play();
+                        }
+                        if (idleActionW) {
+                            idleActionW.reset(); 
+                            idleActionW.setEffectiveWeight(1);
+                            idleActionW.fadeIn(0.5).play();
+                        }
+                        if (idleActionD) {
+                            idleActionD.reset(); 
+                            idleActionD.setEffectiveWeight(1);
+                            idleActionD.fadeIn(0.5).play();
+                        }
                     }
 
+                    // ⭐⭐⭐ Auto Resume Mic logic ⭐⭐⭐
                     if (window.shouldResumeMic) {
                         if (isDancing) {
+                            // ⭐ 修正：如果此時他們還在跳舞，就先不要自動開麥克風，等跳完再開，確保音樂不會被強制暫停！
                             window.pendingMicResume = true;
                         } else {
                             setTimeout(() => {
@@ -2098,8 +2415,9 @@
                 };
 
                 u.onerror = (e) => {
+                    // ⭐⭐⭐ 新增：過濾正常的插播中斷 ⭐⭐⭐
                     if (e.error === 'interrupted' || e.error === 'canceled') {
-                        return; 
+                        return; // 這是正常的，不顯示錯誤
                     }
                     console.error("TTS error detail:", e.error);
                     logTTS(`TTS 錯誤: ${e.error}`);
@@ -2114,8 +2432,9 @@
         }
 
         sendBtn.addEventListener('click', handleSendMessage);
+        // 新增 touchend 支援，解決部分手機點擊無反應問題
         sendBtn.addEventListener('touchend', (e) => {
-            e.preventDefault(); 
+            e.preventDefault(); // 防止觸發 click 造成雙重發送
             handleSendMessage();
         });
 
@@ -2125,40 +2444,49 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            // 視窗改變大小時，重新檢查相機位置
             updateCameraPosition();
         });
 
+        // ⭐⭐⭐⭐⭐ 麥克風與語音辨識功能整合 (來自 AITranslator_v1) ⭐⭐⭐⭐⭐
         let recognition = null;
         let isRecording = false;
         let silenceTimer = null;
         let finalTranscript = '';
-        const voiceOverlay = document.getElementById('voice-overlay'); 
+        const voiceOverlay = document.getElementById('voice-overlay'); // 藍色波動條
 
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SR();
             
+            // ⭐⭐⭐ iOS 關鍵優化：強制關閉連續模式以解決辨識錯誤 ⭐⭐⭐
             if (isIOS || isAndroid) {
-                recognition.continuous = false; 
-                recognition.maxAlternatives = 1; 
+                recognition.continuous = false; // 手機版：講一句辨識一句，準確度最高
+                recognition.maxAlternatives = 1; // 減少運算負擔
             } else {
-                recognition.continuous = true; 
+                recognition.continuous = true; // 電腦版：保持連續對話能力
             }
             
             recognition.interimResults = true; 
-            recognition.lang = 'zh-TW'; 
+            recognition.lang = 'zh-TW'; // 預設中文，您可以根據需要修改
 
             recognition.onstart = () => { 
                 isRecording = true; 
                 updateMicUI(true); 
+                // 停止背景音樂或 TTS 聲音，避免干擾
                 if (window.speechSynthesis) window.speechSynthesis.cancel();
+                // ⭐⭐⭐ 關鍵修復：開始錄音時強制暫停 BGM，避免迴音干擾辨識 ⭐⭐⭐
                 bgm.pause();
+                
                 isSpeaking = false; 
             };
             
             recognition.onend = () => { 
+                // 如果是連續模式且仍然標記為錄音中（非手動停止），則嘗試重啟
                 if (isRecording) {
+                    // ⭐⭐⭐ iOS/Android 的手動連續模式模擬 ⭐⭐⭐
                     if (isIOS || isAndroid) {
+                       // 手機版：短暫延遲後重啟，避免過度頻繁調用 API
                        setTimeout(() => safeStartRecognition(), 100);
                     } else {
                        safeStartRecognition(); 
@@ -2169,22 +2497,30 @@
             };
             
             recognition.onerror = (e) => { 
+                // ⭐⭐⭐ FIX: 忽略 no-speech 錯誤，避免洗版 ⭐⭐⭐
                 if (e.error === 'no-speech') {
+                    // 這是正常的靜音超時，讓 onend 負責重啟即可
                     return;
                 }
 
                 console.error("Speech Recognition Error:", e.error);
+                // 某些錯誤需要完全停止
                 if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
                     isRecording = false;
                     updateMicUI(false);
+                    // ⭐⭐⭐ 新增：如果權限被拒，明確提示使用者 ⭐⭐⭐
                     alert("麥克風功能已被封鎖或不支援。\n請檢查瀏覽器權限設定，或嘗試在 Safari (iOS) / Chrome (Android) 中開啟。");
                 } else {
+                    // 其他錯誤嘗試重啟
                     recognition.stop();
                 }
             };
 
             recognition.onresult = (e) => {
                 let interim = '';
+                // 重新組合最終結果與臨時結果
+                // 注意：這裡是簡易實作，直接覆蓋 input
+                // AITranslator 邏輯：
                 for (let i = e.resultIndex; i < e.results.length; ++i) {
                     if (e.results[i].isFinal) {
                         finalTranscript += e.results[i][0].transcript;
@@ -2193,14 +2529,20 @@
                     }
                 }
                 
+                // 將結果填入輸入框
+                // 為了讓使用者體驗更好，我們保留使用者可能手打的部分嗎？
+                // 這裡採用 AITranslator 的邏輯：直接由語音主導
                 userInput.value = finalTranscript + interim;
                 
+                // 重置靜音計時器
                 clearTimeout(silenceTimer);
                 
+                // 如果有內容，設定 1.5 秒後自動發送
                 if (userInput.value.trim()) {
                     silenceTimer = setTimeout(async () => { 
                         const rawText = userInput.value.trim();
                         if(rawText) {
+                            // ⭐⭐⭐ 修改：合併處理，不單獨呼叫校正 API，直接發送 ⭐⭐⭐
                             handleSendMessage();
                         }
                     }, 1500);
@@ -2216,22 +2558,28 @@
             if(isRecording) stopRecording(); else startRecording();
         }
 
+        // ⭐⭐⭐ [CRITICAL IOS FIX] 必須同步呼叫，移除 async/await ⭐⭐⭐
         function startRecording() {
+            // ⭐ 新增：如果手動點擊錄音時大家正在跳舞，強制中斷跳舞並停止音樂
             if (isDancing) {
                 stopDance();
             }
 
+            // 1. 立即停止 TTS (同步執行)
             if (window.speechSynthesis) {
+                // 加個 try-catch 確保萬無一失
                 try {
                     window.speechSynthesis.cancel();
                 } catch(e) {}
             }
             isSpeaking = false;
 
+            // 2. 清空 UI
             finalTranscript = ''; 
             userInput.value = ''; 
             isRecording = true; 
             
+            // 3. 立即啟動錄音 (必須在 Event Loop 同一 tick 內)
             safeStartRecognition();
         }
 
@@ -2245,24 +2593,28 @@
         function safeStartRecognition() { 
             try { 
                 recognition.start(); 
-            } catch(e) {} 
+            } catch(e) {
+                // 有時候已經 start 了會報錯，忽略即可
+            } 
         }
 
         function updateMicUI(active) {
             if(active) { 
-                micBtn.classList.add('recording-pulse'); 
-                micBtn.innerHTML = '<i class="fa-solid fa-microphone-lines"></i>'; 
-                voiceOverlay.style.display = 'block'; 
+                micBtn.classList.add('recording-pulse'); // 加入紅色脈衝動畫
+                micBtn.innerHTML = '<i class="fa-solid fa-microphone-lines"></i>'; // 改變圖示
+                voiceOverlay.style.display = 'block'; // 顯示藍色波動條
             } else { 
                 micBtn.classList.remove('recording-pulse'); 
                 micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>';
-                voiceOverlay.style.display = 'none'; 
+                voiceOverlay.style.display = 'none'; // 隱藏藍色波動條
             }
         }
 
+        // 綁定麥克風按鈕事件
         micBtn.addEventListener('click', (e) => {
-            logTTS(`麥克風按鈕觸發: ${e.type}`); 
+            logTTS(`麥克風按鈕觸發: ${e.type}`); // Debug 訊息
             
+            // ⭐⭐⭐ 新增：LINE/Facebook 內建瀏覽器阻擋提示 ⭐⭐⭐
             if (isIOS && (isLineApp || isFbApp)) {
                 alert("⚠️ LINE/Facebook 內建瀏覽器不支援麥克風錄音。\n\n請點擊右上角/右下角選單，選擇「在 Safari 開啟」或「開啟預設瀏覽器」即可使用完整功能。");
                 return;
@@ -2271,6 +2623,7 @@
             toggleRecording();
         });
 
+        // ⭐⭐⭐ 新增：如果是手機版 (Android/iOS)，隱藏麥克風按鈕，僅保留PC版功能 ⭐⭐⭐
         if (isAndroid || isIOS) {
             micBtn.style.display = 'none';
         }
