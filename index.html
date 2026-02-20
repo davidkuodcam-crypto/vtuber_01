@@ -498,7 +498,7 @@
         window.shouldResumeMic = false;
         window.pendingMicResume = false; // ⭐ 新增：用於標記跳舞結束後才啟動麥克風的排程
 
-        // ⭐⭐⭐ NEW: Global flag to delay dancing until TTS finishes ⭐⭐⭐
+        // ⭐⭐⭐ NEW: 用於暫存 AI 給的舞蹈序列，確保講完話才跳舞 ⭐⭐⭐
         window.pendingDanceSeq = null;
 
         // Android Debug Logger Setup
@@ -620,7 +620,6 @@
         
         // ⭐⭐⭐ 新增：連續舞步播放佇列 ⭐⭐⭐
         let currentDanceQueue = [];
-        let currentPlayingDanceData = null; 
         
         // ⭐ 修改：全域變數改為陣列，精準記錄每位角色「目前正在跳」的動作
         let currentActiveActions = [null, null, null];
@@ -1540,16 +1539,14 @@
             
             // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
             currentDanceQueue = [];
-            currentPlayingDanceData = null; 
             currentActiveActions = [null, null, null]; // ⭐ 清空追蹤
-            window.pendingMicResume = false; // 取消等待中的麥克風自動開啟任務
             
             // 重置相機
             setTimeout(() => {
                 updateCameraPosition();
             }, 500);
             
-            // ⭐ 恢復閒置動作 (加入 reset() 解決 T-pose 問題)
+            // ⭐ 恢復閒置動作 (加入 reset() 與滿權重解決 T-pose 問題)
             if (idleActionC) {
                 idleActionC.reset();
                 idleActionC.setEffectiveWeight(1);
@@ -1564,6 +1561,14 @@
                 idleActionD.reset();
                 idleActionD.setEffectiveWeight(1);
                 idleActionD.fadeIn(0.5).play();
+            }
+
+            // ⭐⭐⭐ 檢查並恢復麥克風 (完全保留您原本的機制) ⭐⭐⭐
+            if (window.pendingMicResume) {
+                window.pendingMicResume = false;
+                setTimeout(() => {
+                    if (!isRecording) startRecording();
+                }, 500);
             }
         }
 
@@ -1717,7 +1722,7 @@
                     let stepArray = [];
                     for (let c = 0; c < 3; c++) { 
                         let charSeq = seq[c] || [];
-                        // ⭐ 終極修復：如果這回合該角色已經沒有動作了，強制指派 99 (原地不動)，而不是亂給隨機舞蹈！
+                        // ⭐ 終極修復：如果這回合該角色已經沒有動作了，強制指派 99 (原地不動)
                         let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
                         if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
                         stepArray.push(danceId);
@@ -1762,7 +1767,7 @@
                 if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
                 if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
                 
-                // 當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
+                // ⭐⭐⭐ 關鍵修復：當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
                 if (window.pendingMicResume) {
                     window.pendingMicResume = false;
                     setTimeout(() => {
@@ -1793,8 +1798,6 @@
                 }
             }
             
-            currentPlayingDanceData = nextData; 
-
             // ⭐ 核心：追蹤三位舞者的進度，確保同步
             let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數不足會卡死的問題)
             let anyoneDancing = false;
@@ -1975,8 +1978,6 @@
             statusMsg.innerText = "連線測試...";
             statusDot.className = 'status-dot'; 
             
-            // **關鍵修改**：強制在 1 秒後解鎖輸入框，不管連線測試結果如何
-            // 避免 Android 或網路慢時，使用者被卡住無法輸入
             setTimeout(() => {
                  if (userInput.disabled) {
                      userInput.disabled = false; 
@@ -1984,9 +1985,8 @@
                  }
             }, 1000);
 
-            // Add Timeout to prevent hanging
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            const timeoutId = setTimeout(() => controller.abort(), 10000); 
 
             try {
                 const response = await fetch(API_URL, {
@@ -2005,12 +2005,9 @@
                 }
             } catch (e) {
                 statusDot.classList.add('status-error');
-                statusMsg.innerText = "連線失敗 (可離線輸入)"; // Inform user they can still type
+                statusMsg.innerText = "連線失敗 (可離線輸入)"; 
                 console.error("API Test Failed:", e);
-                // Don't spam the chat with system message immediately, maybe just log or small note
-                // addMessage(`連線測試失敗: ${e.message}`, 'system'); 
             } finally {
-                // ALWAYS unlock inputs so user can try anyway
                 userInput.disabled = false; 
                 sendBtn.disabled = false;
             }
@@ -2022,25 +2019,21 @@
             muteBtn.classList.toggle('muted', isMuted);
             muteBtn.innerText = isMuted ? '🔇' : '🔊';
             if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
-            // 連動背景音樂靜音
             bgm.muted = isMuted;
         });
 
-        // 解鎖語音函式 (Android 必須)
         async function unlockTTS() {
             logTTS("正在解鎖語音...");
             return new Promise(resolve => {
                 try {
                     const u = new SpeechSynthesisUtterance(" ");
-                    // ⭐⭐⭐ 修復：防止 GC 回收 ⭐⭐⭐
                     window.currentUtterance = u; 
-                    u.volume = 0; // 靜音
-                    u.rate = 10; // 超快
+                    u.volume = 0; 
+                    u.rate = 10; 
                     u.onend = () => {
                         logTTS("語音解鎖完成 (onend)");
                         resolve();
                     };
-                    //有些瀏覽器 onend 不會觸發如果 volume 是 0，加個 timeout 保險
                     setTimeout(() => {
                         logTTS("語音解鎖完成 (timeout)");
                         resolve();
@@ -2354,11 +2347,8 @@
                     if (talkingActionD) talkingActionD.fadeOut(0.5); 
                     
                     // 恢復閒置
-                    // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
-                        // ⭐ 修復抽搐：講完話恢復閒置動作時，絕對 **不要** 呼叫 reset()！
-                        // 因為說話時閒置動作還在背景播放 (只是被 fadeOut(0.2) 降低權重)
-                        // 如果 reset 會導致動作瞬間切回第0幀而產生抽搐。
+                        // 因為前面沒 fadeOut，這裡不用 reset，只要把權重拉滿並平滑接軌即可，完美解決抽搐！
                         if (idleActionC) {
                             idleActionC.setEffectiveWeight(1); 
                             idleActionC.fadeIn(0.5).play();
