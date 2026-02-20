@@ -564,7 +564,8 @@
         
         // ⭐⭐⭐ 新增：連續舞步播放佇列 ⭐⭐⭐
         let currentDanceQueue = [];
-        let currentPlayingDanceIndex = -1;
+        // ⭐ 修改：升級變數以支援多角色同時進行不同舞步的陣列
+        let currentPlayingDanceData = null; 
         
         // ⭐⭐⭐ 新增：全域變數記錄「目前這在監聽的」Action，解決事件衝突 ⭐⭐⭐
         let currentActiveActionForListener = null;
@@ -1451,7 +1452,7 @@
             
             // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
             currentDanceQueue = [];
-            currentPlayingDanceIndex = -1;
+            currentPlayingDanceData = null; // ⭐ 重置播放資料
             currentActiveActionForListener = null;
             
             // 重置相機
@@ -1493,10 +1494,11 @@
                  return;
              }
 
-             // 淡出目前動作
-             if (currentPlayingDanceIndex !== -1) {
+             // ⭐⭐⭐ 淡出目前動作 (支援獨立舞步) ⭐⭐⭐
+             if (currentPlayingDanceData !== null) {
                  currentVrms.forEach((vrm, vrmIndex) => {
-                    const action = danceActionsMap[currentPlayingDanceIndex]?.[vrmIndex];
+                    let dIndex = Array.isArray(currentPlayingDanceData) ? currentPlayingDanceData[vrmIndex] : currentPlayingDanceData;
+                    const action = danceActionsMap[dIndex]?.[vrmIndex];
                     if(action) action.fadeOut(0.5);
                  });
              }
@@ -1518,21 +1520,11 @@
                     .replace(/,\s*}/g, '}')
                     .replace(/,\s*]/g, ']');
                 const result = JSON.parse(jsonStr);
-                // ⭐⭐⭐ 最重要：強制把 dance_list 轉成「陣列」
+                // ⭐⭐⭐ 允許一維或二維陣列 (修改：移除字串強制切割邏輯，交給 JSON.parse 原生處理)
                 if (result.action === "dance_sequence") {
-                    // 數字 → 陣列
                     if (typeof result.dance_list === "number") {
                         result.dance_list = [result.dance_list];
                     }
-                    // 字串 → 陣列 "1,2"
-                    if (typeof result.dance_list === "string") {
-                        result.dance_list = result.dance_list
-                            .split(",")
-                            .map(n => parseInt(n.trim()))
-                            .filter(n => !isNaN(n));
-                    }
-                    
-                    // ⭐⭐⭐ FIX: 若清單為空或格式錯誤，設為 null (不預設為 [0])，以便後續文字救援 ⭐⭐⭐
                     if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
                         result.dance_list = null; // 設為 null，讓 handleAIResponse 用文字猜測
                     }
@@ -1544,9 +1536,16 @@
             }
         }
 
-        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（修改：移除容易被誤判的字眼） ⭐⭐⭐
+        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（升級：加入「各自跳」兜底處理） ⭐⭐⭐
         function guessDanceFromText(text) {
             if (!text) return null;
+            const lowerText = text.toLowerCase();
+            
+            // ⭐⭐⭐ 如果關鍵字有「各自」或「分別」，兜底返回二維陣列的隨機指示 ⭐⭐⭐
+            if (lowerText.includes("各自") || lowerText.includes("分別")) {
+                return [[-1], [-1], [-1]]; // 每人各自隨機一種
+            }
+
             const map = {
                 "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
                 "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
@@ -1554,42 +1553,34 @@
                 "跳舞": -1, "dance": -1, // Random
                 "隨機跳": -1, "隨便跳": -1
             };
-            const lowerText = text.toLowerCase();
             for (const key in map) {
                 if (lowerText.includes(key)) {
-                    return [map[key]];
+                    return [map[key]]; // 同步跳同一種
                 }
             }
             return null;
         }
 
-        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（可連跳多支） ⭐⭐⭐
+        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（強大升級版：支援每個角色各自不同的舞步） ⭐⭐⭐
         async function playDanceSequence(sequence) {
-            // ⭐⭐⭐ 關鍵修復：在 await 之前先將狀態設為 true ⭐⭐⭐
-            // 這樣就算語音因為 cancel() 而觸發 onend，系統也會知道 "isDancing" 是 true
-            // 就不會錯誤地切回 Idle 動作了。
+            // 在 await 之前先將狀態設為 true
             isDancing = true;
             danceBtn.classList.add('active');
 
-            // ⭐⭐⭐ 關鍵修復：AI 跳舞時不強制停止語音，讓它邊說邊跳 ⭐⭐⭐
-            // 如果需要完全安靜，可以在 Prompt 裡叫 AI 不要回傳 text
-            // if (window.speechSynthesis) window.speechSynthesis.cancel(); 
-            // isSpeaking = false;
-            
-            // 清理可能存在的舊監聽器 (手動執行 stopDance 的清理邏輯，但不將 isDancing 設為 false)
+            // 清理可能存在的舊監聽器
             if (currentVrms[0]?.userData?.mixer) {
                 currentVrms[0].userData.mixer.removeEventListener('finished', onDanceFinished);
                 currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
             }
-            // 停止現有動作 (避免手動模式殘留)
+            // 停止現有動作
              danceActionsMap.forEach(group => {
                 group.forEach(action => action.fadeOut(0.5));
             });
 
-            // 載入資源 (此時 isDancing 已經是 true 了，安全)
+            // 載入資源
             await loadDanceAssets(); 
             
-            // 再次確認狀態 (雙重保險)
+            // 再次確認狀態
             isDancing = true;
             updateCameraPosition();
             
@@ -1602,50 +1593,62 @@
             if (talkingActionD) talkingActionD.fadeOut(0.5);
             
             // BGM 播放
-            // ⭐⭐⭐ FIX: 嚴格的 BGM 播放流程，避免 AbortError ⭐⭐⭐
             try {
-                // 先確保暫停並重置
-                if (!bgm.paused) {
-                    bgm.pause();
-                }
+                if (!bgm.paused) bgm.pause();
                 bgm.currentTime = 0;
                 bgm.muted = isMuted;
-                
-                // 播放並捕捉錯誤
                 const playPromise = bgm.play();
                 if (playPromise !== undefined) {
-                    playPromise.catch(error => {
-                        console.warn("BGM Auto-play interrupted or failed:", error);
-                        // 如果是因為快速切換導致的插播失敗，通常可以忽略
-                    });
+                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
                 }
-            } catch(e) {
-                console.error("BGM Fatal Error:", e);
-            }
+            } catch(e) { console.error("BGM Fatal Error:", e); }
 
-            // 設定佇列
-            currentDanceQueue = Array.isArray(sequence) ? [...sequence] : [];
+            // ⭐⭐⭐ 核心重構：轉換傳入的舞步陣列 (支援 1D 或 2D 陣列) ⭐⭐⭐
+            let seq = Array.isArray(sequence) ? sequence : [];
+            // 判斷是否為 2D 陣列 (代表角色分開跳)
+            let is2D = seq.length > 0 && Array.isArray(seq[0]);
             
-            // 支援隨機舞蹈 -1
-            currentDanceQueue = currentDanceQueue.map(id => {
-                if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length);
-                return id;
-            });
-            console.log("AI 舞步序列 (Queue):", currentDanceQueue);
+            currentDanceQueue = [];
+            
+            if (is2D) {
+                // 如果是 2D 陣列：[[人1舞步...], [人2舞步...], [人3舞步...]]
+                // 找出最長的那串舞步步數
+                let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                
+                // 將每個「步驟」打包成一個陣列推入 Queue
+                for (let step = 0; step < maxSteps; step++) {
+                    let stepArray = [];
+                    for (let c = 0; c < 3; c++) { // 3個角色
+                        let charSeq = seq[c] || [];
+                        let danceId = charSeq[step] !== undefined ? charSeq[step] : -1;
+                        // 若為 -1 (隨機) 或沒指示，各自指派隨機編號
+                        if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
+                        stepArray.push(danceId);
+                    }
+                    currentDanceQueue.push(stepArray); // e.g. [1, 3, 0] 加入 Queue
+                }
+            } else {
+                // 1D 陣列 (代表所有人一起跳一樣的同步舞)
+                currentDanceQueue = seq.map(id => {
+                    if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); // 全員同步隨機
+                    return id;
+                });
+            }
+            
+            console.log("AI 舞步序列解碼完成 (Queue):", currentDanceQueue);
             playNextDanceInQueue();
         }
 
-        // ⭐⭐⭐ 播放佇列中的下一個動作 ⭐⭐⭐
+        // ⭐⭐⭐ 播放佇列中的下一個動作 (支援獨立舞步) ⭐⭐⭐
         function playNextDanceInQueue() {
             if (currentDanceQueue.length === 0) {
-                // ⭐⭐⭐ FIX: 佇列結束時，務必移除監聽器，防止干擾手動按鈕 ⭐⭐⭐
+                // 佇列結束時，移除監聽器
                 if (currentVrms[0]?.userData?.mixer) {
                     currentVrms[0].userData.mixer.removeEventListener('finished', onSequenceStepFinished);
                 }
                 
                 // 序列結束，自然恢復閒置
                 isDancing = false;
-                // 停止 BGM
                 bgm.pause();
                 bgm.currentTime = 0;
                 danceBtn.classList.remove('active');
@@ -1657,23 +1660,29 @@
                 return;
             }
 
-            let nextIndex = currentDanceQueue.shift();
-            // 驗證索引
-            if (nextIndex < 0 || nextIndex >= DANCE_URLS.length) {
-                // ⭐⭐⭐ FIX: 如果 AI 給了錯誤索引，自動隨機修正 ⭐⭐⭐
-                console.warn(`Invalid dance index ${nextIndex}, fallback to random`);
-                nextIndex = Math.floor(Math.random() * DANCE_URLS.length);
+            let nextData = currentDanceQueue.shift(); // 可能是一個數字(齊舞)，或是一個包含三個數字的陣列(獨立舞步)
+            
+            // 安全性驗證與越界防呆
+            if (Array.isArray(nextData)) {
+                nextData = nextData.map(val => (val < 0 || val >= DANCE_URLS.length) ? Math.floor(Math.random() * DANCE_URLS.length) : val);
+            } else {
+                if (nextData < 0 || nextData >= DANCE_URLS.length) {
+                    nextData = Math.floor(Math.random() * DANCE_URLS.length);
+                }
             }
             
-            currentPlayingDanceIndex = nextIndex;
+            currentPlayingDanceData = nextData; // 儲存當前資料，供 fadeOut 呼叫使用
 
             // 對每個角色播放動作
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
                 
+                // ⭐⭐⭐ 從 nextData 中取出此角色該跳的動作索引 ⭐⭐⭐
+                let nextIndex = Array.isArray(nextData) ? nextData[vrmIndex] : nextData;
+                
                 const action = danceActionsMap[nextIndex]?.[vrmIndex];
                 if (action) {
-                    // ⭐⭐⭐ 記錄目前主控角色的 Action，用於事件過濾 ⭐⭐⭐
+                    // 記錄目前主控角色 (Role 1) 的 Action 用於事件過濾
                     if (vrmIndex === 0) currentActiveActionForListener = action;
 
                     action.reset();
@@ -1969,30 +1978,22 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 修改 Prompt: 教導 AI 識別跳舞指令 (支援連續舞步) 並合併語音校正 ⭐⭐⭐
+            // ⭐⭐⭐ 修改 Prompt: 教導 AI 解析「各自跳不同舞步」的二維陣列邏輯 ⭐⭐⭐
             finalSystemInstruction += `
 【INSTRUCTIONS】
 1. Use Knowledge Base first.
 2. Use Google Search if needed.
 3. Return JSON format.
 4. **DANCE SYSTEM (CRITICAL):**
-   - You MUST extract dance names from user input and map them to IDs.
-   - **For the "dance_list", you must ONLY use these integers: 0, 1, 2, 3.**
-   - ID 0: "霹靂舞定格A" (Breakdance Freeze A)
-   - ID 1: "湯瑪斯迴旋" (Flair)
-   - ID 2: "嘻哈律動" (Hip Hop)
-   - ID 3: "霹靂舞定格B" (Breakdance Freeze B)
-   
-   **Action Rules:**
-   1. "action": "dance_sequence" if user wants specific dances.
-   2. **REPETITION HANDLING (CRITICAL):** - If the user says "跳三次" (3 times), "跳兩遍" (2 times), you MUST add the ID to "dance_list" multiple times.
-      - Example: "跳三次湯瑪士迴旋" -> "dance_list": [1, 1, 1]
-      - Example: "先跳兩次霹靂舞A，再跳一次嘻哈" -> "dance_list": [0, 0, 2]
-   3. "action": "dance_random" if user says "隨機跳舞", "隨便跳", "Random dance".
-   4. For other actions: "none".
+   - Extract dance names from user input and map them to IDs (0: 霹靂舞定格A, 1: 湯瑪斯迴旋, 2: 嘻哈律動, 3: 霹靂舞定格B).
+   - "action": "dance_sequence".
+   - **dance_list format rules**:
+     * **SYNC DANCE (齊舞)**: Return a 1D array. Ex: "跳三次" -> [1, 1, 1]. "隨機跳" -> [-1].
+     * **INDEPENDENT DANCE (各自跳不同的)**: If user says "各自隨機選1種跳2次" or "各自...", return a 2D array with 3 sub-arrays (for 3 characters). You MUST pick the specific random IDs yourself. Ex: "各自隨機1種跳2次" -> [[2,2], [0,0], [3,3]]. "各自隨機2種各1次" -> [[1,2], [3,0], [2,1]]. "第一人跳嘻哈,第二人跳湯瑪斯,第三人跳霹靂" -> [[2], [1], [0]].
+     * Use -1 for random if you don't pick specific IDs.
 
 5. **SPEECH CORRECTION**: The input is raw speech text. You MUST correct typos/grammar in the user's text and return the corrected version in the JSON field "corrected_text".
-   Example JSON: { "text": "...", "emotion": "...", "action": "...", "corrected_text": "已修正的使用者語句" }
+   Example JSON: { "text": "...", "emotion": "...", "action": "...", "dance_list": [...], "corrected_text": "已修正的使用者語句" }
 `;
 
             // Add AbortController for timeout
