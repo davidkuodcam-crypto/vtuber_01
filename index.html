@@ -1520,16 +1520,24 @@
         // ⭐⭐⭐ 1️⃣ JSON 自動修復 + 解析器（終極版） ⭐⭐⭐
         function safeParseAIJson(text) {
             try {
-                const match = text.match(/{[\s\S]*}/);
-                if (!match) return null;
-                let jsonStr = match[0];
-                // ⭐ 修復常見壞 JSON
+                // ⭐ 清除可能包含的 Markdown 標記 (AI 常常會加 ```json)
+                let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                
+                // ⭐ 尋找 JSON 的起點與終點，確保只解析 JSON 區塊
+                const start = cleanText.indexOf('{');
+                const end = cleanText.lastIndexOf('}');
+                if (start === -1 || end === -1) return null;
+                
+                let jsonStr = cleanText.substring(start, end + 1);
+                
+                // ⭐ 修復常見壞 JSON (例如多餘的逗號)
                 jsonStr = jsonStr
                     .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') // 修復空值
-                    .replace(/'/g, '"')
-                    .replace(/,\s*}/g, '}')
-                    .replace(/,\s*]/g, ']');
+                    .replace(/,\s*}/g, '}') // 修復尾部逗號
+                    .replace(/,\s*]/g, ']'); // 修復陣列尾部逗號
+                    
                 const result = JSON.parse(jsonStr);
+                
                 // ⭐⭐⭐ 允許一維或二維陣列 (修改：移除字串強制切割邏輯，交給 JSON.parse 原生處理)
                 if (result.action === "dance_sequence") {
                     if (typeof result.dance_list === "number") {
@@ -1541,7 +1549,7 @@
                 }
                 return result;
             } catch (err) {
-                console.warn("JSON 修復失敗:", err);
+                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
                 return null;
             }
         }
@@ -1914,8 +1922,16 @@
                 playDanceSequence(danceSeq);
             } 
             
-            // 處理說話
-            let speakText = result ? result.text : aiText;
+            // ⭐ 防呆說話提取：絕對不讓使用者聽到/看到原始的 JSON 程式碼
+            let speakText = aiText;
+            if (result && result.text) {
+                speakText = result.text;
+            } else {
+                // 如果 JSON 徹底壞掉，嘗試用 Regex 抓取裡面的 "text" 內容
+                const textMatch = aiText.match(/"text"\s*:\s*"([^"]*)"/);
+                if (textMatch) speakText = textMatch[1];
+                else speakText = aiText.replace(/```json/gi, '').replace(/```/g, ''); // 最後手段：剝離 markdown
+            }
             speak(speakText || "");
             
             // 處理表情
@@ -1996,23 +2012,22 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 修改 Prompt: 教導 AI 解析「各自跳不同舞步」的二維陣列邏輯 ⭐⭐⭐
+            // ⭐⭐⭐ 修改 Prompt: 移除特定性別與名字，改為通用人設 ⭐⭐⭐
             finalSystemInstruction += `
-【INSTRUCTIONS】
-1. Use Knowledge Base first.
-2. Use Google Search if needed.
-3. Return JSON format.
-4. **DANCE SYSTEM (CRITICAL):**
-   - Extract dance names from user input and map them to IDs (0: 霹靂舞定格A, 1: 湯瑪斯迴旋, 2: 嘻哈律動, 3: 霹靂舞定格B).
-   - "action": "dance_sequence".
-   - **dance_list format rules**:
-     * **SYNC DANCE (齊舞)**: Return a 1D array. Ex: "跳三次" -> [1, 1, 1]. "隨機跳" -> [-1].
-     * **INDEPENDENT DANCE (各自跳不同的)**: If user says "各自隨機選1種跳2次" or "各自...", return a 2D array with 3 sub-arrays (for 3 characters). You MUST pick the specific random IDs yourself. Ex: "各自隨機1種跳2次" -> [[2,2], [0,0], [3,3]]. "各自隨機2種各1次" -> [[1,2], [3,0], [2,1]]. "第一人跳嘻哈,第二人跳湯瑪斯,第三人跳霹靂" -> [[2], [1], [0]].
-     * Use -1 for random if you don't pick specific IDs.
-   - **SPEECH CONSISTENCY (CRITICAL)**: Your spoken "text" MUST accurately describe the actual dance arrangement in "dance_list". Do NOT hallucinate different numbers. If the user asks for 1 type, confirm 1 type. You can casually announce which specific dances you picked for everyone!
-
-5. **SPEECH CORRECTION**: The input is raw speech text. You MUST correct typos/grammar in the user's text and return the corrected version in the JSON field "corrected_text".
-   Example JSON: { "text": "...", "emotion": "...", "action": "...", "dance_list": [...], "corrected_text": "已修正的使用者語句" }
+【CRITICAL INSTRUCTIONS】
+1. **JSON ONLY**: You MUST output ONLY a valid JSON object. Do not wrap it in markdown (\`\`\`json). Ensure all string values have properly escaped quotes and newlines (use \\n).
+2. **PERSONA**: You are a virtual AI character accompanied by two companions. Keep responses natural and concise.
+3. **DANCE SYSTEM**:
+   - Dance IDs: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B).
+   - "action" must be "dance_sequence".
+   - **SYNC DANCE (齊舞)**: Return a 1D array. Ex: "跳三次" -> "dance_list": [1, 1, 1].
+   - **INDEPENDENT DANCE (各自跳)**: If the user asks for "各自" (independently/respectively), return a 2D array with 3 sub-arrays (for the 3 characters). YOU must randomly pick the IDs (0-3).
+     * Ex: "各自隨機選1種舞蹈各跳1次" -> "dance_list": [[2], [0], [3]]
+     * Ex: "各自隨機選2種舞蹈各跳1次" -> "dance_list": [[1, 2], [3, 0], [2, 1]]
+     * Ex: "各自隨機選1種舞蹈各跳2次" -> "dance_list": [[3, 3], [1, 1], [0, 0]]
+   - **SPEECH CONSISTENCY**: Your "text" must naturally describe exactly what you assigned in "dance_list". Do not invent different numbers.
+4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
+   Example format: { "text": "好的！我們各自來跳一段！", "emotion": "happy", "action": "dance_sequence", "dance_list": [[2], [0], [3]], "corrected_text": "已修正語句" }
 `;
 
             // Add AbortController for timeout
@@ -2045,17 +2060,25 @@
                 
                 let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
                 
-                // ⭐⭐⭐ 改用新的 handleAIResponse 統一處理 ⭐⭐⭐
+                // 加入歷史紀錄
                 chatHistory.push({ role: "model", parts: [{ text: rawText }] });
-                // 注意：這裡只顯示 AI 回傳的 raw text 給對話框嗎？
-                // 為了保持一致性，我們稍微調整 handleAIResponse 讓它負責 addMessage
                 
-                // 為了簡單整合，我們直接在這裡呼叫
+                // ⭐ 交給處理器分析舞步與說話
                 handleAIResponse(rawText);
                 
-                // 補上對話框顯示 (若 handleAIResponse 沒做)
+                // ⭐ 顯示對話框：加上防呆機制，若解析失敗則用正則擷取文字，絕對不顯示 JSON 原始碼
                 let tempResult = safeParseAIJson(rawText);
-                let displayText = tempResult ? tempResult.text : rawText;
+                let displayText = rawText;
+                if (tempResult && tempResult.text) {
+                    displayText = tempResult.text;
+                } else {
+                    const textMatch = rawText.match(/"text"\s*:\s*"([^"]*)"/);
+                    if (textMatch) {
+                        displayText = textMatch[1].replace(/\\n/g, '<br>');
+                    } else {
+                        displayText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+                    }
+                }
                 addMessage(displayText, 'ai');
 
             } catch (error) {
