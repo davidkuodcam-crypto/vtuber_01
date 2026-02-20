@@ -373,7 +373,7 @@
         opacity: 0.6; 
     }
 
-    /* ⭐⭐⭐ 新增：畫面上方的動作指令監控面板 ⭐⭐⭐ */
+    /* ⭐⭐⭐ 修改：將畫面上方的動作指令監控面板設為隱藏 ⭐⭐⭐ */
     #action-debug-panel {
         position: absolute;
         top: 15px;
@@ -396,6 +396,7 @@
         white-space: pre-wrap;
         word-wrap: break-word;
         box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        display: none; /* ⭐ 已在此處加入 display: none 來隱藏監控面板 */
     }
     @media (max-width: 600px) {
         #action-debug-panel {
@@ -454,7 +455,7 @@
         動作: None
     </div>
 
-    <!-- ⭐⭐⭐ 新增：動作指令監控面板 (Action Debug Panel) ⭐⭐⭐ -->
+    <!-- ⭐⭐⭐ 此面板已在 CSS 中設定 display: none 隱藏 ⭐⭐⭐ -->
     <div id="action-debug-panel">等待動作指令...</div>
 
     <div id="chat-container">
@@ -1547,24 +1548,20 @@
             }, 500);
             
             // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose
-            // ⭐ 修復：如果手動停止跳舞時 AI 還在講話，恢復說話動作，反之恢復閒置
-            if (isSpeaking) {
-                if (talkingActionC) { talkingActionC.setEffectiveWeight(1); talkingActionC.fadeIn(0.5).play(); }
-                if (talkingActionW) { talkingActionW.setEffectiveWeight(1); talkingActionW.fadeIn(0.5).play(); }
-                if (talkingActionD) { talkingActionD.setEffectiveWeight(1); talkingActionD.fadeIn(0.5).play(); }
-            } else {
-                if (idleActionC) {
-                    idleActionC.setEffectiveWeight(1);
-                    idleActionC.fadeIn(0.5).play();
-                }
-                if (idleActionW) {
-                    idleActionW.setEffectiveWeight(1);
-                    idleActionW.fadeIn(0.5).play();
-                }
-                if (idleActionD) {
-                    idleActionD.setEffectiveWeight(1);
-                    idleActionD.fadeIn(0.5).play();
-                }
+            if (idleActionC) {
+                idleActionC.reset();
+                idleActionC.setEffectiveWeight(1);
+                idleActionC.fadeIn(0.5).play();
+            }
+            if (idleActionW) {
+                idleActionW.reset();
+                idleActionW.setEffectiveWeight(1);
+                idleActionW.fadeIn(0.5).play();
+            }
+            if (idleActionD) {
+                idleActionD.reset();
+                idleActionD.setEffectiveWeight(1);
+                idleActionD.fadeIn(0.5).play();
             }
         }
 
@@ -1576,45 +1573,27 @@
             }
         }
 
-        // ⭐⭐⭐ 1️⃣ JSON 解析器（終極防呆破裂版：修復 AI 漏逗號的問題） ⭐⭐⭐
+        // --- JSON 解析器 ---
         function safeParseAIJson(text) {
             try {
-                // 清除可能包含的 Markdown 標記
                 let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-                
-                // 尋找 JSON 的起點與終點
                 const start = cleanText.indexOf('{');
                 const end = cleanText.lastIndexOf('}');
                 if (start === -1 || end === -1) return null;
-                
                 let jsonStr = cleanText.substring(start, end + 1);
-                
-                // ⭐ 終極修復 1：把所有的真實換行符號替換成空格，避免字串內換行導致 JSON.parse 崩潰
                 jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
-                
-                // ⭐ 終極修復 2 (拯救矩陣)：AI 常常忘記二維陣列中間的逗號，例如 [[1,2][3,4]]，幫它補上變成 [[1,2], [3,4]]
                 jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
-                
-                // ⭐ 終極修復 3 (防止單引號搗亂)
                 jsonStr = jsonStr.replace(/'/g, '"');
-                
-                // 修復常見壞 JSON
                 jsonStr = jsonStr
-                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') // 修復空值
-                    .replace(/,\s*}/g, '}') // 修復尾部逗號
-                    .replace(/,\s*]/g, ']'); // 修復陣列尾部逗號
-                    
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],')
+                    .replace(/,\s*}/g, '}')
+                    .replace(/,\s*]/g, ']');
                 const result = JSON.parse(jsonStr);
-                
-                // 允許一維或二維陣列
                 if (result.action === "dance_sequence") {
                     if (typeof result.dance_list === "number") {
                         result.dance_list = [result.dance_list];
                     }
-                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
-                        result.dance_list = null; // 設為 null，讓 handleAIResponse 用文字猜測
-                    } else {
-                        // ⭐ 強制轉換所有元素為數字，防止 AI 塞文字進來
+                    if (Array.isArray(result.dance_list)) {
                         result.dance_list = result.dance_list.map(item => {
                             if (Array.isArray(item)) {
                                 return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
@@ -1627,98 +1606,66 @@
                 }
                 return result;
             } catch (err) {
-                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
                 return null;
             }
         }
 
-        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（加入「各自跳」兜底處理） ⭐⭐⭐
+        // fallback：從文字猜舞蹈
         function guessDanceFromText(text) {
             if (!text) return null;
             const lowerText = text.toLowerCase();
-            
-            // 如果關鍵字有「各自」或「分別」或「每個人」，兜底返回二維陣列的隨機指示 (給予3個動作長度避免太快結束)
             if (lowerText.includes("各自") || lowerText.includes("分別") || lowerText.includes("每個人")) {
                 return [[-1, -1, -1], [-1, -1, -1], [-1, -1, -1]]; 
             }
-
-            // ⭐ 終極修復：優先判定「定格B」，避免被下方的「霹靂」關鍵字攔截變成 0
             if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
                 return [3];
             }
-
             const map = {
                 "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
                 "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
                 "嘻哈": 2, "律動": 2, "hip hop": 2,
-                "跳舞": -1, "dance": -1, // Random
+                "跳舞": -1, "dance": -1,
                 "隨機跳": -1, "隨便跳": -1
             };
             for (const key in map) {
                 if (lowerText.includes(key)) {
-                    return [map[key]]; // 同步跳同一種
+                    return [map[key]];
                 }
             }
             return null;
         }
 
-        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（強大升級版：支援每個角色各自不同的舞步與長度） ⭐⭐⭐
+        // 播放舞蹈序列
         async function playDanceSequence(sequence) {
-            // 在 await 之前先將狀態設為 true
             isDancing = true;
             danceBtn.classList.add('active');
-
-            // 清理可能殘留的監聽器，防止漏網之魚
             clearAllMixerListeners();
-
-            // 停止現有動作
-             danceActionsMap.forEach(group => {
-                group.forEach(action => action.fadeOut(0.5));
-            });
-
-            // 載入資源
+            danceActionsMap.forEach(group => { group.forEach(action => action.fadeOut(0.5)); });
             await loadDanceAssets(); 
-            
-            // 再次確認狀態
             isDancing = true;
             updateCameraPosition();
-            
-            // 淡出所有閒置與說話動作
             if (idleActionC) idleActionC.fadeOut(0.5);
             if (idleActionW) idleActionW.fadeOut(0.5);
             if (idleActionD) idleActionD.fadeOut(0.5);
             if (talkingActionC) talkingActionC.fadeOut(0.5);
             if (talkingActionW) talkingActionW.fadeOut(0.5);
             if (talkingActionD) talkingActionD.fadeOut(0.5);
-            
-            // BGM 播放
             try {
                 if (!bgm.paused) bgm.pause();
                 bgm.currentTime = 0;
                 bgm.muted = isMuted;
                 const playPromise = bgm.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
-                }
-            } catch(e) { console.error("BGM Fatal Error:", e); }
-
-            // 轉換傳入的舞步陣列 (支援 1D 或 2D 陣列)
+                if (playPromise !== undefined) { playPromise.catch(error => {}); }
+            } catch(e) {}
             let seq = Array.isArray(sequence) ? sequence : [];
             let is2D = seq.length > 0 && Array.isArray(seq[0]);
-            
             currentDanceQueue = [];
-            
             if (is2D) {
-                // 如果是 2D 陣列：[[人1舞步...], [人2舞步...], [人3舞步...]]
-                // 找出最長的那串舞步步數
                 let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
-                
-                // 將每個「步驟」打包成一個陣列推入 Queue
                 for (let step = 0; step < maxSteps; step++) {
                     let stepArray = [];
                     for (let c = 0; c < 3; c++) { 
                         let charSeq = seq[c] || [];
-                        // ⭐ 終極修復：如果這回合該角色已經沒有動作了，強制指派 99 (原地不動)，而不是亂給隨機舞蹈！
                         let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
                         if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
                         stepArray.push(danceId);
@@ -1726,184 +1673,91 @@
                     currentDanceQueue.push(stepArray); 
                 }
             } else {
-                // 1D 陣列 (所有人一起跳一樣的同步舞)
                 currentDanceQueue = seq.map(id => {
                     if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
                     return id;
                 });
             }
-            
-            console.log("AI 舞步序列解碼完成 (Queue):", currentDanceQueue);
-            // ⭐ 將最終系統要執行的排程陣列印到監控面板
             logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
             playNextDanceInQueue();
         }
 
-        // ⭐⭐⭐ AI 舞蹈引擎：全同步等待機制 ⭐⭐⭐
         function playNextDanceInQueue() {
             if (currentDanceQueue.length === 0) {
-                // 序列結束，自然恢復閒置
                 isDancing = false;
-                bgm.pause();
-                bgm.currentTime = 0;
+                bgm.pause(); bgm.currentTime = 0;
                 danceBtn.classList.remove('active');
-
-                // 淡出所有進行中的動作
-                currentVrms.forEach((v, i) => {
-                    const fadeAction = currentActiveActions[i];
-                    if (fadeAction) fadeAction.fadeOut(0.5);
-                });
-
-                // 確保監聽器被清除
+                currentVrms.forEach((v, i) => { const fadeAction = currentActiveActions[i]; if (fadeAction) fadeAction.fadeOut(0.5); });
                 clearAllMixerListeners();
-
                 setTimeout(() => updateCameraPosition(), 500);
-                
-                // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，防止卡在 T-pose
-                // ⭐ 新增：如果跳舞結束時 AI 還在講話，則恢復說話動作，否則恢復閒置動作
-                if (isSpeaking) {
-                    if (talkingActionC) { talkingActionC.setEffectiveWeight(1); talkingActionC.fadeIn(0.5).play(); }
-                    if (talkingActionW) { talkingActionW.setEffectiveWeight(1); talkingActionW.fadeIn(0.5).play(); }
-                    if (talkingActionD) { talkingActionD.setEffectiveWeight(1); talkingActionD.fadeIn(0.5).play(); }
-                } else {
-                    if (idleActionC) { idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
-                    if (idleActionW) { idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
-                    if (idleActionD) { idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
-                }
-                
-                // 當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
+                if (idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
+                if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
                 if (window.pendingMicResume) {
                     window.pendingMicResume = false;
-                    setTimeout(() => {
-                        if (!isRecording) startRecording();
-                    }, 500);
+                    setTimeout(() => { if (!isRecording) startRecording(); }, 500);
                 }
                 return;
             }
-
             let nextData = currentDanceQueue.shift(); 
             logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
-            
-            // 安全性驗證與越界防呆
             if (Array.isArray(nextData)) {
                 nextData = nextData.map(val => {
                     let v = parseInt(val);
-                    if (v === 99) return 99; // ⭐ 支援 99 (站在原地不跳舞)
+                    if (v === 99) return 99;
                     return (isNaN(v) || v < 0 || v >= DANCE_URLS.length) ? Math.floor(Math.random() * DANCE_URLS.length) : v;
                 });
             } else {
                 let v = parseInt(nextData);
-                if (v === 99) {
-                    nextData = 99; // ⭐ 支援 99 (站在原地不跳舞)
-                } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
-                    nextData = Math.floor(Math.random() * DANCE_URLS.length);
-                } else {
-                    nextData = v;
-                }
+                if (v === 99) nextData = 99;
+                else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) nextData = Math.floor(Math.random() * DANCE_URLS.length);
+                else nextData = v;
             }
-            
             currentPlayingDanceData = nextData; 
-
-            // ⭐ 核心：追蹤三位舞者的進度，確保同步
-            let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數不足會卡死的問題)
+            let dancersFinished = [true, true, true];
             let anyoneDancing = false;
-            let stepTriggered = false; // ⭐ 加入單次鎖定，防止同步跳完時發生雙重觸發 Bug
-
+            let stepTriggered = false;
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
-                
                 let nextIndex = Array.isArray(nextData) ? nextData[vrmIndex] : nextData;
                 const oldAction = currentActiveActions[vrmIndex];
-
-                // ⭐ 單獨跳舞邏輯：如果這個人的動作是 99，代表他這回合原地不動，我們幫他播放 Idle 動作！
                 if (nextIndex === 99) {
-                    dancersFinished[vrmIndex] = true; // 設為 true 讓他不會阻礙其他人
-                    
+                    dancersFinished[vrmIndex] = true;
                     let idleA = null;
                     if (vrmIndex === 0) idleA = idleActionC;
                     if (vrmIndex === 1) idleA = idleActionW;
                     if (vrmIndex === 2) idleA = idleActionD;
-                    
-                    if (oldAction && oldAction !== idleA) {
-                        oldAction.fadeOut(0.5);
-                    }
-                    
-                    if (idleA && oldAction !== idleA) {
-                        idleA.setEffectiveWeight(1); // ⭐ 防止無動畫
-                        idleA.fadeIn(0.5).play();
-                        currentActiveActions[vrmIndex] = idleA;
-                    } else if (!idleA) {
-                        currentActiveActions[vrmIndex] = null;
-                    }
-                    return; // 99 的人不需要綁定 onFinished 監聽器
+                    if (oldAction && oldAction !== idleA) { oldAction.fadeOut(0.5); }
+                    if (idleA && oldAction !== idleA) { idleA.reset(); idleA.setEffectiveWeight(1); idleA.fadeIn(0.5).play(); currentActiveActions[vrmIndex] = idleA; }
+                    else if (!idleA) { currentActiveActions[vrmIndex] = null; }
+                    return;
                 }
-                
                 const action = danceActionsMap[nextIndex]?.[vrmIndex];
-                
                 if (action) {
-                    anyoneDancing = true;
-                    dancersFinished[vrmIndex] = false; // ⭐ 有動作的人才標記為 false
-                    
-                    // ⭐ 核心修復：避免相同動畫的 CrossFade 導致權重抵消卡死
-                    if (oldAction && oldAction !== action) {
-                        oldAction.fadeOut(0.5);
-                    }
-
-                    if (oldAction === action) {
-                        action.stop(); // 停止先前的停格狀態
-                        action.reset();
-                        action.setEffectiveWeight(1); // 滿權重重啟
-                        action.play();
-                    } else {
-                        action.reset();
-                        action.setLoop(THREE.LoopOnce);
-                        action.clampWhenFinished = true; // ⭐ 完美停格：保持定格，等其他人跳完
-                        action.setEffectiveWeight(1);
-                        action.fadeIn(0.5);
-                        action.play();
-                    }
-                    
-                    currentActiveActions[vrmIndex] = action; // 記錄目前動作
-
+                    anyoneDancing = true; dancersFinished[vrmIndex] = false;
+                    if (oldAction && oldAction !== action) { oldAction.fadeOut(0.5); }
+                    if (oldAction === action) { action.stop(); action.reset(); action.setEffectiveWeight(1); action.play(); }
+                    else { action.reset(); action.setLoop(THREE.LoopOnce); action.clampWhenFinished = true; action.setEffectiveWeight(1); action.fadeIn(0.5); action.play(); }
+                    currentActiveActions[vrmIndex] = action;
                     const onFinished = (e) => {
                         if (e.action === action) {
-                            if (currentDanceListeners[vrmIndex]) {
-                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
-                                currentDanceListeners[vrmIndex] = null;
-                            }
-
+                            if (currentDanceListeners[vrmIndex]) { vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]); currentDanceListeners[vrmIndex] = null; }
                             if (!isDancing) return;
-                            if (currentActiveActions[vrmIndex] !== action) return; // 忽略舊動作
-
-                            dancersFinished[vrmIndex] = true; // 此人跳完
-
-                            // ⭐ 當三個人都完成動作後，且尚未觸發過下一步時，再一起進入下一個動作！
-                            if (dancersFinished.every(v => v) && !stepTriggered) {
-                                stepTriggered = true; // 鎖定
-                                playNextDanceInQueue(); // 觸發下一輪
-                            }
+                            if (currentActiveActions[vrmIndex] !== action) return;
+                            dancersFinished[vrmIndex] = true;
+                            if (dancersFinished.every(v => v) && !stepTriggered) { stepTriggered = true; playNextDanceInQueue(); }
                         }
                     };
                     assignMixerListener(vrm, vrmIndex, onFinished);
-                } else {
-                    currentActiveActions[vrmIndex] = null;
-                }
+                } else { currentActiveActions[vrmIndex] = null; }
             });
-
-            // 如果完全沒人有動作，延遲後直接進行下一步
-            if (!anyoneDancing && !stepTriggered) {
-                stepTriggered = true;
-                setTimeout(() => playNextDanceInQueue(), 50);
-            }
+            if (!anyoneDancing && !stepTriggered) { stepTriggered = true; setTimeout(() => playNextDanceInQueue(), 50); }
         }
 
         danceBtn.addEventListener('click', toggleDance);
-        danceBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            toggleDance();
-        });
+        danceBtn.addEventListener('touchend', (e) => { e.preventDefault(); toggleDance(); });
 
-        // --- 情緒控制 ---
+        // 情緒與動作
         const VALID_EMOTIONS = ['neutral', 'happy', 'angry', 'sad', 'relaxed', 'surprised'];
         function setEmotion(emotionName) {
             if (currentVrms.length === 0) return;
@@ -1911,10 +1765,7 @@
             if (emotionName === 'sorrow') emotionName = 'sad';
             if (emotionName === 'fun') emotionName = 'relaxed';
             if (!VALID_EMOTIONS.includes(emotionName)) emotionName = 'neutral';
-            
             updateDebugDisplay(emotionName, null);
-            
-            // 套用到所有角色
             currentVrms.forEach(vrm => {
                 if(!vrm) return;
                 VALID_EMOTIONS.forEach(emo => vrm.expressionManager.setValue(emo, 0));
@@ -1928,15 +1779,9 @@
             updateDebugDisplay(null, `${actionName}`);
             let shapeName = actionName === 'blink_left' ? 'blinkLeft' : (actionName === 'blink_right' ? 'blinkRight' : 'blink');
             window.actionActive = true;
-            
-            currentVrms.forEach(vrm => {
-                if(vrm) vrm.expressionManager.setValue(shapeName, 1.0);
-            });
-            
+            currentVrms.forEach(vrm => { if(vrm) vrm.expressionManager.setValue(shapeName, 1.0); });
             setTimeout(() => {
-                currentVrms.forEach(vrm => {
-                    if(vrm) vrm.expressionManager.setValue(shapeName, 0);
-                });
+                currentVrms.forEach(vrm => { if(vrm) vrm.expressionManager.setValue(shapeName, 0); });
                 window.actionActive = false;
                 updateDebugDisplay(null, 'Done');
             }, duration);
@@ -1952,10 +1797,8 @@
             const chatDisplay = document.getElementById('chat-display');
             const div = document.createElement('div');
             div.className = `message message-${type}`;
-            
             let safeText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
             safeText = safeText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-            
             div.innerHTML = safeText;
             chatDisplay.appendChild(div);
             chatDisplay.scrollTo({ top: chatDisplay.scrollHeight, behavior: 'smooth' });
@@ -1964,13 +1807,13 @@
 
         function removeMessage(el) { if(el && el.parentNode) el.parentNode.removeChild(el); }
 
-        // --- API 連線檢查 (右上角) ---
+        // API 狀態檢查
         const statusDot = document.getElementById('status-dot');
         const statusMsg = document.getElementById('status-msg');
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
         const muteBtn = document.getElementById('mute-btn');
-        const micBtn = document.getElementById('mic-btn'); // 取得麥克風按鈕
+        const micBtn = document.getElementById('mic-btn');
 
         async function testApiConnection() {
             if (isPreviewEnv) {
@@ -1979,23 +1822,11 @@
                 userInput.disabled = false; sendBtn.disabled = false;
                 return;
             }
-
             statusMsg.innerText = "連線測試...";
             statusDot.className = 'status-dot'; 
-            
-            // **關鍵修改**：強制在 1 秒後解鎖輸入框，不管連線測試結果如何
-            // 避免 Android 或網路慢時，使用者被卡住無法輸入
-            setTimeout(() => {
-                 if (userInput.disabled) {
-                     userInput.disabled = false; 
-                     sendBtn.disabled = false;
-                 }
-            }, 1000);
-
-            // Add Timeout to prevent hanging
+            setTimeout(() => { if (userInput.disabled) { userInput.disabled = false; sendBtn.disabled = false; } }, 1000);
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
@@ -2004,639 +1835,196 @@
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
-
-                if (response.ok) {
-                    statusDot.classList.add('status-connected');
-                    statusMsg.innerText = "系統連線正常";
-                } else {
-                    throw new Error("API Check Failed");
-                }
+                if (response.ok) { statusDot.classList.add('status-connected'); statusMsg.innerText = "系統連線正常"; }
+                else { throw new Error("API Check Failed"); }
             } catch (e) {
                 statusDot.classList.add('status-error');
-                statusMsg.innerText = "連線失敗 (可離線輸入)"; // Inform user they can still type
-                console.error("API Test Failed:", e);
-                // Don't spam the chat with system message immediately, maybe just log or small note
-                // addMessage(`連線測試失敗: ${e.message}`, 'system'); 
-            } finally {
-                // ALWAYS unlock inputs so user can try anyway
-                userInput.disabled = false; 
-                sendBtn.disabled = false;
-            }
+                statusMsg.innerText = "連線失敗 (可離線輸入)";
+            } finally { userInput.disabled = false; sendBtn.disabled = false; }
         }
 
-        // --- 訊息發送與處理 ---
         muteBtn.addEventListener('click', () => {
             isMuted = !isMuted;
             muteBtn.classList.toggle('muted', isMuted);
             muteBtn.innerText = isMuted ? '🔇' : '🔊';
             if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
-            // 連動背景音樂靜音
             bgm.muted = isMuted;
         });
 
-        // 解鎖語音函式 (Android 必須)
         async function unlockTTS() {
-            logTTS("正在解鎖語音...");
             return new Promise(resolve => {
                 try {
                     const u = new SpeechSynthesisUtterance(" ");
-                    // ⭐⭐⭐ 修復：防止 GC 回收 ⭐⭐⭐
                     window.currentUtterance = u; 
-                    u.volume = 0; // 靜音
-                    u.rate = 10; // 超快
-                    u.onend = () => {
-                        logTTS("語音解鎖完成 (onend)");
-                        resolve();
-                    };
-                    //有些瀏覽器 onend 不會觸發如果 volume 是 0，加個 timeout 保險
-                    setTimeout(() => {
-                        logTTS("語音解鎖完成 (timeout)");
-                        resolve();
-                    }, 200); 
+                    u.volume = 0; u.rate = 10;
+                    u.onend = () => resolve();
+                    setTimeout(() => resolve(), 200); 
                     speechSynthesis.speak(u);
-                } catch(e) {
-                    logTTS(`語音解鎖失敗: ${e.message}`);
-                    resolve();
-                }
+                } catch(e) { resolve(); }
             });
         }
 
-        // ⭐⭐⭐ 4️⃣ 接收 AI 回應（修正誤判跳舞的最終版） ⭐⭐⭐
         function handleAIResponse(aiText) {
             let result = safeParseAIJson(aiText);
-            
-            // ⭐ 將 AI 原始文字與解析結果印到監控面板，方便錄影抓蟲
             logAction(`Raw AI Text:\n${aiText}`);
-            
             let danceSeq = null;
-
             if (result) {
                 logAction(`Parsed Result:\nAction: ${result.action}\nDance List: ${JSON.stringify(result.dance_list)}`);
                 if (result.action === 'dance_sequence' || result.action === 'dance_random') {
-                    if (Array.isArray(result.dance_list) && result.dance_list.length > 0) {
-                        danceSeq = result.dance_list;
-                    } else if (result.action === 'dance_random') {
-                        danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)];
-                    } else {
-                        danceSeq = guessDanceFromText(result.text);
-                        if (!danceSeq) danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)];
-                    }
+                    if (Array.isArray(result.dance_list) && result.dance_list.length > 0) { danceSeq = result.dance_list; }
+                    else if (result.action === 'dance_random') { danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)]; }
+                    else { danceSeq = guessDanceFromText(result.text); if (!danceSeq) danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)]; }
                 }
             } else {
                 logAction(`Parse Failed! 使用關鍵字兜底猜測`);
                 danceSeq = guessDanceFromText(aiText);
             }
-
-            // 如果判定要跳舞，執行跳舞
-            if (danceSeq) {
-                playDanceSequence(danceSeq);
-            } 
-            
-            // ⭐⭐⭐ 防呆說話提取：絕對不讓使用者聽到/看到原始的 JSON 程式碼 ⭐⭐⭐
+            if (danceSeq) { playDanceSequence(danceSeq); } 
             let speakText = aiText;
-            if (result && result.text) {
-                speakText = result.text;
-            } else {
-                // 如果 JSON 徹底壞掉，嘗試用正則抓取裡面的 "text" 內容 (支援跳脫引號)
+            if (result && result.text) { speakText = result.text; }
+            else {
                 try {
                     const textMatch = aiText.match(/"text"\s*:\s*"((?:\\"|[^"])*)"/);
-                    if (textMatch) {
-                        speakText = textMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
-                    } else {
-                        // 最後手段：剝離 markdown
-                        speakText = aiText.replace(/```json/gi, '').replace(/```/g, ''); 
-                    }
-                } catch (e) {
-                    speakText = "我好像跳針了，但舞步已經安排好囉！";
-                }
+                    if (textMatch) { speakText = textMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'); }
+                    else { speakText = aiText.replace(/```json/gi, '').replace(/```/g, ''); }
+                } catch (e) { speakText = "我好像跳針了，但舞步已經安排好囉！"; }
             }
             speak(speakText || "");
-            
-            // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 ⭐⭐⭐
             if (result && result.corrected_text) {
                 const userMsgs = document.querySelectorAll('.message-user');
-                if (userMsgs.length > 0) {
-                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
-                }
+                if (userMsgs.length > 0) { userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text; }
             }
-
-            // 處理表情
-            if (result && result.emotion) {
-                setEmotion(result.emotion);
-            }
-            
-            // 處理其他動作 (非舞蹈)
-            if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) {
-                triggerAction(result.action, 2000);
-            }
+            if (result && result.emotion) { setEmotion(result.emotion); }
+            if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) { triggerAction(result.action, 2000); }
         }
 
-        // 移除獨立的 correctSpeechText 函式，改為合併處理
-
         async function handleSendMessage() {
-            // 防止重複點擊
             if (userInput.disabled || sendBtn.disabled) return;
-
             const text = userInput.value.trim();
             if (!text) return;
-            
-            // ⭐⭐⭐ 發送訊息時，如果正在錄音，暫時停止，以免系統把自己的話錄進去 ⭐⭐⭐
-            if (isRecording) {
-                stopRecording(); 
-                window.shouldResumeMic = true; // 標記需要自動重啟
-            } else {
-                window.shouldResumeMic = false;
-            }
-
-            // ⭐ 若正在跳舞，先停止跳舞
+            if (isRecording) { stopRecording(); window.shouldResumeMic = true; }
+            else { window.shouldResumeMic = false; }
             if (isDancing) stopDance();
-
-            // ⭐⭐⭐ 新增：發送訊息前，確保徹底停止上一次的語音 ⭐⭐⭐
-            if (window.speechSynthesis) {
-                window.speechSynthesis.cancel();
-            }
-
-            // ⭐⭐⭐ 每次發送訊息前都重新解鎖語音（Android 必須）
-            if (!isMuted && ttsSupported) {
-                logTTS("開始訊息發送流程...");
-                // 用 race 避免 unlock 卡死
-                await Promise.race([
-                    unlockTTS(),
-                    new Promise(r => setTimeout(r, 300))
-                ]);
-            }
-
+            if (window.speechSynthesis) { window.speechSynthesis.cancel(); }
+            if (!isMuted && ttsSupported) { await Promise.race([ unlockTTS(), new Promise(r => setTimeout(r, 300)) ]); }
             userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
             addMessage(text, 'user');
-            
-            if (isPreviewEnv) {
-                addMessage("【提示】預覽模式無法連接 AI，請部署至 Vercel。", 'system');
-                userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
-                return;
-            }
-
+            if (isPreviewEnv) { addMessage("【提示】預覽模式無法連接 AI，請部署至 Vercel。", 'system'); userInput.disabled = false; sendBtn.disabled = false; userInput.focus(); return; }
             const loadingMsg = addMessage("Thinking...", 'system');
-            
             chatHistory.push({ role: "user", parts: [{ text: text }] });
-
             let finalSystemInstruction = "";
-            
-            // ⭐⭐⭐ 先加入外部 System Prompt，但後面會再加上強制指令 ⭐⭐⭐
             if (externalSystemPrompt) finalSystemInstruction += externalSystemPrompt;
             else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none" }`;
-
-            if (externalKnowledge) {
-                finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
-            }
-
-            // ⭐ 強化 AI 回傳多回合的指令說明
-            finalSystemInstruction += `
-【CRITICAL INSTRUCTIONS】
-1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json.
-2. **PERSONA**: Keep responses natural, conversational, and concise. Do NOT refer to yourself as code or mention JSON format to the user.
-3. **DANCE SYSTEM**:
-   - Dance IDs available: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B), 99(不跳舞/原地待命).
-   - "action" must be "dance_sequence".
-   - **多回合排程 (CRITICAL)**：當使用者要求「跳多次」或「連續跳不同舞」時，你必須在 "dance_list" 中產生對應數量的步驟。
-   - **預設齊舞 (1D Array)**: 若使用者要求「大家一起跳兩次」，請回傳 [1, 1]。
-   - **各自跳舞 (2D Array)**: 若使用者要求「第一人跳嘻哈，其他人不跳」，請回傳 [[2], [99], [99]]。若要求各自跳不同且跳兩次，請回傳 [[2,2], [0,0], [3,3]]。子陣列之間務必加上逗號！
-4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
-`;
-
-            // Add AbortController for timeout
+            if (externalKnowledge) { finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n"; }
+            finalSystemInstruction += `\n【CRITICAL INSTRUCTIONS】\n1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object.\n2. **PERSONA**: natural, conversational.\n3. **DANCE SYSTEM**: 0(A), 1(thomas), 2(hiphop), 3(B), 99(stand).\n4. **SPEECH CORRECTION**: Correct user's text in "corrected_text".`;
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
             try {
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: chatHistory,
-                        systemInstruction: { parts: [{ text: finalSystemInstruction }] }
-                        // ⭐ 刪除 generationConfig，解決與 Google Search Tool 衝突造成的 500 Server Error
-                    }),
+                    body: JSON.stringify({ contents: chatHistory, systemInstruction: { parts: [{ text: finalSystemInstruction }] } }),
                     signal: controller.signal
                 });
                 clearTimeout(timeoutId);
-
-                if (!response.ok) {
-                    let errMsg = "Server Error";
-                    try {
-                         const errData = await response.json();
-                         if (errData.error) errMsg = errData.error;
-                    } catch(e) {}
-                    throw new Error(errMsg);
-                }
-
+                if (!response.ok) { throw new Error("Server Error"); }
                 const data = await response.json();
                 removeMessage(loadingMsg);
-                
                 let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
-                
-                // 加入歷史紀錄
                 chatHistory.push({ role: "model", parts: [{ text: rawText }] });
-                
-                // 交給處理器分析舞步與說話
                 handleAIResponse(rawText);
-                
-                // ⭐ 顯示對話框：加上終極防呆機制，若發生奇蹟般的解析失敗，我們用正則擷取文字，絕對不顯示 JSON 程式碼
                 let tempResult = safeParseAIJson(rawText);
                 let displayText = rawText;
-                if (tempResult && tempResult.text) {
-                    displayText = tempResult.text;
-                } else {
-                    try {
-                        const textMatch = rawText.match(/"text"\s*:\s*"((?:\\"|[^"])*)"/);
-                        if (textMatch) {
-                            displayText = textMatch[1].replace(/\\n/g, '<br>').replace(/\\"/g, '"');
-                        } else {
-                            displayText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-                        }
-                    } catch(e) {
-                        displayText = "好喔！我們這就為您跳舞！";
-                    }
+                if (tempResult && tempResult.text) { displayText = tempResult.text; }
+                else {
+                    try { const textMatch = rawText.match(/"text"\s*:\s*"((?:\\"|[^"])*)"/); if (textMatch) { displayText = textMatch[1].replace(/\\n/g, '<br>').replace(/\\"/g, '"'); }
+                    else { displayText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim(); } } catch(e) { displayText = "好喔！我們這就為您跳舞！"; }
                 }
                 addMessage(displayText, 'ai');
-
             } catch (error) {
-                console.error(error);
                 removeMessage(loadingMsg);
-                if (error.name === 'AbortError') {
-                    addMessage(`錯誤: 連線逾時 (Timeout)，請重試。`, 'system');
-                } else {
-                    addMessage(`錯誤: ${error.message}`, 'system');
-                }
-            } finally {
-                userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
-            }
+                addMessage(`錯誤: ${error.message}`, 'system');
+            } finally { userInput.disabled = false; sendBtn.disabled = false; userInput.focus(); }
         }
 
         async function speak(text) {
             if (isMuted) return;
-            if (!ttsSupported || !window.speechSynthesis) {
-                logTTS("❌ 說話失敗: 語音功能不支援");
-                return;
-            }
-
-            // 移除網址與符號，避免 Android TTS 當掉
-            const cleanText = text
-                .replace(/\[.*?\]\(.*?\)/g, '')
-                .replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?！。，、…~]/g, '');
-
-            if (!cleanText || cleanText.length === 0) {
-                // 如果沒話說，但原本需要重啟麥克風，則延遲重啟
-                if (window.shouldResumeMic) {
-                     setTimeout(() => { if(!isRecording) startRecording(); }, 500);
-                }
-                return;
-            }
-
-            logTTS(`準備說話: ${cleanText.substring(0, 10)}...`);
-
+            if (!ttsSupported || !window.speechSynthesis) return;
+            const cleanText = text.replace(/\[.*?\]\(.*?\)/g, '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?！。，、…~]/g, '');
+            if (!cleanText) { if (window.shouldResumeMic) { setTimeout(() => { if(!isRecording) startRecording(); }, 500); } return; }
             try {
-                // ⭐⭐⭐ 等待 voices 載入（Android 超重要）
-                if (speechSynthesis.getVoices().length === 0) {
-                    logTTS("等待語音列表...");
-                    await new Promise(r => setTimeout(r, 300));
-                }
-
-                // ⭐⭐⭐ 每次說話前都先 cancel（避免卡住）
-                speechSynthesis.cancel();
-                
-                // ⭐⭐⭐ 新增：等待微小延遲，避免連續調用造成 interrupted 錯誤 ⭐⭐⭐
-                await new Promise(r => setTimeout(r, 50));
-
+                if (speechSynthesis.getVoices().length === 0) { await new Promise(r => setTimeout(r, 300)); }
+                speechSynthesis.cancel(); await new Promise(r => setTimeout(r, 50));
                 const u = new SpeechSynthesisUtterance(cleanText);
-                
-                // ⭐⭐⭐ 關鍵修復：掛載到 global 變數，防止被 GC 回收 ⭐⭐⭐
                 window.currentUtterance = u; 
-
-                // ===== Android 專用強化 =====
                 if (isAndroid) {
-
                     const voices = speechSynthesis.getVoices();
-
-                    // 依優先順序找中文語音
-                    const voice =
-                        voices.find(v => v.lang === 'zh-TW') ||
-                        voices.find(v => v.lang.includes('zh-TW')) ||
-                        voices.find(v => v.lang.includes('zh-HK')) ||
-                        voices.find(v => v.lang.includes('zh-CN')) ||
-                        voices.find(v => v.lang.includes('zh'));
-
-                    if (voice) {
-                        u.voice = voice;
-                        u.lang  = voice.lang;
-                        logTTS(`Android 使用語音: ${voice.name}`);
-                    } else {
-                        u.lang = 'zh-TW';
-                        logTTS("Android 使用預設 zh-TW");
-                    }
-
-                } else {
-                    // iPhone / PC 保持簡單即可
-                    u.lang = 'zh-TW';
-                }
-
+                    const voice = voices.find(v => v.lang === 'zh-TW') || voices.find(v => v.lang.includes('zh-TW'));
+                    if (voice) { u.voice = voice; u.lang = voice.lang; } else { u.lang = 'zh-TW'; }
+                } else { u.lang = 'zh-TW'; }
                 u.volume = 1;
-
                 u.onstart = () => {
                     isSpeaking = true;
-                    logTTS("開始播放 (onstart)");
-                    // ⭐⭐⭐ 新增：只有在沒有跳舞，且有專屬動作時才播放 ⭐⭐⭐
                     if (!isDancing) {
-                        // 淡出閒置
-                        if (idleActionC) idleActionC.fadeOut(0.2);
-                        if (idleActionW) idleActionW.fadeOut(0.2); 
-                        if (idleActionD) idleActionD.fadeOut(0.2); // 新增 D
-                        
-                        // ⭐ 修復：加入 setEffectiveWeight 確保講話時不會掉回無動畫狀態
-                        if (talkingActionC) {
-                            talkingActionC.setEffectiveWeight(1);
-                            talkingActionC.fadeIn(0.2).play();
-                        }
-                        if (talkingActionW) {
-                            talkingActionW.setEffectiveWeight(1);
-                            talkingActionW.fadeIn(0.2).play();
-                        }
-                        if (talkingActionD) {
-                            talkingActionD.setEffectiveWeight(1);
-                            talkingActionD.fadeIn(0.2).play();
-                        }
+                        if (idleActionC) idleActionC.fadeOut(0.2); if (idleActionW) idleActionW.fadeOut(0.2); if (idleActionD) idleActionD.fadeOut(0.2);
+                        if (talkingActionC) { talkingActionC.reset(); talkingActionC.setEffectiveWeight(1); talkingActionC.fadeIn(0.2).play(); }
+                        if (talkingActionW) { talkingActionW.reset(); talkingActionW.setEffectiveWeight(1); talkingActionW.fadeIn(0.2).play(); }
+                        if (talkingActionD) { talkingActionD.reset(); talkingActionD.setEffectiveWeight(1); talkingActionD.fadeIn(0.2).play(); }
                     }
                 };
-                
-                u.onend   = () => {
+                u.onend = () => {
                     isSpeaking = false;
-                    logTTS("播放結束 (onend)");
-                    // 結束時讓所有角色閉嘴
-                    currentVrms.forEach(vrm => {
-                        if(vrm) {
-                            vrm.expressionManager.setValue('aa', 0);
-                            // ⭐ 如果是開場白結束，清除其他角色的大笑表情
-                            if (isOpeningRemark) {
-                                vrm.expressionManager.setValue('happy', 0);
-                            }
-                        }
-                    });
-                    
-                    isOpeningRemark = false; // ⭐ 重置開場白標記
-                    
-                    // ⭐⭐⭐ 新增：停止說話動作，淡出回原本狀態 ⭐⭐⭐
-                    if (talkingActionC) talkingActionC.fadeOut(0.5);
-                    if (talkingActionW) talkingActionW.fadeOut(0.5); 
-                    if (talkingActionD) talkingActionD.fadeOut(0.5); // 新增 D
-                    
-                    // 恢復閒置
-                    // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
+                    currentVrms.forEach(vrm => { if(vrm) { vrm.expressionManager.setValue('aa', 0); if (isOpeningRemark) { vrm.expressionManager.setValue('happy', 0); } } });
+                    isOpeningRemark = false;
+                    if (talkingActionC) talkingActionC.fadeOut(0.5); if (talkingActionW) talkingActionW.fadeOut(0.5); if (talkingActionD) talkingActionD.fadeOut(0.5);
                     if (!isDancing) {
-                        // ⭐ 修復：加入 setEffectiveWeight 徹底解決 David 突然舉手的問題
-                        // ⭐ 移除 .reset() 防止強制跳回第一幀造成的瞬間舉手/閃爍
-                        if (idleActionC) {
-                            idleActionC.setEffectiveWeight(1);
-                            idleActionC.fadeIn(0.5).play();
-                        }
-                        if (idleActionW) {
-                            idleActionW.setEffectiveWeight(1);
-                            idleActionW.fadeIn(0.5).play();
-                        }
-                        if (idleActionD) {
-                            idleActionD.setEffectiveWeight(1);
-                            idleActionD.fadeIn(0.5).play();
-                        }
+                        if (idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
+                        if (idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                        if (idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
                     }
-
-                    // ⭐⭐⭐ Auto Resume Mic logic ⭐⭐⭐
-                    if (window.shouldResumeMic) {
-                        if (isDancing) {
-                            // ⭐ 修正：如果此時他們還在跳舞，就先不要自動開麥克風，等跳完再開，確保音樂不會被強制暫停！
-                            window.pendingMicResume = true;
-                        } else {
-                            setTimeout(() => {
-                                if (!isRecording) startRecording();
-                            }, 500);
-                        }
-                    }
+                    if (window.shouldResumeMic) { if (isDancing) { window.pendingMicResume = true; } else { setTimeout(() => { if (!isRecording) startRecording(); }, 500); } }
                 };
-
-                u.onerror = (e) => {
-                    // ⭐⭐⭐ 新增：過濾正常的插播中斷 ⭐⭐⭐
-                    if (e.error === 'interrupted' || e.error === 'canceled') {
-                        return; // 這是正常的，不顯示錯誤
-                    }
-                    console.error("TTS error detail:", e.error);
-                    logTTS(`TTS 錯誤: ${e.error}`);
-                };
-
                 speechSynthesis.speak(u);
-
-            } catch (err) {
-                console.error("Speech error:", err);
-                logTTS(`Speech 執行錯誤: ${err.message}`);
-            }
+            } catch (err) {}
         }
 
         sendBtn.addEventListener('click', handleSendMessage);
-        // 新增 touchend 支援，解決部分手機點擊無反應問題
-        sendBtn.addEventListener('touchend', (e) => {
-            e.preventDefault(); // 防止觸發 click 造成雙重發送
-            handleSendMessage();
-        });
-
+        sendBtn.addEventListener('touchend', (e) => { e.preventDefault(); handleSendMessage(); });
         userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSendMessage(); });
+        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); updateCameraPosition(); });
 
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            // 視窗改變大小時，重新檢查相機位置
-            updateCameraPosition();
-        });
-
-        // ⭐⭐⭐⭐⭐ 麥克風與語音辨識功能整合 (完全保留穩定版邏輯) ⭐⭐⭐⭐⭐
+        // 語音辨識
         let recognition = null;
         let isRecording = false;
         let silenceTimer = null;
         let finalTranscript = '';
-        const voiceOverlay = document.getElementById('voice-overlay'); // 藍色波動條
-
+        const voiceOverlay = document.getElementById('voice-overlay');
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SR();
-            
-            // ⭐⭐⭐ iOS 關鍵優化：強制關閉連續模式以解決辨識錯誤 ⭐⭐⭐
-            if (isIOS || isAndroid) {
-                recognition.continuous = false; // 手機版：講一句辨識一句，準確度最高
-                recognition.maxAlternatives = 1; // 減少運算負擔
-            } else {
-                recognition.continuous = true; // 電腦版：保持連續對話能力
-            }
-            
-            recognition.interimResults = true; 
-            recognition.lang = 'zh-TW'; // 預設中文，您可以根據需要修改
-
-            recognition.onstart = () => { 
-                isRecording = true; 
-                updateMicUI(true); 
-                // 停止背景音樂或 TTS 聲音，避免干擾
-                if (window.speechSynthesis) window.speechSynthesis.cancel();
-                // ⭐⭐⭐ 關鍵修復：開始錄音時強制暫停 BGM，避免迴音干擾辨識 ⭐⭐⭐
-                bgm.pause();
-                
-                isSpeaking = false; 
-            };
-            
-            recognition.onend = () => { 
-                // 如果是連續模式且仍然標記為錄音中（非手動停止），則嘗試重啟
-                if (isRecording) {
-                    // ⭐⭐⭐ iOS/Android 的手動連續模式模擬 ⭐⭐⭐
-                    if (isIOS || isAndroid) {
-                       // 手機版：短暫延遲後重啟，避免過度頻繁調用 API
-                       setTimeout(() => safeStartRecognition(), 100);
-                    } else {
-                       // ⭐⭐⭐ FIX: 電腦版也加入短暫延遲，避免 aborted 無限迴圈報錯 ⭐⭐⭐
-                       setTimeout(() => {
-                           if (isRecording) safeStartRecognition(); 
-                       }, 250);
-                    }
-                } else {
-                    updateMicUI(false); 
-                }
-            };
-            
-            recognition.onerror = (e) => { 
-                // ⭐⭐⭐ FIX: 忽略 no-speech 與 aborted 錯誤，避免洗版與無限迴圈 ⭐⭐⭐
-                if (e.error === 'no-speech' || e.error === 'aborted') {
-                    // 這是正常的靜音超時或是被系統中斷，讓 onend 負責延遲重啟即可
-                    return;
-                }
-
-                console.error("Speech Recognition Error:", e.error);
-                // 某些錯誤需要完全停止
-                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-                    isRecording = false;
-                    updateMicUI(false);
-                    // ⭐⭐⭐ 新增：如果權限被拒，明確提示使用者 ⭐⭐⭐
-                    alert("麥克風功能已被封鎖或不支援。\n請檢查瀏覽器權限設定，或嘗試在 Safari (iOS) / Chrome (Android) 中開啟。");
-                } else {
-                    // 其他錯誤嘗試重啟
-                    recognition.stop();
-                }
-            };
-
+            if (isIOS || isAndroid) { recognition.continuous = false; recognition.maxAlternatives = 1; } else { recognition.continuous = true; }
+            recognition.interimResults = true; recognition.lang = 'zh-TW';
+            recognition.onstart = () => { isRecording = true; updateMicUI(true); if (window.speechSynthesis) window.speechSynthesis.cancel(); bgm.pause(); isSpeaking = false; };
+            recognition.onend = () => { if (isRecording) { setTimeout(() => safeStartRecognition(), 200); } else { updateMicUI(false); } };
+            recognition.onerror = (e) => { if (e.error === 'no-speech' || e.error === 'aborted') return; isRecording = false; updateMicUI(false); };
             recognition.onresult = (e) => {
                 let interim = '';
-                // 重新組合最終結果與臨時結果
-                // 注意：這裡是簡易實作，直接覆蓋 input
-                // AITranslator 邏輯：
-                for (let i = e.resultIndex; i < e.results.length; ++i) {
-                    if (e.results[i].isFinal) {
-                        finalTranscript += e.results[i][0].transcript;
-                    } else {
-                        interim += e.results[i][0].transcript;
-                    }
-                }
-                
-                // 將結果填入輸入框
-                // 為了讓使用者體驗更好，我們保留使用者可能手打的部分嗎？
-                // 這裡採用 AITranslator 的邏輯：直接由語音主導
+                for (let i = e.resultIndex; i < e.results.length; ++i) { if (e.results[i].isFinal) { finalTranscript += e.results[i][0].transcript; } else { interim += e.results[i][0].transcript; } }
                 userInput.value = finalTranscript + interim;
-                
-                // 重置靜音計時器
                 clearTimeout(silenceTimer);
-                
-                // 如果有內容，設定 1.5 秒後自動發送
-                if (userInput.value.trim()) {
-                    silenceTimer = setTimeout(async () => { 
-                        const rawText = userInput.value.trim();
-                        if(rawText) {
-                            // ⭐⭐⭐ 修改：合併處理，不單獨呼叫校正 API，直接發送 ⭐⭐⭐
-                            handleSendMessage();
-                        }
-                    }, 1500);
-                }
+                if (userInput.value.trim()) { silenceTimer = setTimeout(async () => { handleSendMessage(); }, 1500); }
             };
-        } else {
-            console.warn("瀏覽器不支援 Web Speech API");
-            micBtn.style.display = 'none';
-        }
-
-        function toggleRecording() {
-            if(!recognition) return;
-            if(isRecording) stopRecording(); else startRecording();
-        }
-
-        // ⭐⭐⭐ [CRITICAL IOS FIX] 必須同步呼叫，移除 async/await ⭐⭐⭐
-        function startRecording() {
-            // ⭐ 新增：如果手動點擊錄音時大家正在跳舞，強制中斷跳舞並停止音樂
-            if (isDancing) {
-                stopDance();
-            }
-
-            // 1. 立即停止 TTS (同步執行)
-            if (window.speechSynthesis) {
-                // 加個 try-catch 確保萬無一失
-                try {
-                    window.speechSynthesis.cancel();
-                } catch(e) {}
-            }
-            isSpeaking = false;
-
-            // 2. 清空 UI
-            finalTranscript = ''; 
-            userInput.value = ''; 
-            isRecording = true; 
-            
-            // 3. 立即啟動錄音 (必須在 Event Loop 同一 tick 內)
-            safeStartRecognition();
-        }
-
-        function stopRecording() { 
-            isRecording = false; 
-            recognition.stop(); 
-            clearTimeout(silenceTimer); 
-            updateMicUI(false); 
-        }
-
-        function safeStartRecognition() { 
-            try { 
-                recognition.start(); 
-            } catch(e) {
-                // 有時候已經 start 了會報錯，忽略即可
-            } 
-        }
-
+        } else { micBtn.style.display = 'none'; }
+        function toggleRecording() { if(isRecording) stopRecording(); else startRecording(); }
+        function startRecording() { if (isDancing) stopDance(); if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch(e) {} } isSpeaking = false; finalTranscript = ''; userInput.value = ''; isRecording = true; safeStartRecognition(); }
+        function stopRecording() { isRecording = false; recognition.stop(); clearTimeout(silenceTimer); updateMicUI(false); }
+        function safeStartRecognition() { try { recognition.start(); } catch(e) {} }
         function updateMicUI(active) {
-            if(active) { 
-                micBtn.classList.add('recording-pulse'); // 加入紅色脈衝動畫
-                micBtn.innerHTML = '<i class="fa-solid fa-microphone-lines"></i>'; // 改變圖示
-                voiceOverlay.style.display = 'block'; // 顯示藍色波動條
-            } else { 
-                micBtn.classList.remove('recording-pulse'); 
-                micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>';
-                voiceOverlay.style.display = 'none'; // 隱藏藍色波動條
-            }
+            if(active) { micBtn.classList.add('recording-pulse'); micBtn.innerHTML = '<i class="fa-solid fa-microphone-lines"></i>'; voiceOverlay.style.display = 'block'; }
+            else { micBtn.classList.remove('recording-pulse'); micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>'; voiceOverlay.style.display = 'none'; }
         }
-
-        // 綁定麥克風按鈕事件
-        micBtn.addEventListener('click', (e) => {
-            logTTS(`麥克風按鈕觸發: ${e.type}`); // Debug 訊息
-            
-            // ⭐⭐⭐ 新增：LINE/Facebook 內建瀏覽器阻擋提示 ⭐⭐⭐
-            if (isIOS && (isLineApp || isFbApp)) {
-                alert("⚠️ LINE/Facebook 內建瀏覽器不支援麥克風錄音。\n\n請點擊右上角/右下角選單，選擇「在 Safari 開啟」或「開啟預設瀏覽器」即可使用完整功能。");
-                return;
-            }
-            
-            toggleRecording();
-        });
-
-        // ⭐⭐⭐ 新增：如果是手機版 (Android/iOS)，隱藏麥克風按鈕，僅保留PC版功能 ⭐⭐⭐
-        if (isAndroid || isIOS) {
-            micBtn.style.display = 'none';
-        }
-
+        micBtn.addEventListener('click', (e) => { if (isIOS && (isLineApp || isFbApp)) { alert("請在 Safari 開啟以使用麥克風。"); return; } toggleRecording(); });
+        if (isAndroid || isIOS) { micBtn.style.display = 'none'; }
     </script>
 </body>
 </html>
