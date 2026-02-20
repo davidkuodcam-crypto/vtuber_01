@@ -658,8 +658,9 @@
                      camera.position.set(0.0, 1.0, 7.0);
                      controls.target.set(0.0, 0.8, -0.5);
                 } else {
-                     camera.position.set(0.0, 1.4, 3.8);
-                     controls.target.set(0.0, 1.2, -0.5);
+                     // ⭐⭐⭐ 修改：將 PC 預設模式的攝影機大幅拉近，並稍微降低視角中心
+                     camera.position.set(0.0, 1.3, 2.8); // 將 Z 軸從 3.8 縮短至 2.8 讓角色更靠近
+                     controls.target.set(0.0, 1.1, -0.5); 
                 }
             }
             camera.updateProjectionMatrix();
