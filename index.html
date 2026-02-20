@@ -1476,7 +1476,7 @@
             }
         }
 
-        // ⭐⭐⭐ 1️⃣ JSON 解析器（終極防呆破裂版） ⭐⭐⭐
+        // ⭐⭐⭐ 1️⃣ JSON 解析器（終極防呆破裂版：修復 AI 漏逗號的問題） ⭐⭐⭐
         function safeParseAIJson(text) {
             try {
                 // 清除可能包含的 Markdown 標記
@@ -1489,8 +1489,11 @@
                 
                 let jsonStr = cleanText.substring(start, end + 1);
                 
-                // ⭐ 終極修復：把所有的真實換行符號替換成空格，避免字串內換行導致 JSON.parse 崩潰
+                // ⭐ 終極修復 1：把所有的真實換行符號替換成空格，避免字串內換行導致 JSON.parse 崩潰
                 jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                
+                // ⭐ 終極修復 2 (拯救矩陣)：AI 常常忘記二維陣列中間的逗號，例如 [[1,2][3,4]]，幫它補上變成 [[1,2], [3,4]]
+                jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
                 
                 // 修復常見壞 JSON
                 jsonStr = jsonStr
@@ -1531,9 +1534,9 @@
             if (!text) return null;
             const lowerText = text.toLowerCase();
             
-            // 如果關鍵字有「各自」或「分別」，兜底返回二維陣列的隨機指示
+            // 如果關鍵字有「各自」或「分別」，兜底返回二維陣列的隨機指示 (給予3個動作長度避免太快結束)
             if (lowerText.includes("各自") || lowerText.includes("分別")) {
-                return [[-1], [-1], [-1]]; // 每人各自隨機一種
+                return [[-1, -1, -1], [-1, -1, -1], [-1, -1, -1]]; 
             }
 
             const map = {
@@ -1995,7 +1998,7 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 修改 Prompt: 強制限定 JSON 輸出並防止 AI 幻覺 ⭐⭐⭐
+            // ⭐⭐⭐ 修改 Prompt: 強制限定 JSON 輸出並防止 AI 幻覺漏逗號 ⭐⭐⭐
             finalSystemInstruction += `
 【CRITICAL INSTRUCTIONS】
 1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json. The system will crash if you output plain text or invalid JSON.
@@ -2008,7 +2011,7 @@
      * Ex: "各自隨機選1種舞蹈各跳1次" -> "dance_list": [[2], [0], [3]]
      * Ex: "各自隨機選2種舞蹈各跳1次" -> "dance_list": [[1, 2], [3, 0], [2, 1]]
      * Ex: "各自隨機選1種舞蹈各跳2次" -> "dance_list": [[3, 3], [1, 1], [0, 0]]
-     * Ex: "各自隨機選3種舞蹈各跳2次" -> "dance_list": [[1,1,2,2,0,0], [3,3,1,1,2,2], [0,0,3,3,1,1]]
+     * Ex: "各自隨機選3種舞蹈各跳2次" -> "dance_list": [[1,1,2,2,0,0], [3,3,1,1,2,2], [0,0,3,3,1,1]] (CRITICAL: Do NOT forget commas between the sub-arrays!)
    - **SPEECH CONSISTENCY (CRITICAL)**: Your "text" value MUST perfectly match the number of dances you scheduled in "dance_list". Do not hallucinate different numbers.
 4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
    Example structure: { "text": "沒問題！我們這就各自為您展現一段隨機舞步！", "emotion": "happy", "action": "dance_sequence", "dance_list": [[2], [0], [3]], "corrected_text": "已修正語句" }
