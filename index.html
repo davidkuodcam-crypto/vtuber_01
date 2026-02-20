@@ -1422,7 +1422,7 @@
         function playCurrentStep() {
             if (!isDancing) return;
 
-            let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳
+            let dancersFinished = [true, true, true]; // ⭐ 預設大家都不用跳 (解決人數少於 3 會卡死的問題)
             let anyoneDancing = false;
             let stepTriggered = false; // ⭐ 加入單次鎖定，防止同步跳完時發生雙重觸發 Bug
 
@@ -1430,50 +1430,43 @@
                 if (!vrm || !vrm.userData.mixer) return;
 
                 const moveIndex = vrmDanceSequences[vrmIndex][danceStepIndex];
-                const nextAction = danceActionsMap[moveIndex]?.[vrmIndex];
-                const prevAction = currentActiveActions[vrmIndex];
+                const action = danceActionsMap[moveIndex]?.[vrmIndex];
 
-                if (nextAction) {
+                if (action) {
                     anyoneDancing = true;
-                    dancersFinished[vrmIndex] = false; 
-                    currentActiveActions[vrmIndex] = nextAction; 
+                    dancersFinished[vrmIndex] = false; // 有動作的人標為未完成
+                    currentActiveActions[vrmIndex] = action; // 記錄目前動作
                     
-                    // ⭐ 終極權重修復：智慧交接邏輯 (Crossfade Logic)
-                    if (prevAction && prevAction !== nextAction) {
-                        // 換新動作：舊的淡出，新的淡入
-                        prevAction.fadeOut(0.2);
-                        nextAction.reset();
-                        nextAction.setLoop(THREE.LoopOnce); 
-                        nextAction.clampWhenFinished = true; // 完美停格
-                        nextAction.fadeIn(0.2).play();
-                    } else {
-                        // 連續同一個動作，或是第一個動作：強制切斷殘留，直接滿權重播放！
-                        nextAction.stop(); 
-                        nextAction.reset();
-                        nextAction.setLoop(THREE.LoopOnce); 
-                        nextAction.clampWhenFinished = true; 
-                        nextAction.setEffectiveWeight(1); // 強制權重為 1，不使用 fade
-                        nextAction.play();
-                    }
+                    action.reset();
+                    action.setLoop(THREE.LoopOnce); 
+                    action.clampWhenFinished = true; // ⭐ 完美停格等待：播完停在最後一幀定格
+                    action.fadeIn(0.5); 
+                    action.play();
 
-                    // 為每個角色的 Mixer 獨立掛上一次性監聽器 
+                    // 為每個角色的 Mixer 獨立掛上一次性監聽器 (使用安全函式防止 Memory Leak)
                     const onFinished = (e) => {
-                        if (e.action === nextAction) {
+                        if (e.action === action) {
                             if (currentDanceListeners[vrmIndex]) {
                                 vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
                                 currentDanceListeners[vrmIndex] = null;
                             }
 
                             if (!isDancing) return;
-                            if (currentActiveActions[vrmIndex] !== nextAction) return; 
+                            if (currentActiveActions[vrmIndex] !== action) return; // 忽略舊動作
 
                             dancersFinished[vrmIndex] = true; // 標記這個角色已跳完
 
                             // ⭐ 只有當「三個人都跳完」且「尚未觸發過下一步」時，才一起進入下一步！
                             if (dancersFinished.every(v => v) && !stepTriggered) {
-                                stepTriggered = true; // 鎖定
+                                stepTriggered = true; // 鎖定，防止同幀內的其他人再次觸發
                                 
-                                // 注意：這裡不需要 FadeOut 所有動作，交給下一個 Step 的 Crossfade Logic 去處理，這樣動作銜接最自然
+                                // 淡出這回合的所有動作
+                                currentVrms.forEach((v, i) => {
+                                    const fadeAction = currentActiveActions[i];
+                                    if (fadeAction) fadeAction.fadeOut(0.5);
+                                });
+
+                                // 前進到下一步
                                 danceStepIndex++;
                                 if (danceStepIndex >= 4) {
                                     danceStepIndex = 0;
@@ -1544,10 +1537,19 @@
                 updateCameraPosition();
             }, 500);
             
-            // 恢復閒置動作 (不使用 stop/reset，直接平滑淡入)
-            if (idleActionC) { idleActionC.fadeIn(0.5).play(); }
-            if (idleActionW) { idleActionW.fadeIn(0.5).play(); }
-            if (idleActionD) { idleActionD.fadeIn(0.5).play(); }
+            // 恢復閒置動作
+            if (idleActionC) {
+                idleActionC.reset();
+                idleActionC.fadeIn(0.5).play();
+            }
+            if (idleActionW) {
+                idleActionW.reset();
+                idleActionW.fadeIn(0.5).play();
+            }
+            if (idleActionD) {
+                idleActionD.reset();
+                idleActionD.fadeIn(0.5).play();
+            }
         }
 
         function toggleDance() {
@@ -1580,9 +1582,6 @@
                 // ⭐ 終極修復 3 (防止單引號搗亂)
                 jsonStr = jsonStr.replace(/'/g, '"');
                 
-                // ⭐ 終極修復 4 (拯救空元素)：利用正則自動補齊 AI 輸出的空元素 [, ,] 成為 [99, 99, 99]
-                jsonStr = jsonStr.replace(/(?<=\[|,)\s*(?=[,\]])/g, '99');
-
                 // 修復常見壞 JSON
                 jsonStr = jsonStr
                     .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') // 修復空值
@@ -1600,24 +1599,14 @@
                         result.dance_list = null; // 設為 null，讓 handleAIResponse 用文字猜測
                     } else {
                         // ⭐ 強制轉換所有元素為數字，防止 AI 塞文字進來
-                        if (Array.isArray(result.dance_list[0])) {
-                            // 二維陣列：強制補齊 3 個子陣列
-                            while(result.dance_list.length < 3) {
-                                result.dance_list.push([99]);
+                        result.dance_list = result.dance_list.map(item => {
+                            if (Array.isArray(item)) {
+                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
+                            } else {
+                                let v = parseInt(item);
+                                return isNaN(v) ? -1 : v;
                             }
-                            result.dance_list = result.dance_list.map(item => {
-                                if (Array.isArray(item)) {
-                                    if(item.length === 0) return [99]; // 避免空陣列
-                                    return item.map(v => parseInt(v)).map(v => isNaN(v) ? 99 : v);
-                                } else {
-                                    let v = parseInt(item);
-                                    return [isNaN(v) ? 99 : v];
-                                }
-                            });
-                        } else {
-                            // 一維陣列
-                            result.dance_list = result.dance_list.map(v => parseInt(v)).map(v => isNaN(v) ? 99 : v);
-                        }
+                        });
                     }
                 }
                 return result;
@@ -1746,21 +1735,16 @@
                 // 淡出所有進行中的動作
                 currentVrms.forEach((v, i) => {
                     const fadeAction = currentActiveActions[i];
-                    // 確保我們淡出的是舞蹈動作，而不是他們原本站好的 Idle
-                    if (fadeAction && fadeAction !== idleActionC && fadeAction !== idleActionW && fadeAction !== idleActionD) {
-                        fadeAction.fadeOut(0.5);
-                    }
+                    if (fadeAction) fadeAction.fadeOut(0.5);
                 });
 
                 // 確保監聽器被清除
                 clearAllMixerListeners();
 
                 setTimeout(() => updateCameraPosition(), 500);
-                
-                // ⭐ 恢復閒置動作 (直接平滑淡入，完全移除 reset 造成的閃跳)
-                if (idleActionC) { idleActionC.fadeIn(0.5).play(); }
-                if (idleActionW) { idleActionW.fadeIn(0.5).play(); }
-                if (idleActionD) { idleActionD.fadeIn(0.5).play(); }
+                if (idleActionC) { idleActionC.reset(); idleActionC.fadeIn(0.5).play(); }
+                if (idleActionW) { idleActionW.reset(); idleActionW.fadeIn(0.5).play(); }
+                if (idleActionD) { idleActionD.reset(); idleActionD.fadeIn(0.5).play(); }
                 
                 // 當整個連續舞步全部跳完後，才執行之前因為跳舞而被擱置的麥克風重啟任務！
                 if (window.pendingMicResume) {
@@ -1803,8 +1787,7 @@
                 if (!vrm || !vrm.userData.mixer) return;
                 
                 let nextIndex = Array.isArray(nextData) ? nextData[vrmIndex] : nextData;
-                const prevAction = currentActiveActions[vrmIndex];
-
+                
                 // ⭐ 單獨跳舞邏輯：如果這個人的動作是 99，代表他這回合原地不動，我們幫他播放 Idle 動作！
                 if (nextIndex === 99) {
                     dancersFinished[vrmIndex] = true; // 設為 true 讓他不會阻礙其他人
@@ -1814,18 +1797,9 @@
                     if (vrmIndex === 1) idleA = idleActionW;
                     if (vrmIndex === 2) idleA = idleActionD;
                     
-                    // 如果他上一個動作不是 Idle，就把舊的淡出
-                    if (prevAction && prevAction !== idleA) {
-                        prevAction.fadeOut(0.2);
-                    }
-                    
                     if (idleA) {
-                        // 平滑淡入 Idle
-                        if (prevAction !== idleA) {
-                            idleA.reset().fadeIn(0.2).play();
-                        } else {
-                            idleA.setEffectiveWeight(1).play();
-                        }
+                        idleA.reset();
+                        idleA.fadeIn(0.5).play();
                         currentActiveActions[vrmIndex] = idleA;
                     } else {
                         currentActiveActions[vrmIndex] = null;
@@ -1833,47 +1807,38 @@
                     return; // 99 的人不需要綁定 onFinished 監聽器
                 }
                 
-                const nextAction = danceActionsMap[nextIndex]?.[vrmIndex];
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
                 
-                if (nextAction) {
+                if (action) {
                     anyoneDancing = true;
                     dancersFinished[vrmIndex] = false; // ⭐ 有動作的人才標記為 false
-                    currentActiveActions[vrmIndex] = nextAction; // 記錄目前動作
+                    currentActiveActions[vrmIndex] = action; // 記錄目前動作
                     
-                    // ⭐ 終極權重修復：智慧交接邏輯 (Crossfade Logic)
-                    if (prevAction && prevAction !== nextAction) {
-                        // 換新動作：舊的淡出，新的淡入
-                        prevAction.fadeOut(0.2);
-                        nextAction.reset();
-                        nextAction.setLoop(THREE.LoopOnce);
-                        nextAction.clampWhenFinished = true;
-                        nextAction.fadeIn(0.2).play();
-                    } else {
-                        // 連續同一個動作：強制切斷殘留，直接滿權重播放！
-                        nextAction.stop(); 
-                        nextAction.reset();
-                        nextAction.setLoop(THREE.LoopOnce);
-                        nextAction.clampWhenFinished = true;
-                        nextAction.setEffectiveWeight(1); // 強制權重為 1，不使用 fade
-                        nextAction.play();
-                    }
+                    action.reset();
+                    action.setLoop(THREE.LoopOnce);
+                    action.clampWhenFinished = true; // ⭐ 完美停格：保持定格，等其他人跳完
+                    action.fadeIn(0.5);
+                    action.play();
 
                     const onFinished = (e) => {
-                        if (e.action === nextAction) {
+                        if (e.action === action) {
                             if (currentDanceListeners[vrmIndex]) {
                                 vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
                                 currentDanceListeners[vrmIndex] = null;
                             }
 
                             if (!isDancing) return;
-                            if (currentActiveActions[vrmIndex] !== nextAction) return; // 忽略舊動作
+                            if (currentActiveActions[vrmIndex] !== action) return; // 忽略舊動作
 
                             dancersFinished[vrmIndex] = true; // 此人跳完
 
-                            // ⭐ 當三個人都完成動作後，且尚未觸發過下一步時，觸發下一輪！
-                            // (注意：不在此處 FadeOut，交給下一輪的 Crossfade 處理)
+                            // ⭐ 當三個人都完成動作後，且尚未觸發過下一步時，再一起淡出換下一個動作！
                             if (dancersFinished.every(v => v) && !stepTriggered) {
                                 stepTriggered = true; // 鎖定
+                                currentVrms.forEach((v, i) => {
+                                    const fadeAction = currentActiveActions[i];
+                                    if (fadeAction) fadeAction.fadeOut(0.5);
+                                });
                                 playNextDanceInQueue(); // 觸發下一輪
                             }
                         }
@@ -2108,7 +2073,6 @@
             
             // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 ⭐⭐⭐
             if (result && result.corrected_text) {
-                // 精準抓出畫面上最後一個發送的「使用者氣泡」，將文字替換掉
                 const userMsgs = document.querySelectorAll('.message-user');
                 if (userMsgs.length > 0) {
                     userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
@@ -2162,7 +2126,6 @@
             }
 
             userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
-            // ⭐ 在畫面顯示使用者輸入的原始訊息 (等 AI 回傳後若有錯字會在這裡被覆蓋)
             addMessage(text, 'user');
             
             if (isPreviewEnv) {
@@ -2185,7 +2148,7 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 修改 Prompt: 強制限定 JSON 輸出，明確定義 David，並嚴格防範空陣列 ⭐⭐⭐
+            // ⭐⭐⭐ 修改 Prompt: 強制限定 JSON 輸出並防止 AI 幻覺漏逗號 ⭐⭐⭐
             finalSystemInstruction += `
 【CRITICAL INSTRUCTIONS】
 1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json. The system will crash if you output plain text or invalid JSON.
@@ -2193,15 +2156,15 @@
 3. **DANCE SYSTEM**:
    - Dance IDs available: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B), 99(不跳舞/原地待命).
    - "action" must be "dance_sequence".
-   - **預設齊舞 (1D Array)**: 這是系統的【預設模式】。除非使用者明確指示某人「各自」、「分別」、「單獨跳」，否則你【絕對只能】回傳一維陣列，讓所有人同步跳一樣的舞！ Ex: "跳兩次" -> "dance_list": [1, 1].
-   - **各自跳舞/單獨跳 (2D Array)**: 只有當使用者特別要求時，才回傳 2D 陣列。這個陣列【必須包含剛好 3 個子陣列】，依序對應: 第一人(左)、第二人(中)、第三人(右/David)。若某人不跳，請務必填入 [99]，【絕對不可以留空】！
-     * Ex: "各自隨機跳1次" -> "dance_list": [[2], [0], [3]]
-     * Ex: "第三人(David)單獨跳嘻哈" -> "dance_list": [[99], [99], [2]]
-     * Ex: "第一人先跳定格A再跳定格B" -> "dance_list": [[0, 3], [99], [99]]
-     * 嚴禁輸出 [,,] 或是 [[],[],[]] 這種格式，不跳舞請一律使用 [99]。
-   - **SPEECH CONSISTENCY (CRITICAL)**: Your "text" value MUST perfectly match the dances you scheduled.
+   - **預設齊舞 (1D Array)**: 這是系統的【預設模式】。除非使用者明確說出「各自」、「分別」、「單獨」等字眼，否則你【絕對只能】回傳一維陣列 (1D Array)，讓所有人同步跳一樣的舞！ Ex: "跳兩次" -> "dance_list": [1, 1].
+   - **各自跳舞 (2D Array)**: 只有當使用者特別要求「各自跳」時，才回傳 2D 陣列 (包含 3 個子陣列，依序對應 C、W、David)。若某人被要求「單獨跳」，其他人請填寫 99。
+     * Ex: "各自隨機選1種舞蹈各跳1次" -> "dance_list": [[2], [0], [3]]
+     * Ex: "第一人單獨跳嘻哈，其他不動" -> "dance_list": [[2], [99], [99]]
+     * Ex: "各自隨機選1種舞蹈各跳2次" -> "dance_list": [[3, 3], [1, 1], [0, 0]]
+     * Ex: "各自隨機選3種舞蹈各跳2次" -> "dance_list": [[1,1,2,2,0,0], [3,3,1,1,2,2], [0,0,3,3,1,1]] (CRITICAL: 子陣列之間必須加逗號!)
+   - **SPEECH CONSISTENCY (CRITICAL)**: Your "text" value MUST perfectly match the number of dances you scheduled in "dance_list". Do not hallucinate different numbers.
 4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
-   Example: { "text": "沒問題！現在請David單獨為您跳一段！", "emotion": "happy", "action": "dance_sequence", "dance_list": [[99], [99], [0, 3]], "corrected_text": "已修正語句" }
+   Example structure: { "text": "沒問題！我們這就為您跳舞！", "emotion": "happy", "action": "dance_sequence", "dance_list": [2, 0], "corrected_text": "已修正語句" }
 `;
 
             // Add AbortController for timeout
@@ -2391,11 +2354,20 @@
                     if (talkingActionD) talkingActionD.fadeOut(0.5); // 新增 D
                     
                     // 恢復閒置
-                    // ⭐⭐⭐ 關鍵修復：移除強制 reset()，改為直接平滑 fadeIn，解決結束瞬間抽搐閃跳現象 ⭐⭐⭐
+                    // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
-                        if (idleActionC) { idleActionC.fadeIn(0.5).play(); }
-                        if (idleActionW) { idleActionW.fadeIn(0.5).play(); }
-                        if (idleActionD) { idleActionD.fadeIn(0.5).play(); }
+                        if (idleActionC) {
+                            idleActionC.reset(); 
+                            idleActionC.fadeIn(0.5).play();
+                        }
+                        if (idleActionW) {
+                            idleActionW.reset(); 
+                            idleActionW.fadeIn(0.5).play();
+                        }
+                        if (idleActionD) {
+                            idleActionD.reset(); 
+                            idleActionD.fadeIn(0.5).play();
+                        }
                     }
 
                     // ⭐⭐⭐ Auto Resume Mic logic ⭐⭐⭐
