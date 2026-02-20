@@ -396,7 +396,16 @@
         white-space: pre-wrap;
         word-wrap: break-word;
         box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-    }
+
+        /* 將面板推到螢幕外面，而不是消失 */
+        top: -9999px; 
+        left: -9999px;
+        /* 或者將透明度設為 0 */
+        opacity: 0;
+        pointer-events: none; /* 確保不會誤點 */
+        z-index: -1;
+        
+        }
     @media (max-width: 600px) {
         #action-debug-panel {
             width: 90%;
