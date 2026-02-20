@@ -2009,6 +2009,7 @@
      * **SYNC DANCE (齊舞)**: Return a 1D array. Ex: "跳三次" -> [1, 1, 1]. "隨機跳" -> [-1].
      * **INDEPENDENT DANCE (各自跳不同的)**: If user says "各自隨機選1種跳2次" or "各自...", return a 2D array with 3 sub-arrays (for 3 characters). You MUST pick the specific random IDs yourself. Ex: "各自隨機1種跳2次" -> [[2,2], [0,0], [3,3]]. "各自隨機2種各1次" -> [[1,2], [3,0], [2,1]]. "第一人跳嘻哈,第二人跳湯瑪斯,第三人跳霹靂" -> [[2], [1], [0]].
      * Use -1 for random if you don't pick specific IDs.
+   - **SPEECH CONSISTENCY (CRITICAL)**: Your spoken "text" MUST accurately describe the actual dance arrangement in "dance_list". Do NOT hallucinate different numbers. If the user asks for 1 type, confirm 1 type. You can casually announce which specific dances you picked for everyone!
 
 5. **SPEECH CORRECTION**: The input is raw speech text. You MUST correct typos/grammar in the user's text and return the corrected version in the JSON field "corrected_text".
    Example JSON: { "text": "...", "emotion": "...", "action": "...", "dance_list": [...], "corrected_text": "已修正的使用者語句" }
