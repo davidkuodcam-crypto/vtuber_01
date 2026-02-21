@@ -2454,28 +2454,33 @@
                     isOpeningRemark = false; // ⭐ 重置開場白標記
                     
                     // ⭐⭐⭐ 終極修復：檢查剛才是否真的有在播放「說話動作」 ⭐⭐⭐
-                    const wasTalkingC = talkingActionC && talkingActionC.getEffectiveWeight() > 0;
-                    const wasTalkingW = talkingActionW && talkingActionW.getEffectiveWeight() > 0;
-                    const wasTalkingD = talkingActionD && talkingActionD.getEffectiveWeight() > 0;
+                    // 如果一開始講話時正在跳舞，說話動作根本沒被觸發。
+                    // 此時若語音結束後盲目 reset idleAction，會把「跳舞結束時好不容易恢復的 Idle」打斷，導致 T-pose 閃爍（舉手）。
+                    const wasTalkingC = talkingActionC && talkingActionC.isRunning() && talkingActionC.getEffectiveWeight() > 0;
+                    const wasTalkingW = talkingActionW && talkingActionW.isRunning() && talkingActionW.getEffectiveWeight() > 0;
+                    const wasTalkingD = talkingActionD && talkingActionD.isRunning() && talkingActionD.getEffectiveWeight() > 0;
 
-                    // ⭐⭐⭐ 新增：只有剛剛有播說話動作時，才將其淡出 ⭐⭐⭐
-                    if (wasTalkingC) talkingActionC.fadeOut(0.5);
-                    if (wasTalkingW) talkingActionW.fadeOut(0.5); 
-                    if (wasTalkingD) talkingActionD.fadeOut(0.5); // 新增 D
+                    // ⭐⭐⭐ 新增：停止說話動作，淡出回原本狀態 ⭐⭐⭐
+                    if (talkingActionC) talkingActionC.fadeOut(0.5);
+                    if (talkingActionW) talkingActionW.fadeOut(0.5); 
+                    if (talkingActionD) talkingActionD.fadeOut(0.5); // 新增 D
                     
                     // 恢復閒置
                     // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
-                        // ⭐ 修復：移除 reset() 防止強制回到第一幀引起的 A-pose 抖動，並且確認只有在剛剛有說話時，才重新淡入閒置動作
-                        if (idleActionC && wasTalkingC) {
+                        // ⭐ 修復：加入 setEffectiveWeight 徹底解決 David 突然舉手的問題
+                        if (idleActionC) {
+                            idleActionC.reset(); 
                             idleActionC.setEffectiveWeight(1);
                             idleActionC.fadeIn(0.5).play();
                         }
-                        if (idleActionW && wasTalkingW) {
+                        if (idleActionW) {
+                            idleActionW.reset(); 
                             idleActionW.setEffectiveWeight(1);
                             idleActionW.fadeIn(0.5).play();
                         }
-                        if (idleActionD && wasTalkingD) {
+                        if (idleActionD) {
+                            idleActionD.reset(); 
                             idleActionD.setEffectiveWeight(1);
                             idleActionD.fadeIn(0.5).play();
                         }
