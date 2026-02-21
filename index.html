@@ -1446,11 +1446,15 @@
                     anyoneDancing = true;
                     dancersFinished[vrmIndex] = false; // 有動作的人標為未完成
                     
-                    // ⭐ 核心修復：使用 crossFadeTo 平滑過渡 (Warp設為false防變速)，並強制設定TimeScale為1
+                    // ⭐ 核心修復：強制設定 action.timeScale = 1
                     if (oldAction === action) {
-                        action.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+                        action.reset();
+                        action.timeScale = 1;
+                        action.setEffectiveWeight(1).play();
                     } else {
-                        action.reset().setEffectiveTimeScale(1).setLoop(THREE.LoopOnce); 
+                        action.reset();
+                        action.timeScale = 1;
+                        action.setLoop(THREE.LoopOnce); 
                         action.clampWhenFinished = true; // ⭐ 完美停格等待：播完停在最後一幀定格
                         action.setEffectiveWeight(1).play();
                         if (oldAction && oldAction.getEffectiveWeight() > 0) {
@@ -1555,7 +1559,9 @@
             // ⭐ 使用 crossFadeTo 平滑返回 (Warp設為false)，強制TimeScale重置
             const safeReturnToIdle = (idle, activeAct) => {
                 if (!idle) return;
-                idle.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+                idle.reset();
+                idle.timeScale = 1;
+                idle.setEffectiveWeight(1).play();
                 if (activeAct && activeAct !== idle && activeAct.getEffectiveWeight() > 0) {
                     activeAct.crossFadeTo(idle, 0.5, false); // 修改為 false 解決不預期變速
                 }
@@ -1851,7 +1857,9 @@
                 // ⭐ 核心修正：使用 crossFadeTo 平滑過渡回 Idle (Warp設為false)，並確保時間軸與權重滿載
                 const returnToIdle = (idle, activeAct) => {
                     if (!idle) return;
-                    idle.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+                    idle.reset();
+                    idle.timeScale = 1; // 確保原速
+                    idle.setEffectiveWeight(1).play();
                     if (activeAct && activeAct !== idle && activeAct.getEffectiveWeight() > 0) {
                         activeAct.crossFadeTo(idle, 0.5, false); // 修改為 false 解決不預期變速
                     }
@@ -1927,7 +1935,9 @@
                     if (vrmIndex === 2) idleA = idleActionD;
                     
                     if (idleA) {
-                        idleA.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+                        idleA.reset();
+                        idleA.timeScale = 1; // 確保原速
+                        idleA.setEffectiveWeight(1).play();
                         if (oldAction && oldAction !== idleA && oldAction.getEffectiveWeight() > 0) {
                             oldAction.crossFadeTo(idleA, 0.5, false); // 修改為 false 解決不預期變速
                         }
@@ -1945,18 +1955,18 @@
                     // ⭐ 如果有指定時間，我們就不依賴動畫的自然結束 (不掛監聽器，直接放行 true)
                     dancersFinished[vrmIndex] = hasDuration ? true : false; 
                     
-                    // ⭐ 核心切換邏輯：判斷要變速跳完 (TimeScale)，或是自然長度循環/單次
+                    // ⭐ 核心切換邏輯：必須先 reset() 之後再設定 timeScale，因為 reset() 會把 timeScale 歸零為 1
                     action.reset();
                     
                     if (hasDuration && stepFit) {
                         // 強制變速以在時限內跳完一次
                         const clipDuration = action.getClip().duration;
-                        action.setEffectiveTimeScale(clipDuration / stepDuration);
+                        action.timeScale = clipDuration / stepDuration;
                         action.setLoop(THREE.LoopOnce);
                         action.clampWhenFinished = true;
                     } else {
                         // 沒有指定變速，一律以原速跳
-                        action.setEffectiveTimeScale(1);
+                        action.timeScale = 1;
                         action.setLoop(hasDuration ? THREE.LoopRepeat : THREE.LoopOnce);
                         action.clampWhenFinished = !hasDuration; // 若有限制時間，不要停格，直接循環
                     }
@@ -2258,12 +2268,11 @@
                 triggerAction(result.action, 2000);
             }
             
-            // ⭐⭐⭐ 恢復文字修正功能：完全使用 index01.html 的程式碼 ⭐⭐⭐
+            // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 (嚴格遵循 index01.html 的寫法) ⭐⭐⭐
             if (result && result.corrected_text) {
-                console.log("更新校正文字:", result.corrected_text);
-                const lastUserMsg = document.querySelector('.message-user:last-child');
-                if (lastUserMsg) {
-                    lastUserMsg.innerHTML = result.corrected_text;
+                const userMsgs = document.querySelectorAll('.message-user');
+                if (userMsgs.length > 0) {
+                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
                 }
             }
         }
@@ -2487,7 +2496,9 @@
                     if (!isDancing) {
                         const safeTalkTransition = (idle, talk) => {
                             if (!talk) return;
-                            talk.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+                            talk.reset();
+                            talk.timeScale = 1; // 確保說話動作原速
+                            talk.setEffectiveWeight(1).play();
                             if (idle && idle !== talk && idle.getEffectiveWeight() > 0) {
                                 idle.crossFadeTo(talk, 0.2, false); // 修改為 false 解決不預期變速
                             }
@@ -2515,11 +2526,13 @@
                     isOpeningRemark = false; // ⭐ 重置開場白標記
                     
                     // 恢復閒置
-                    // ⭐⭐⭐ 關鍵：使用 crossFadeTo 平滑過渡 (Warp設為false)
+                    // ⭐⭐⭐ 關鍵：使用 crossFadeTo 平滑過渡 (Warp設為false) 並確保 Idle 原速
                     if (!isDancing) {
                         const safeIdleTransition = (idle, talk) => {
                             if (!idle) return;
-                            idle.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+                            idle.reset();
+                            idle.timeScale = 1; // 確保原速
+                            idle.setEffectiveWeight(1).play();
                             if (talk && talk !== idle && talk.getEffectiveWeight() > 0) {
                                 talk.crossFadeTo(idle, 0.5, false); // 修改為 false 解決不預期變速
                             }
