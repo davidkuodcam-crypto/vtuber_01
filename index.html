@@ -1660,6 +1660,51 @@
             return null;
         }
 
+        // ⭐⭐⭐ 新增：防呆過濾器，強制將 AI 錯誤的 1D 齊舞指令修正為單人跳舞 ⭐⭐⭐
+        function fixDanceSequence(seq, referenceText) {
+            // 只有當傳入的是有效陣列且為 1D 陣列時才介入處理
+            if (!seq || !Array.isArray(seq) || seq.length === 0) return seq;
+            if (Array.isArray(seq[0])) return seq; // 已經是 2D 陣列，代表 AI 有照做，信任 AI
+
+            const txt = referenceText.toLowerCase();
+            
+            // 偵測是否明確指定特定角色
+            const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("c");
+            const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("w");
+            const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維");
+            
+            // 偵測是否有排他性字眼
+            const exclusive = txt.includes("其他人不") || txt.includes("其他人不要") || txt.includes("單獨") || txt.includes("只有") || txt.includes("自己");
+
+            // 確保沒有要求大家一起跳
+            const together = txt.includes("一起") || txt.includes("大家") || txt.includes("所有人");
+
+            // 若有要求單獨跳的語意，強制把 1D 陣列拆成 2D 單人跳陣列
+            if ((p1 || p2 || p3 || exclusive) && !together) {
+                let fixedSeq = [[], [], []];
+                let shouldDance = [false, false, false];
+                
+                if (p1) shouldDance[0] = true;
+                if (p2) shouldDance[1] = true;
+                if (p3) shouldDance[2] = true;
+
+                // 防呆：如果只說了「單獨跳」但完全沒提到是誰，或是辨識不到，預設指派給第三位或中間
+                if (!shouldDance.includes(true)) {
+                    shouldDance[2] = true; // 依據您的測試情境，預設指給第三位
+                }
+
+                for (let i = 0; i < 3; i++) {
+                    // 若此人該跳，就給原陣列；否則塞滿對應長度的 99 (不跳)
+                    fixedSeq[i] = shouldDance[i] ? [...seq] : Array(seq.length).fill(99);
+                }
+                
+                logAction(`[系統防呆] 攔截 AI 錯誤的 1D 齊舞陣列，已自動修正為單獨跳舞: ${JSON.stringify(fixedSeq)}`);
+                return fixedSeq;
+            }
+            return seq; // 若無特殊關鍵字，維持原本陣列
+        }
+
+
         // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（強大升級版：支援每個角色各自不同的舞步與長度） ⭐⭐⭐
         async function playDanceSequence(sequence) {
             // 在 await 之前先將狀態設為 true
@@ -2101,6 +2146,16 @@
 
             // 如果判定要跳舞，執行跳舞
             if (danceSeq) {
+                // ⭐⭐⭐ 收集語境，幫助防呆函數判斷
+                let contextText = aiText;
+                // 取出使用者最近一次說的話 (倒數第二筆紀錄)
+                if (chatHistory.length >= 2 && chatHistory[chatHistory.length - 2].role === "user") {
+                    contextText += " " + chatHistory[chatHistory.length - 2].parts[0].text;
+                }
+
+                // ⭐ 終極防呆：修正 AI 偷懶給 1D 陣列，但文字明明要求單獨跳的情況
+                danceSeq = fixDanceSequence(danceSeq, contextText);
+                
                 playDanceSequence(danceSeq);
             } 
             
@@ -2413,18 +2468,18 @@
                     // 恢復閒置
                     // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
-                        // ⭐ 修復：只有在「剛才真的有播放說話動作」的情況下，才需要重新播放 Idle！
-                        if (wasTalkingC && idleActionC) {
+                        // ⭐ 修復：加入 setEffectiveWeight 徹底解決 David 突然舉手的問題
+                        if (idleActionC) {
                             idleActionC.reset(); 
                             idleActionC.setEffectiveWeight(1);
                             idleActionC.fadeIn(0.5).play();
                         }
-                        if (wasTalkingW && idleActionW) {
+                        if (idleActionW) {
                             idleActionW.reset(); 
                             idleActionW.setEffectiveWeight(1);
                             idleActionW.fadeIn(0.5).play();
                         }
-                        if (wasTalkingD && idleActionD) {
+                        if (idleActionD) {
                             idleActionD.reset(); 
                             idleActionD.setEffectiveWeight(1);
                             idleActionD.fadeIn(0.5).play();
