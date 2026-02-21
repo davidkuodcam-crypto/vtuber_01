@@ -646,7 +646,6 @@
         function updateVoices() {
             if (!window.speechSynthesis) return;
             const voices = window.speechSynthesis.getVoices();
-            // console.log("Voices loaded:", voices.length); // Debug
             if (voices.length > 0) {
                 // Android 優先策略：
                 // 1. 本地 (localService) 的繁體中文
@@ -715,7 +714,7 @@
                     controls.target.set(0.0, 0.8, -0.5); // 瞄準陣型中心
                 } else {
                     // 對話時：相機拉近、視點提高，特寫上半身
-                    camera.position.set(0.0, 1.35, 3.5); 
+                    camera.position.set(0.0, 1.35, 3.2); 
                     controls.target.set(0.0, 1.2, -0.5);
                 }
             } else {
@@ -724,9 +723,9 @@
                      camera.position.set(0.0, 1.0, 7.0);
                      controls.target.set(0.0, 0.8, -0.5);
                 } else {
-                     // ⭐⭐⭐ 修改：回復原版攝影機距離，解決跳舞回來後瞬間拉近的問題
-                     camera.position.set(0.0, 1.4, 3.8); 
-                     controls.target.set(0.0, 1.2, -0.5); 
+                     // ⭐⭐⭐ 完美還原 index01.html 的對話時預設攝影機位置，解決跳舞回來後瞬間拉近的問題
+                     camera.position.set(0.0, 1.3, 2.8); 
+                     controls.target.set(0.0, 1.1, -0.5); 
                 }
             }
             camera.updateProjectionMatrix();
@@ -1071,6 +1070,37 @@
             });
 
             return Promise.all([pC, pW, pD]);
+        }
+
+        // ⭐⭐⭐ 終極防抖與過渡引擎 (防A-pose、防抽動、防假死) ⭐⭐⭐
+        function performSafeTransition(newAction, oldAction, duration = 0.5, targetTimeScale = 1) {
+            if (!newAction) return;
+            
+            // 確保新動作設定正確速度與啟用
+            newAction.setEffectiveTimeScale(targetTimeScale);
+            newAction.enabled = true;
+            
+            // 如果舊動作存在，且確實在畫面上佔有權重 (大於0.01防止浮點誤差)
+            if (oldAction && oldAction !== newAction && oldAction.getEffectiveWeight() > 0.01) {
+                newAction.play();
+                // 如果變速太誇張 (低於0.2倍速或太快)，使用 crossFadeTo 會導致長時間停頓假死
+                // 此時我們強制縮短過渡時間，或者直接硬切
+                if (targetTimeScale < 0.2 || targetTimeScale > 5.0) {
+                    newAction.setEffectiveWeight(1);
+                    oldAction.setEffectiveWeight(0);
+                    oldAction.stop();
+                } else {
+                    oldAction.crossFadeTo(newAction, duration, false); // warp = false 防止變速繼承
+                }
+            } else {
+                // 舊動作已經沒權重，直接給滿新權重，絕對不可使用 fadeIn，否則會出現 0 權重 A-pose
+                newAction.setEffectiveWeight(1);
+                newAction.play();
+                if (oldAction && oldAction !== newAction) {
+                    oldAction.setEffectiveWeight(0);
+                    oldAction.stop();
+                }
+            }
         }
 
         Promise.all([...loadPromises, loadExternalData()]).then(() => {
@@ -1446,23 +1476,11 @@
                     anyoneDancing = true;
                     dancersFinished[vrmIndex] = false; // 有動作的人標為未完成
                     
-                    // ⭐ 核心修復：強制設定 action.timeScale = 1
-                    if (oldAction === action) {
-                        action.reset();
-                        action.timeScale = 1;
-                        action.setEffectiveWeight(1).play();
-                    } else {
-                        action.reset();
-                        action.timeScale = 1;
-                        action.setLoop(THREE.LoopOnce); 
-                        action.clampWhenFinished = true; // ⭐ 完美停格等待：播完停在最後一幀定格
-                        
-                        action.enabled = true;
-                        action.fadeIn(0.5).play(); // ⭐ 使用 fadeIn 平滑過渡
-                        if (oldAction && oldAction !== action) {
-                            oldAction.fadeOut(0.5); 
-                        }
-                    }
+                    // ⭐ 核心修復：使用 performSafeTransition 確保不發生 A-pose 或抽動
+                    action.reset();
+                    action.setLoop(THREE.LoopOnce, 1); 
+                    action.clampWhenFinished = true;
+                    performSafeTransition(action, oldAction, 0.5, 1);
                     
                     currentActiveActions[vrmIndex] = action; // 記錄目前動作
 
@@ -1558,19 +1576,9 @@
             }, 500);
             
             // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose (A-pose)
-            // ⭐ 使用 fadeIn / fadeOut 平滑返回，強制TimeScale重置，絕對不呼叫 idle.reset() 防止抽動
-            const safeReturnToIdle = (idle, activeAct) => {
-                if (!idle) return;
-                idle.timeScale = 1;
-                idle.enabled = true;
-                idle.fadeIn(0.5).play();
-                if (activeAct && activeAct !== idle) {
-                    activeAct.fadeOut(0.5);
-                }
-            };
-            safeReturnToIdle(idleActionC, currentActiveActions[0]);
-            safeReturnToIdle(idleActionW, currentActiveActions[1]);
-            safeReturnToIdle(idleActionD, currentActiveActions[2]);
+            performSafeTransition(idleActionC, currentActiveActions[0], 0.5, 1);
+            performSafeTransition(idleActionW, currentActiveActions[1], 0.5, 1);
+            performSafeTransition(idleActionD, currentActiveActions[2], 0.5, 1);
 
             currentActiveActions = [null, null, null]; // ⭐ 清空追蹤
         }
@@ -1861,19 +1869,10 @@
                 bgm.currentTime = 0;
                 danceBtn.classList.remove('active');
 
-                // ⭐ 核心修正：使用 fadeIn/fadeOut 平滑過渡回 Idle，絕對不呼叫 idle.reset() 避免抽動
-                const returnToIdle = (idle, activeAct) => {
-                    if (!idle) return;
-                    idle.timeScale = 1; // 確保原速
-                    idle.enabled = true;
-                    idle.fadeIn(0.5).play();
-                    if (activeAct && activeAct !== idle) {
-                        activeAct.fadeOut(0.5);
-                    }
-                };
-                returnToIdle(idleActionC, currentActiveActions[0]);
-                returnToIdle(idleActionW, currentActiveActions[1]);
-                returnToIdle(idleActionD, currentActiveActions[2]);
+                // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose (A-pose)
+                performSafeTransition(idleActionC, currentActiveActions[0], 0.5, 1);
+                performSafeTransition(idleActionW, currentActiveActions[1], 0.5, 1);
+                performSafeTransition(idleActionD, currentActiveActions[2], 0.5, 1);
 
                 // 確保監聽器被清除
                 clearAllMixerListeners();
@@ -1942,20 +1941,14 @@
                     if (vrmIndex === 2) idleA = idleActionD;
                     
                     if (idleA) {
-                        // 防抽動：只有當他上一秒「不是」Idle 的時候，才重新 Reset 確保無縫
+                        // 防抽動：只有當他上一秒「不是」Idle 的時候，才重新進行過渡
                         if (oldAction !== idleA) {
-                            // 不呼叫 idle.reset()，防止切換回來時因為時間歸零而抽動
-                            idleA.timeScale = 1; // 確保原速
-                            idleA.enabled = true;
-                            idleA.fadeIn(0.5).play();
-                            if (oldAction) {
-                                oldAction.fadeOut(0.5);
-                            }
+                            performSafeTransition(idleA, oldAction, 0.5, 1);
                         } else {
                             // 若本來就在播 Idle，只要保證滿速滿權重即可，不重新 Reset，防止原地抽一下
-                            idleA.timeScale = 1;
-                            idleA.enabled = true;
-                            idleA.fadeIn(0.5).play();
+                            idleA.setEffectiveTimeScale(1);
+                            idleA.setEffectiveWeight(1);
+                            idleA.play();
                         }
                         currentActiveActions[vrmIndex] = idleA;
                     } else {
@@ -1971,28 +1964,25 @@
                     // ⭐ 如果有指定時間，我們就不依賴動畫的自然結束 (不掛監聽器，直接放行 true)
                     dancersFinished[vrmIndex] = hasDuration ? true : false; 
                     
-                    // ⭐ 核心切換邏輯：必須先 reset() 之後再設定 timeScale，因為 reset() 會把 timeScale 歸零為 1
+                    // ⭐ 核心切換邏輯：計算目標速度
                     action.reset();
+                    let targetTS = 1;
                     
                     if (hasDuration && stepFit) {
                         // 強制變速以在時限內跳完一次
                         const clipDuration = action.getClip().duration;
-                        action.timeScale = clipDuration / stepDuration;
-                        action.setLoop(THREE.LoopOnce);
+                        targetTS = clipDuration / stepDuration;
+                        action.setLoop(THREE.LoopOnce, 1);
                         action.clampWhenFinished = true;
                     } else {
                         // 沒有指定變速，一律以原速跳
-                        action.timeScale = 1;
-                        action.setLoop(hasDuration ? THREE.LoopRepeat : THREE.LoopOnce);
+                        targetTS = 1;
+                        action.setLoop(hasDuration ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
                         action.clampWhenFinished = !hasDuration; // 若有限制時間，不要停格，直接循環
                     }
                     
-                    action.enabled = true;
-                    action.fadeIn(0.5).play();
-                    
-                    if (oldAction && oldAction !== action) {
-                        oldAction.fadeOut(0.5);
-                    }
+                    // 執行安全過渡，防止變速極端時假死或A-pose
+                    performSafeTransition(action, oldAction, 0.5, targetTS);
                     
                     currentActiveActions[vrmIndex] = action; // 記錄目前動作
 
@@ -2538,18 +2528,9 @@
                     logTTS("開始播放 (onstart)");
                     // ⭐⭐⭐ 新增：只有在沒有跳舞，且有專屬動作時才播放 ⭐⭐⭐
                     if (!isDancing) {
-                        const safeTalkTransition = (idle, talk) => {
-                            if (!talk) return;
-                            talk.timeScale = 1; // 確保說話動作原速
-                            talk.enabled = true;
-                            talk.fadeIn(0.2).play();
-                            if (idle && idle !== talk) {
-                                idle.fadeOut(0.2); // 隱藏閒置，絕對不呼叫 idle.reset()
-                            }
-                        };
-                        safeTalkTransition(idleActionC, talkingActionC);
-                        safeTalkTransition(idleActionW, talkingActionW);
-                        safeTalkTransition(idleActionD, talkingActionD);
+                        performSafeTransition(talkingActionC, idleActionC, 0.2);
+                        performSafeTransition(talkingActionW, idleActionW, 0.2);
+                        performSafeTransition(talkingActionD, idleActionD, 0.2);
                     }
                 };
                 
@@ -2570,20 +2551,11 @@
                     isOpeningRemark = false; // ⭐ 重置開場白標記
                     
                     // 恢復閒置
-                    // ⭐⭐⭐ 關鍵：使用 fadeIn/fadeOut 平滑過渡，並確保 Idle 原速，絕對不呼叫 reset() 避免抽動
+                    // ⭐⭐⭐ 關鍵：使用過渡引擎平滑過渡，絕對不呼叫 reset() 避免抽動
                     if (!isDancing) {
-                        const safeIdleTransition = (idle, talk) => {
-                            if (!idle) return;
-                            idle.timeScale = 1; // 確保原速
-                            idle.enabled = true;
-                            idle.fadeIn(0.5).play(); // 平滑顯示回閒置，不歸零時間軸
-                            if (talk && talk !== idle) {
-                                talk.fadeOut(0.5);
-                            }
-                        };
-                        safeIdleTransition(idleActionC, talkingActionC);
-                        safeIdleTransition(idleActionW, talkingActionW);
-                        safeIdleTransition(idleActionD, talkingActionD);
+                        performSafeTransition(idleActionC, talkingActionC, 0.5, 1);
+                        performSafeTransition(idleActionW, talkingActionW, 0.5, 1);
+                        performSafeTransition(idleActionD, talkingActionD, 0.5, 1);
                     } else {
                         // 如果此時正在跳舞，就只要淡出說話動作，不干涉跳舞的動作
                         if (talkingActionC) talkingActionC.fadeOut(0.5);
@@ -2731,7 +2703,7 @@
                     silenceTimer = setTimeout(async () => { 
                         const rawText = userInput.value.trim();
                         if(rawText) {
-                            // ⭐⭐⭐ 恢復：獨立的文字校正 API 呼叫 ⭐⭐⭐
+                            // ⭐⭐⭐ 恢復：獨立的文字校正 API 呼叫 (完全比照 index01.html) ⭐⭐⭐
                             userInput.disabled = true;
                             const oldPlaceholder = userInput.placeholder;
                             userInput.placeholder = "文字校正中...";
