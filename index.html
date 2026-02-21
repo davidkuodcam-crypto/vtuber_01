@@ -621,11 +621,12 @@
         let danceStepIndex = 0;    // 目前跳到該回合的第幾個動作 (0~3)
         let vrmDanceSequences = []; // 儲存每個 VRM 在該回合的動作順序 [VRM1_Seq, VRM2_Seq]
         
-        // ⭐⭐⭐ 新增：連續舞步與「指定時間長度」播放佇列 ⭐⭐⭐
+        // ⭐⭐⭐ 新增：連續舞步與「指定時間/變速」播放佇列 ⭐⭐⭐
         let currentDanceQueue = [];
-        let currentDanceDurationsQueue = []; // 新增：用來記錄每一步對應的秒數
+        let currentDanceDurationsQueue = []; // 記錄每一步對應的秒數
+        let currentDanceFitDurationQueue = []; // 新增：記錄是否需要在時限內變速跳完
         let currentPlayingDanceData = null; 
-        let currentStepTimeoutId = null;     // 新增：強制中斷跳舞倒數的計時器
+        let currentStepTimeoutId = null;     // 強制中斷跳舞倒數的計時器
         
         // ⭐ 修改：全域變數改為陣列，精準記錄每位角色「目前正在跳」的動作
         let currentActiveActions = [null, null, null];
@@ -1445,15 +1446,15 @@
                     anyoneDancing = true;
                     dancersFinished[vrmIndex] = false; // 有動作的人標為未完成
                     
-                    // ⭐ 核心修復：使用 crossFadeTo 平滑過渡
+                    // ⭐ 核心修復：使用 crossFadeTo 平滑過渡 (Warp設為false防變速)，並強制設定TimeScale為1
                     if (oldAction === action) {
-                        action.reset().setEffectiveWeight(1).play();
+                        action.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
                     } else {
-                        action.reset().setLoop(THREE.LoopOnce); 
+                        action.reset().setEffectiveTimeScale(1).setLoop(THREE.LoopOnce); 
                         action.clampWhenFinished = true; // ⭐ 完美停格等待：播完停在最後一幀定格
                         action.setEffectiveWeight(1).play();
                         if (oldAction && oldAction.getEffectiveWeight() > 0) {
-                            oldAction.crossFadeTo(action, 0.5, true);
+                            oldAction.crossFadeTo(action, 0.5, false); // 修改為 false 解決不預期變速
                         }
                     }
                     
@@ -1541,6 +1542,7 @@
             // ⭐⭐⭐ 清空佇列 ⭐⭐⭐
             currentDanceQueue = [];
             currentDanceDurationsQueue = []; // 清空秒數佇列
+            currentDanceFitDurationQueue = []; // 清空變速標記
             currentPlayingDanceData = null; 
             window.pendingMicResume = false; // 取消等待中的麥克風自動開啟任務
             
@@ -1550,12 +1552,12 @@
             }, 500);
             
             // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose (A-pose)
-            // ⭐ 使用 crossFadeTo 平滑返回
+            // ⭐ 使用 crossFadeTo 平滑返回 (Warp設為false)，強制TimeScale重置
             const safeReturnToIdle = (idle, activeAct) => {
                 if (!idle) return;
-                idle.reset().setEffectiveWeight(1).play();
+                idle.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
                 if (activeAct && activeAct !== idle && activeAct.getEffectiveWeight() > 0) {
-                    activeAct.crossFadeTo(idle, 0.5, true);
+                    activeAct.crossFadeTo(idle, 0.5, false); // 修改為 false 解決不預期變速
                 }
             };
             safeReturnToIdle(idleActionC, currentActiveActions[0]);
@@ -1573,7 +1575,7 @@
             }
         }
 
-        // ⭐⭐⭐ 1️⃣ JSON 解析器（加入擷取 dance_durations 秒數欄位） ⭐⭐⭐
+        // ⭐⭐⭐ 1️⃣ JSON 解析器（加入擷取 dance_durations 與 dance_fit_duration 欄位） ⭐⭐⭐
         function safeParseAIJson(text) {
             try {
                 // 清除可能包含的 Markdown 標記
@@ -1629,6 +1631,16 @@
                         }
                         if (Array.isArray(result.dance_durations)) {
                             result.dance_durations = result.dance_durations.map(v => parseFloat(v)).map(v => isNaN(v) ? 0 : v);
+                        }
+                    }
+                    
+                    // ⭐ 擷取強制完成布林陣列 (dance_fit_duration)
+                    if (result.dance_fit_duration) {
+                        if (typeof result.dance_fit_duration === "boolean") {
+                            result.dance_fit_duration = [result.dance_fit_duration];
+                        }
+                        if (Array.isArray(result.dance_fit_duration)) {
+                            result.dance_fit_duration = result.dance_fit_duration.map(v => !!v);
                         }
                     }
                 }
@@ -1732,8 +1744,8 @@
         }
 
 
-        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（支援時間長度 durations） ⭐⭐⭐
-        async function playDanceSequence(sequence, durations) {
+        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（支援時間長度 durations 與 變速 fitDurations） ⭐⭐⭐
+        async function playDanceSequence(sequence, durations, fitDurations) {
             // 在 await 之前先將狀態設為 true
             isDancing = true;
             danceBtn.classList.add('active');
@@ -1771,6 +1783,7 @@
             
             currentDanceQueue = [];
             currentDanceDurationsQueue = []; // 重置秒數佇列
+            currentDanceFitDurationQueue = []; // 重置變速佇列
             
             // 計算最大步數
             let maxSteps = 1;
@@ -1800,6 +1813,10 @@
                 // ⭐ 對應擷取這一步的指定秒數
                 let dur = Array.isArray(durations) ? durations[step] : (typeof durations === 'number' ? durations : undefined);
                 currentDanceDurationsQueue.push(dur);
+                
+                // ⭐ 對應擷取這一步是否要變速完成
+                let fit = Array.isArray(fitDurations) ? fitDurations[step] : (typeof fitDurations === 'boolean' ? fitDurations : false);
+                currentDanceFitDurationQueue.push(fit);
             }
 
             // ⭐⭐⭐ 決定誰的 Idle 要淡出 (如果第一步是 99 就不要淡出他，讓他無縫繼續 Idle，防 T-pose 閃爍)
@@ -1816,13 +1833,13 @@
             if (talkingActionW) talkingActionW.fadeOut(0.5);
             if (talkingActionD) talkingActionD.fadeOut(0.5);
             
-            console.log("AI 舞步序列解碼完成 (Queue):", currentDanceQueue, "時間長度:", currentDanceDurationsQueue);
+            console.log("AI 舞步序列解碼完成 (Queue):", currentDanceQueue, "時間長度:", currentDanceDurationsQueue, "變速:", currentDanceFitDurationQueue);
             // ⭐ 將最終系統要執行的排程陣列印到監控面板
-            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}\n對應時間: ${JSON.stringify(currentDanceDurationsQueue)}`);
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}\n對應時間: ${JSON.stringify(currentDanceDurationsQueue)}\n變速跳完: ${JSON.stringify(currentDanceFitDurationQueue)}`);
             playNextDanceInQueue();
         }
 
-        // ⭐⭐⭐ AI 舞蹈引擎：智慧時間限制與全同步等待機制 ⭐⭐⭐
+        // ⭐⭐⭐ AI 舞蹈引擎：智慧時間限制、變速支援與全同步等待機制 ⭐⭐⭐
         function playNextDanceInQueue() {
             if (currentDanceQueue.length === 0) {
                 // 序列結束，自然恢復閒置
@@ -1831,12 +1848,12 @@
                 bgm.currentTime = 0;
                 danceBtn.classList.remove('active');
 
-                // ⭐ 核心修正：使用 crossFadeTo 平滑過渡回 Idle，徹底防範 T-pose
+                // ⭐ 核心修正：使用 crossFadeTo 平滑過渡回 Idle (Warp設為false)，並確保時間軸與權重滿載
                 const returnToIdle = (idle, activeAct) => {
                     if (!idle) return;
-                    idle.reset().setEffectiveWeight(1).play();
+                    idle.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
                     if (activeAct && activeAct !== idle && activeAct.getEffectiveWeight() > 0) {
-                        activeAct.crossFadeTo(idle, 0.5, true);
+                        activeAct.crossFadeTo(idle, 0.5, false); // 修改為 false 解決不預期變速
                     }
                 };
                 returnToIdle(idleActionC, currentActiveActions[0]);
@@ -1864,9 +1881,10 @@
 
             let nextData = currentDanceQueue.shift(); 
             let stepDuration = currentDanceDurationsQueue.shift(); // 取出這一步的指定秒數
-            let hasDuration = typeof stepDuration === 'number' && stepDuration > 0; // 判斷是否受時間限制
+            let stepFit = currentDanceFitDurationQueue.shift();    // 判斷是否要在這秒數內壓縮/展開跳完
+            let hasDuration = typeof stepDuration === 'number' && stepDuration > 0; 
             
-            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}${hasDuration ? ' (持續 '+stepDuration+' 秒)' : ''}`);
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}${hasDuration ? ' (持續 '+stepDuration+' 秒)' : ''}${stepFit && hasDuration ? ' (變速完成)' : ''}`);
             
             // 安全性驗證與越界防呆
             if (Array.isArray(nextData)) {
@@ -1909,9 +1927,9 @@
                     if (vrmIndex === 2) idleA = idleActionD;
                     
                     if (idleA) {
-                        idleA.reset().setEffectiveWeight(1).play();
+                        idleA.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
                         if (oldAction && oldAction !== idleA && oldAction.getEffectiveWeight() > 0) {
-                            oldAction.crossFadeTo(idleA, 0.5, true);
+                            oldAction.crossFadeTo(idleA, 0.5, false); // 修改為 false 解決不預期變速
                         }
                         currentActiveActions[vrmIndex] = idleA;
                     } else {
@@ -1927,17 +1945,26 @@
                     // ⭐ 如果有指定時間，我們就不依賴動畫的自然結束 (不掛監聽器，直接放行 true)
                     dancersFinished[vrmIndex] = hasDuration ? true : false; 
                     
-                    // ⭐ 核心切換邏輯：判斷要 LoopRepeat (時間制) 還是 LoopOnce (自然長度)
-                    if (oldAction === action) {
-                        action.reset().setEffectiveWeight(1).play();
-                        if (hasDuration) action.setLoop(THREE.LoopRepeat);
+                    // ⭐ 核心切換邏輯：判斷要變速跳完 (TimeScale)，或是自然長度循環/單次
+                    action.reset();
+                    
+                    if (hasDuration && stepFit) {
+                        // 強制變速以在時限內跳完一次
+                        const clipDuration = action.getClip().duration;
+                        action.setEffectiveTimeScale(clipDuration / stepDuration);
+                        action.setLoop(THREE.LoopOnce);
+                        action.clampWhenFinished = true;
                     } else {
-                        action.reset().setLoop(hasDuration ? THREE.LoopRepeat : THREE.LoopOnce);
+                        // 沒有指定變速，一律以原速跳
+                        action.setEffectiveTimeScale(1);
+                        action.setLoop(hasDuration ? THREE.LoopRepeat : THREE.LoopOnce);
                         action.clampWhenFinished = !hasDuration; // 若有限制時間，不要停格，直接循環
-                        action.setEffectiveWeight(1).play();
-                        if (oldAction && oldAction.getEffectiveWeight() > 0) {
-                            oldAction.crossFadeTo(action, 0.5, true);
-                        }
+                    }
+                    
+                    action.setEffectiveWeight(1).play();
+                    
+                    if (oldAction && oldAction !== action && oldAction.getEffectiveWeight() > 0) {
+                        oldAction.crossFadeTo(action, 0.5, false); // 修改為 false 解決不預期變速 (非常關鍵)
                     }
                     
                     currentActiveActions[vrmIndex] = action; // 記錄目前動作
@@ -2160,12 +2187,14 @@
             
             let danceSeq = null;
             let danceDurations = null; // 記錄時間長度
+            let danceFitDurations = null; // 記錄是否要變速
 
             if (result) {
-                logAction(`Parsed Result:\nAction: ${result.action}\nDance List: ${JSON.stringify(result.dance_list)}\nDurations: ${JSON.stringify(result.dance_durations)}`);
+                logAction(`Parsed Result:\nAction: ${result.action}\nDance List: ${JSON.stringify(result.dance_list)}\nDurations: ${JSON.stringify(result.dance_durations)}\nFit: ${JSON.stringify(result.dance_fit_duration)}`);
                 if (result.action === 'dance_sequence' || result.action === 'dance_random') {
-                    // 若有時間長度則存起來傳遞下去
+                    // 若有時間長度和變速需求則存起來傳遞下去
                     danceDurations = result.dance_durations;
+                    danceFitDurations = result.dance_fit_duration;
                     
                     if (Array.isArray(result.dance_list) && result.dance_list.length > 0) {
                         danceSeq = result.dance_list;
@@ -2195,8 +2224,8 @@
                 // ⭐ 終極防呆：修正 AI 偷懶或發生幻覺的情況
                 danceSeq = fixDanceSequence(danceSeq, contextText);
                 
-                // ⭐ 傳入舞步陣列與對應的時間陣列
-                playDanceSequence(danceSeq, danceDurations);
+                // ⭐ 傳入舞步陣列、對應的時間陣列以及變速標記
+                playDanceSequence(danceSeq, danceDurations, danceFitDurations);
             } 
             
             // ⭐⭐⭐ 防呆說話提取：絕對不讓使用者聽到/看到原始的 JSON 程式碼 ⭐⭐⭐
@@ -2219,14 +2248,6 @@
             }
             speak(speakText || "");
             
-            // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 ⭐⭐⭐
-            if (result && result.corrected_text) {
-                const userMsgs = document.querySelectorAll('.message-user');
-                if (userMsgs.length > 0) {
-                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
-                }
-            }
-
             // 處理表情
             if (result && result.emotion) {
                 setEmotion(result.emotion);
@@ -2235,6 +2256,15 @@
             // 處理其他動作 (非舞蹈)
             if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) {
                 triggerAction(result.action, 2000);
+            }
+            
+            // ⭐⭐⭐ 恢復文字修正功能：完全使用 index01.html 的程式碼 ⭐⭐⭐
+            if (result && result.corrected_text) {
+                console.log("更新校正文字:", result.corrected_text);
+                const lastUserMsg = document.querySelector('.message-user:last-child');
+                if (lastUserMsg) {
+                    lastUserMsg.innerHTML = result.corrected_text;
+                }
             }
         }
 
@@ -2296,7 +2326,7 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐ 強化 AI 回傳多回合的指令說明與支援時間限制
+            // ⭐ 強化 AI 回傳多回合的指令說明與支援時間限制/變速
             finalSystemInstruction += `
 【CRITICAL INSTRUCTIONS】
 1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json.
@@ -2304,10 +2334,11 @@
 3. **DANCE SYSTEM**:
    - Dance IDs available: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B), 99(不跳舞/原地待命).
    - "action" must be "dance_sequence".
-   - **多回合排程 (CRITICAL)**：當使用者要求「跳多次」或「連續跳不同舞」時，你必須在 "dance_list" 中產生對應數量的步驟。
+   - **多回合排程 (CRITICAL)**：當使用者要求「跳多次」、「連續跳不同舞」或「指定時間」時，你必須在 "dance_list" 中產生對應數量的步驟。隨機舞蹈請用 -1。
    - **預設齊舞 (1D Array)**: 若使用者要求「大家一起跳兩次」，請回傳 [1, 1]。
    - **各自跳舞 (2D Array)**: 若使用者要求「第一人跳嘻哈，其他人不跳」，請回傳 [[2], [99], [99]]。若要求各自跳不同且跳兩次，請回傳 [[2,2], [0,0], [3,3]]。子陣列之間務必加上逗號！
-   - **時間限制 (Time Limits) (NEW)**: 若使用者要求「跳 N 秒」，請在 JSON 中新增 "dance_durations" 陣列，對應每一步的秒數。例如要求「大家跳 10 秒」，回傳 "dance_list": [2], "dance_durations": [10]。要求「第一人跳 10 秒後，第三人跳 15 秒」，回傳 "dance_list": [[2, 99], [99, 3]], "dance_durations": [10, 15]。若無時間要求，則省略此欄位。
+   - **時間限制 (Time Limits) (NEW)**: 若使用者要求「跳 N 秒」，請在 JSON 中新增 "dance_durations" 陣列，對應每一步的秒數。例如要求「大家跳 10 秒」，回傳 "dance_list": [2], "dance_durations": [10]。若無時間要求，則省略此欄位。(註：若要求隨意跳N秒，請用 "dance_list": [-1])
+   - **強制時限內跳完 (Speed Fit) (NEW)**: 若使用者要求「在 N 秒內完成/跳完」，必須變速，請在 JSON 中新增 "dance_fit_duration" 陣列 (布林值)，例如 [true]。若只是隨意「跳 N 秒」則為 [false] 或省略。
 4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
 `;
 
@@ -2456,9 +2487,9 @@
                     if (!isDancing) {
                         const safeTalkTransition = (idle, talk) => {
                             if (!talk) return;
-                            talk.reset().setEffectiveWeight(1).play();
+                            talk.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
                             if (idle && idle !== talk && idle.getEffectiveWeight() > 0) {
-                                idle.crossFadeTo(talk, 0.2, true);
+                                idle.crossFadeTo(talk, 0.2, false); // 修改為 false 解決不預期變速
                             }
                         };
                         safeTalkTransition(idleActionC, talkingActionC);
@@ -2484,13 +2515,13 @@
                     isOpeningRemark = false; // ⭐ 重置開場白標記
                     
                     // 恢復閒置
-                    // ⭐⭐⭐ 關鍵：使用 crossFadeTo 平滑過渡，徹底防止權重掉到 0 (A-pose 抽蓄)
+                    // ⭐⭐⭐ 關鍵：使用 crossFadeTo 平滑過渡 (Warp設為false)
                     if (!isDancing) {
                         const safeIdleTransition = (idle, talk) => {
                             if (!idle) return;
-                            idle.reset().setEffectiveWeight(1).play();
+                            idle.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
                             if (talk && talk !== idle && talk.getEffectiveWeight() > 0) {
-                                talk.crossFadeTo(idle, 0.5, true);
+                                talk.crossFadeTo(idle, 0.5, false); // 修改為 false 解決不預期變速
                             }
                         };
                         safeIdleTransition(idleActionC, talkingActionC);
