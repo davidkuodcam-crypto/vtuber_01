@@ -1389,13 +1389,13 @@
             // 觸發動態運鏡
             updateCameraPosition();
             
-            // 停止所有閒置和說話動作
-            if (idleActionC) idleActionC.fadeOut(0.5);
-            if (idleActionW) idleActionW.fadeOut(0.5); 
-            if (idleActionD) idleActionD.fadeOut(0.5); 
-            if (talkingActionC) talkingActionC.fadeOut(0.5);
-            if (talkingActionW) talkingActionW.fadeOut(0.5);
-            if (talkingActionD) talkingActionD.fadeOut(0.5);
+            // ⭐ 修復：停止所有閒置和說話動作 (加入 isRunning 判斷，避免引發骨架抽蓄)
+            if (idleActionC && idleActionC.isRunning()) idleActionC.fadeOut(0.5);
+            if (idleActionW && idleActionW.isRunning()) idleActionW.fadeOut(0.5); 
+            if (idleActionD && idleActionD.isRunning()) idleActionD.fadeOut(0.5); 
+            if (talkingActionC && talkingActionC.isRunning()) talkingActionC.fadeOut(0.5);
+            if (talkingActionW && talkingActionW.isRunning()) talkingActionW.fadeOut(0.5);
+            if (talkingActionD && talkingActionD.isRunning()) talkingActionD.fadeOut(0.5);
             
             // 播放 BGM
             bgm.currentTime = 0;
@@ -1529,14 +1529,14 @@
             bgm.pause();
             bgm.currentTime = 0;
             
-            // 停止所有動作
+            // ⭐ 修復：停止所有動作 (加入 isRunning 判斷)
             danceActionsMap.forEach(group => {
-                group.forEach(action => action.fadeOut(0.5));
+                group.forEach(action => { if (action && action.isRunning()) action.fadeOut(0.5); });
             });
             // 停止可能被掛載為 Active 的 Idle 動作 (如果不是 Idle)
             currentActiveActions.forEach((action, i) => {
                 let idleA = i === 0 ? idleActionC : (i === 1 ? idleActionW : idleActionD);
-                if (action && action !== idleA) action.fadeOut(0.5);
+                if (action && action !== idleA && action.isRunning()) action.fadeOut(0.5);
             });
             
             // ⭐⭐⭐ 徹底清除所有殘留的監聽器 ⭐⭐⭐
@@ -1774,13 +1774,13 @@
             let wFirst = firstStep ? (Array.isArray(firstStep) ? firstStep[1] : firstStep) : null;
             let dFirst = firstStep ? (Array.isArray(firstStep) ? firstStep[2] : firstStep) : null;
 
-            // 淡出閒置與說話動作
-            if (idleActionC && cFirst !== 99) idleActionC.fadeOut(0.5);
-            if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
-            if (idleActionD && dFirst !== 99) idleActionD.fadeOut(0.5);
-            if (talkingActionC) talkingActionC.fadeOut(0.5);
-            if (talkingActionW) talkingActionW.fadeOut(0.5);
-            if (talkingActionD) talkingActionD.fadeOut(0.5);
+            // ⭐ 修復：淡出閒置與說話動作 (加入 isRunning 判斷，避免強制激活已停止的動作導致抽蓄)
+            if (idleActionC && cFirst !== 99 && idleActionC.isRunning()) idleActionC.fadeOut(0.5);
+            if (idleActionW && wFirst !== 99 && idleActionW.isRunning()) idleActionW.fadeOut(0.5);
+            if (idleActionD && dFirst !== 99 && idleActionD.isRunning()) idleActionD.fadeOut(0.5);
+            if (talkingActionC && talkingActionC.isRunning()) talkingActionC.fadeOut(0.5);
+            if (talkingActionW && talkingActionW.isRunning()) talkingActionW.fadeOut(0.5);
+            if (talkingActionD && talkingActionD.isRunning()) talkingActionD.fadeOut(0.5);
             
             console.log("AI 舞步序列解碼完成 (Queue):", currentDanceQueue);
             // ⭐ 將最終系統要執行的排程陣列印到監控面板
@@ -2460,10 +2460,10 @@
                     const wasTalkingW = talkingActionW && talkingActionW.isRunning() && talkingActionW.getEffectiveWeight() > 0;
                     const wasTalkingD = talkingActionD && talkingActionD.isRunning() && talkingActionD.getEffectiveWeight() > 0;
 
-                    // ⭐⭐⭐ 新增：停止說話動作，淡出回原本狀態 ⭐⭐⭐
-                    if (talkingActionC) talkingActionC.fadeOut(0.5);
-                    if (talkingActionW) talkingActionW.fadeOut(0.5); 
-                    if (talkingActionD) talkingActionD.fadeOut(0.5); // 新增 D
+                    // ⭐⭐⭐ 修復：精準判斷，只有真正在說話時才 fadeOut，徹底解決語音結束時身體抽蓄的問題 ⭐⭐⭐
+                    if (wasTalkingC) talkingActionC.fadeOut(0.5);
+                    if (wasTalkingW) talkingActionW.fadeOut(0.5); 
+                    if (wasTalkingD) talkingActionD.fadeOut(0.5); // 新增 D
                     
                     // 恢復閒置
                     // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
