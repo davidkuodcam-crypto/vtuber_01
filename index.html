@@ -1669,26 +1669,44 @@
             return null;
         }
 
-        // ⭐⭐⭐ 新增：防呆過濾器，強制將 AI 錯誤的 1D 齊舞指令修正為單人跳舞 ⭐⭐⭐
+        // ⭐⭐⭐ 新增：終極防呆過濾器 (解決 JSON 污染與 AI 幻覺) ⭐⭐⭐
         function fixDanceSequence(seq, referenceText) {
-            // 只有當傳入的是有效陣列且為 1D 陣列時才介入處理
             if (!seq || !Array.isArray(seq) || seq.length === 0) return seq;
-            if (Array.isArray(seq[0])) return seq; // 已經是 2D 陣列，代表 AI 有照做，信任 AI
 
             const txt = referenceText.toLowerCase();
             
-            // 偵測是否明確指定特定角色
-            const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("c");
-            const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("w");
+            // 偵測是否明確指定特定角色 (用邊界或更精確的匹配防誤判)
+            const p1 = txt.includes("第一") || txt.includes("左邊") || /\bc\b/i.test(txt);
+            const p2 = txt.includes("第二") || txt.includes("中間") || /\bw\b/i.test(txt);
             const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維");
             
             // 偵測是否有排他性字眼
             const exclusive = txt.includes("其他人不") || txt.includes("其他人不要") || txt.includes("單獨") || txt.includes("只有") || txt.includes("自己");
 
             // 確保沒有要求大家一起跳
-            const together = txt.includes("一起") || txt.includes("大家") || txt.includes("所有人");
+            const together = txt.includes("一起") || txt.includes("大家") || txt.includes("所有人") || txt.includes("三人") || txt.includes("三個") || txt.includes("我們");
 
-            // 若有要求單獨跳的語意，強制把 1D 陣列拆成 2D 單人跳陣列
+            let is2D = Array.isArray(seq[0]);
+
+            if (is2D) {
+                // ⭐ 核心修正：AI 輸出 2D 各自跳，但對話明明說要一起跳 (AI 幻覺)
+                if (together && !exclusive && !p1 && !p2 && !p3) {
+                    // 找出步數最多且非 99 的那個人的序列
+                    let bestSeq = [];
+                    for (let i = 0; i < seq.length; i++) {
+                        if (Array.isArray(seq[i]) && seq[i].length > bestSeq.length && seq[i].some(v => v !== 99)) {
+                            bestSeq = seq[i];
+                        }
+                    }
+                    if (bestSeq.length === 0) bestSeq = [Math.floor(Math.random() * DANCE_URLS.length)];
+                    
+                    logAction(`[系統防呆] 攔截 AI 錯誤的 2D 陣列，已根據對話自動修正為齊舞: ${JSON.stringify(bestSeq)}`);
+                    return bestSeq; // 轉換為 1D 齊舞陣列
+                }
+                return seq; // 若無矛盾，信任原本的 2D
+            }
+
+            // ⭐ 核心修正：AI 輸出 1D 齊舞，但對話明明要求單獨跳
             if ((p1 || p2 || p3 || exclusive) && !together) {
                 let fixedSeq = [[], [], []];
                 let shouldDance = [false, false, false];
@@ -1697,19 +1715,19 @@
                 if (p2) shouldDance[1] = true;
                 if (p3) shouldDance[2] = true;
 
-                // 防呆：如果只說了「單獨跳」但完全沒提到是誰，或是辨識不到，預設指派給第三位或中間
+                // 防呆：如果沒指派，預設給第三位
                 if (!shouldDance.includes(true)) {
-                    shouldDance[2] = true; // 依據您的測試情境，預設指給第三位
+                    shouldDance[2] = true; 
                 }
 
                 for (let i = 0; i < 3; i++) {
-                    // 若此人該跳，就給原陣列；否則塞滿對應長度的 99 (不跳)
                     fixedSeq[i] = shouldDance[i] ? [...seq] : Array(seq.length).fill(99);
                 }
                 
                 logAction(`[系統防呆] 攔截 AI 錯誤的 1D 齊舞陣列，已自動修正為單獨跳舞: ${JSON.stringify(fixedSeq)}`);
                 return fixedSeq;
             }
+            
             return seq; // 若無特殊關鍵字，維持原本陣列
         }
 
@@ -2166,13 +2184,15 @@
             // 如果判定要跳舞，執行跳舞
             if (danceSeq) {
                 // ⭐⭐⭐ 收集語境，幫助防呆函數判斷
-                let contextText = aiText;
+                // 修正：只取用 AI 說出來的話作為防呆判斷依據，徹底避免 JSON Key ("action":"dance_sequence") 的 'c' 污染防呆器
+                let contextText = (result && result.text) ? result.text : aiText; 
+                
                 // 取出使用者最近一次說的話 (倒數第二筆紀錄)
                 if (chatHistory.length >= 2 && chatHistory[chatHistory.length - 2].role === "user") {
                     contextText += " " + chatHistory[chatHistory.length - 2].parts[0].text;
                 }
 
-                // ⭐ 終極防呆：修正 AI 偷懶給 1D 陣列，但文字明明要求單獨跳的情況
+                // ⭐ 終極防呆：修正 AI 偷懶或發生幻覺的情況
                 danceSeq = fixDanceSequence(danceSeq, contextText);
                 
                 // ⭐ 傳入舞步陣列與對應的時間陣列
