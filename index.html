@@ -238,17 +238,17 @@
 
     .message-user { 
         align-self: flex-end; 
-        background-color: rgba(30, 136, 229, 0.9); /* 修改：藍底 */
+        background-color: rgba(30, 136, 229, 0.55); /* ⭐ 修改：大幅提高透明度，從 0.9 改為 0.55，不擋住3D場景 */
         border-bottom-right-radius: 2px; 
         color: #fff;
     }
     .message-ai { 
         align-self: flex-start; 
-        background-color: rgba(255, 255, 255, 0.9); 
+        background-color: rgba(255, 255, 255, 0.6);  /* ⭐ 修改：大幅提高透明度，從 0.9 改為 0.6，不擋住3D場景 */
         border-bottom-left-radius: 2px; 
         color: #333; 
         text-shadow: none;
-        border: 1px solid #ffd700;
+        border: 1px solid rgba(255, 215, 0, 0.6); /* 邊框也改為半透明 */
     }
     .message-system { align-self: center; background: transparent; color: #e65100; font-size: 12px; font-style: italic; text-shadow: none; text-align: center;}
 
@@ -277,13 +277,13 @@
         border-radius: 25px; 
         border: 1px solid rgba(255, 215, 0, 0.6);
         outline: none;
-        background: rgba(255, 255, 255, 0.95); 
+        background: rgba(255, 255, 255, 0.85); /* 順便讓輸入框稍微透明一點，更美觀 */
         font-size: 16px; 
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         color: #5d4037;
         z-index: 2; /* 確保文字在波動條上方 */
         background-color: transparent; /* 讓背景透明以顯示波動條 */
-        background: rgba(255, 255, 255, 0.95);
+        background: rgba(255, 255, 255, 0.85);
     }
     #user-input::placeholder { color: #999; }
 
@@ -1382,7 +1382,10 @@
             
             // ⭐⭐⭐ 強制停止說話 (修正) ⭐⭐⭐
             if (isSpeaking) {
-                window.speechSynthesis.cancel();
+                if (window.speechSynthesis) {
+                    window.speechSynthesis.resume(); // 防卡死
+                    window.speechSynthesis.cancel();
+                }
                 isSpeaking = false;
             }
 
@@ -2086,7 +2089,16 @@
             isMuted = !isMuted;
             muteBtn.classList.toggle('muted', isMuted);
             muteBtn.innerText = isMuted ? '🔇' : '🔊';
-            if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
+            
+            // ⭐⭐⭐ 關鍵修復：不再使用 cancel() 暴力取消，而是改用 pause() 與 resume()，
+            // 這樣在講話中按下靜音能暫停語音，再按一次就能無縫繼續說話，不會導致語音系統永久崩潰。
+            if (window.speechSynthesis) {
+                if(isMuted) { 
+                    window.speechSynthesis.pause(); 
+                } else {
+                    window.speechSynthesis.resume();
+                }
+            }
             // 連動背景音樂靜音
             bgm.muted = isMuted;
         });
@@ -2220,6 +2232,7 @@
 
             // ⭐⭐⭐ 新增：發送訊息前，確保徹底停止上一次的語音 ⭐⭐⭐
             if (window.speechSynthesis) {
+                window.speechSynthesis.resume(); // ⭐ 防卡死：如果本來處於暫停狀態，必須先 resume 才能安全 cancel
                 window.speechSynthesis.cancel();
             }
 
@@ -2369,6 +2382,7 @@
                 }
 
                 // ⭐⭐⭐ 每次說話前都先 cancel（避免卡住）
+                speechSynthesis.resume(); // ⭐ 防卡死：確保不是暫停狀態才 cancel，否則部分瀏覽器會死機
                 speechSynthesis.cancel();
                 
                 // ⭐⭐⭐ 新增：等待微小延遲，避免連續調用造成 interrupted 錯誤 ⭐⭐⭐
@@ -2661,6 +2675,7 @@
             if (window.speechSynthesis) {
                 // 加個 try-catch 確保萬無一失
                 try {
+                    window.speechSynthesis.resume(); // 防卡死
                     window.speechSynthesis.cancel();
                 } catch(e) {}
             }
