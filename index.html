@@ -1687,22 +1687,24 @@
             return null;
         }
 
-        // ⭐⭐⭐ 新增：終極防呆過濾器 (解決 JSON 污染與 AI 幻覺) ⭐⭐⭐
+        // ⭐⭐⭐ 新增：終極防呆過濾器 (解決 JSON 污染與 AI 幻覺) - 增強精準目標辨識 ⭐⭐⭐
         function fixDanceSequence(seq, referenceText) {
             if (!seq || !Array.isArray(seq) || seq.length === 0) return seq;
 
-            const txt = referenceText.toLowerCase();
+            // 先轉小寫並把所有中文數字轉阿拉伯數字，極大化匹配率
+            let txt = referenceText.toLowerCase();
+            txt = txt.replace(/十/g, '10').replace(/一/g, '1').replace(/二/g, '2').replace(/三/g, '3').replace(/四/g, '4').replace(/五/g, '5').replace(/六/g, '6').replace(/七/g, '7').replace(/八/g, '8').replace(/九/g, '9').replace(/兩/g, '2');
             
             // 偵測是否明確指定特定角色 (用邊界或更精確的匹配防誤判)
-            const p1 = txt.includes("第一") || txt.includes("左邊") || /\bc\b/i.test(txt);
-            const p2 = txt.includes("第二") || txt.includes("中間") || /\bw\b/i.test(txt);
-            const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維");
+            const p1 = txt.includes("第1") || txt.includes("角色1") || txt.includes("1號") || txt.includes("左邊") || /\bc\b/i.test(txt);
+            const p2 = txt.includes("第2") || txt.includes("角色2") || txt.includes("2號") || txt.includes("中間") || /\bw\b/i.test(txt);
+            const p3 = txt.includes("第3") || txt.includes("角色3") || txt.includes("3號") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維") || txt.includes("大衛");
             
             // 偵測是否有排他性字眼
-            const exclusive = txt.includes("其他人不") || txt.includes("其他人不要") || txt.includes("單獨") || txt.includes("只有") || txt.includes("自己");
+            const exclusive = txt.includes("其他不") || txt.includes("單獨") || txt.includes("只有") || txt.includes("自己") || txt.includes("專屬");
 
             // 確保沒有要求大家一起跳
-            const together = txt.includes("一起") || txt.includes("大家") || txt.includes("所有人") || txt.includes("三人") || txt.includes("三個") || txt.includes("我們");
+            const together = txt.includes("一起") || txt.includes("大家") || txt.includes("所有人") || txt.includes("3人") || txt.includes("3個") || txt.includes("我們");
 
             let is2D = Array.isArray(seq[0]);
 
@@ -1724,7 +1726,7 @@
                 return seq; // 若無矛盾，信任原本的 2D
             }
 
-            // ⭐ 核心修正：AI 輸出 1D 齊舞，但對話明明要求單獨跳
+            // ⭐ 核心修正：AI 輸出 1D 齊舞，但對話明明要求單獨跳 (或提到了特定角色)
             if ((p1 || p2 || p3 || exclusive) && !together) {
                 let fixedSeq = [[], [], []];
                 let shouldDance = [false, false, false];
@@ -1733,7 +1735,7 @@
                 if (p2) shouldDance[1] = true;
                 if (p3) shouldDance[2] = true;
 
-                // 防呆：如果沒指派，預設給第三位
+                // 防呆：如果只說了「單獨跳」但沒指派，預設給第三位 (或如果有 p1, p2, p3 就能精準給)
                 if (!shouldDance.includes(true)) {
                     shouldDance[2] = true; 
                 }
@@ -1935,11 +1937,18 @@
                     if (vrmIndex === 2) idleA = idleActionD;
                     
                     if (idleA) {
-                        idleA.reset();
-                        idleA.timeScale = 1; // 確保原速
-                        idleA.setEffectiveWeight(1).play();
-                        if (oldAction && oldAction !== idleA && oldAction.getEffectiveWeight() > 0) {
-                            oldAction.crossFadeTo(idleA, 0.5, false); // 修改為 false 解決不預期變速
+                        // 防抽動：只有當他上一秒「不是」Idle 的時候，才重新 Reset 確保無縫
+                        if (oldAction !== idleA) {
+                            idleA.reset();
+                            idleA.timeScale = 1; // 確保原速
+                            idleA.setEffectiveWeight(1).play();
+                            if (oldAction && oldAction.getEffectiveWeight() > 0) {
+                                oldAction.crossFadeTo(idleA, 0.5, false); // 修改為 false 解決不預期變速
+                            }
+                        } else {
+                            // 若本來就在播 Idle，只要保證滿速滿權重即可，不重新 Reset，防止原地抽一下
+                            idleA.timeScale = 1;
+                            idleA.setEffectiveWeight(1).play();
                         }
                         currentActiveActions[vrmIndex] = idleA;
                     } else {
@@ -2234,6 +2243,27 @@
                 // ⭐ 終極防呆：修正 AI 偷懶或發生幻覺的情況
                 danceSeq = fixDanceSequence(danceSeq, contextText);
                 
+                // ⭐ 新增：時間與變速的終極防呆 (從語境中直接抓取 N 秒，避免 AI 忘記給陣列)
+                if (!danceDurations || (Array.isArray(danceDurations) && danceDurations.length === 0) || danceDurations[0] === null) {
+                    // 把中文數字轉換為阿拉伯數字，方便統一辨識
+                    let normalizedText = contextText.replace(/十/g, '10').replace(/一/g, '1').replace(/二/g, '2').replace(/三/g, '3').replace(/四/g, '4').replace(/五/g, '5').replace(/六/g, '6').replace(/七/g, '7').replace(/八/g, '8').replace(/九/g, '9').replace(/兩/g, '2');
+                    
+                    const secMatch = normalizedText.match(/(\d+)\s*秒/);
+                    if (secMatch) {
+                        let parsedSec = parseFloat(secMatch[1]);
+                        if (parsedSec > 0) {
+                            danceDurations = [parsedSec];
+                            // 判斷是否要求變速跳完
+                            if (normalizedText.includes("跳1次") || normalizedText.includes("跳完") || normalizedText.includes("完成") || normalizedText.includes("內") || normalizedText.match(/用\d+秒/)) {
+                                danceFitDurations = [true];
+                            } else {
+                                danceFitDurations = [false];
+                            }
+                            logAction(`[系統防呆] AI漏給時間，從語境強行擷取時間限制: ${parsedSec} 秒, 變速: ${danceFitDurations[0]}`);
+                        }
+                    }
+                }
+                
                 // ⭐ 傳入舞步陣列、對應的時間陣列以及變速標記
                 playDanceSequence(danceSeq, danceDurations, danceFitDurations);
             } 
@@ -2266,14 +2296,6 @@
             // 處理其他動作 (非舞蹈)
             if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) {
                 triggerAction(result.action, 2000);
-            }
-            
-            // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 (嚴格遵循 index01.html 的寫法) ⭐⭐⭐
-            if (result && result.corrected_text) {
-                const userMsgs = document.querySelectorAll('.message-user');
-                if (userMsgs.length > 0) {
-                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
-                }
             }
         }
 
@@ -2346,8 +2368,8 @@
    - **多回合排程 (CRITICAL)**：當使用者要求「跳多次」、「連續跳不同舞」或「指定時間」時，你必須在 "dance_list" 中產生對應數量的步驟。隨機舞蹈請用 -1。
    - **預設齊舞 (1D Array)**: 若使用者要求「大家一起跳兩次」，請回傳 [1, 1]。
    - **各自跳舞 (2D Array)**: 若使用者要求「第一人跳嘻哈，其他人不跳」，請回傳 [[2], [99], [99]]。若要求各自跳不同且跳兩次，請回傳 [[2,2], [0,0], [3,3]]。子陣列之間務必加上逗號！
-   - **時間限制 (Time Limits) (NEW)**: 若使用者要求「跳 N 秒」，請在 JSON 中新增 "dance_durations" 陣列，對應每一步的秒數。例如要求「大家跳 10 秒」，回傳 "dance_list": [2], "dance_durations": [10]。若無時間要求，則省略此欄位。(註：若要求隨意跳N秒，請用 "dance_list": [-1])
-   - **強制時限內跳完 (Speed Fit) (NEW)**: 若使用者要求「在 N 秒內完成/跳完」，必須變速，請在 JSON 中新增 "dance_fit_duration" 陣列 (布林值)，例如 [true]。若只是隨意「跳 N 秒」則為 [false] 或省略。
+   - **時間限制 (Time Limits) (NEW)**: 若使用者要求「跳 N 秒」，你【必須】在 JSON 根目錄新增 "dance_durations" 陣列，對應每一步的秒數。例如要求「跳 10 秒」，回傳 "dance_list": [2], "dance_durations": [10]。若無時間要求，則省略此欄位。(註：若要求隨意跳N秒，請用 "dance_list": [-1])
+   - **強制時限內跳完 (Speed Fit) (NEW)**: 若使用者要求「在 N 秒內完成/跳完」或「用 N 秒跳一次」，代表必須變速，你【必須】在 JSON 根目錄新增 "dance_fit_duration" 陣列 (布林值)，例如 "dance_fit_duration": [true]。若只是隨意跳則省略。
 4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
 `;
 
@@ -2668,8 +2690,6 @@
             recognition.onresult = (e) => {
                 let interim = '';
                 // 重新組合最終結果與臨時結果
-                // 注意：這裡是簡易實作，直接覆蓋 input
-                // AITranslator 邏輯：
                 for (let i = e.resultIndex; i < e.results.length; ++i) {
                     if (e.results[i].isFinal) {
                         finalTranscript += e.results[i][0].transcript;
@@ -2679,8 +2699,6 @@
                 }
                 
                 // 將結果填入輸入框
-                // 為了讓使用者體驗更好，我們保留使用者可能手打的部分嗎？
-                // 這裡採用 AITranslator 的邏輯：直接由語音主導
                 userInput.value = finalTranscript + interim;
                 
                 // 重置靜音計時器
