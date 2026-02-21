@@ -1691,59 +1691,54 @@
         function fixDanceSequence(seq, referenceText) {
             if (!seq || !Array.isArray(seq) || seq.length === 0) return seq;
 
-            const txt = referenceText.toLowerCase();
+            // 1. 如果 AI 給的是 2D 陣列
+            if (Array.isArray(seq[0])) {
+                // 若外層長度不是 3，但內層長度是 3，代表 AI 把陣列「反轉」了 (變成了 [Step1[c1,c2,c3], Step2[c1,c2,c3]])
+                // 我們需要把它翻轉回 [c1[steps], c2[steps], c3[steps]]
+                let isTransposed = seq.every(inner => Array.isArray(inner) && inner.length === 3);
+                if (isTransposed && seq.length !== 3) {
+                    let transposedSeq = [[], [], []];
+                    for (let step = 0; step < seq.length; step++) {
+                        for (let c = 0; c < 3; c++) {
+                            transposedSeq[c].push(seq[step][c]);
+                        }
+                    }
+                    logAction(`[系統防呆] 修正 AI 維度顛倒，恢復正常分配: ${JSON.stringify(transposedSeq)}`);
+                    return transposedSeq;
+                }
+                return seq; // 若外層是 3，直接信任 AI
+            }
+
+            // 2. 如果 AI 給的是 1D 陣列 (齊舞)
+            // 只有在明確有排他性字眼時才介入
+            const txt = referenceText; // 移除 toLowerCase() 以免誤判 JSON 的鍵值 (如 'c' in 'action')
             
-            // 1. 偵測使用者是否指定特定角色
-            const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("c");
-            const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("w");
-            const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維");
+            const p1 = txt.includes("第一") || txt.includes("左邊");
+            const p2 = txt.includes("第二") || txt.includes("中間");
+            const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("大維");
             
-            // 偵測是否有排他性或單獨跳舞字眼
-            const exclusive = txt.includes("單獨") || txt.includes("只有") || txt.includes("自己") || txt.includes("一人") || txt.includes("其他人不") || txt.includes("其他人不要");
+            const exclusive = txt.includes("單獨") || txt.includes("只有") || txt.includes("自己") || txt.includes("一人");
             const together = txt.includes("一起") || txt.includes("大家") || txt.includes("所有人");
 
             const matchCount = [p1, p2, p3].filter(Boolean).length;
             const isSingleTarget = (matchCount === 1) || (exclusive && matchCount <= 1 && !together);
 
-            // 2. 如果 AI 已經乖乖給了標準的三人二維陣列，且我們沒有偵測到任何指定人物的強制改寫需求，就信任它
-            if (Array.isArray(seq[0]) && seq.length === 3 && !isSingleTarget && matchCount === 0) {
-                return seq;
-            }
-
-            // 3. 處理 AI 的常見維度錯誤 (把角色當成列，例如 [[舞步1, 舞步2, 舞步3]])
-            if (Array.isArray(seq[0]) && seq.length === 1 && seq[0].length === 3) {
-                let fixed = [[seq[0][0]], [seq[0][1]], [seq[0][2]]];
-                if (!isSingleTarget && matchCount === 0) {
-                    logAction(`[系統防呆] 修正 AI 維度顛倒，恢復正常分配: ${JSON.stringify(fixed)}`);
-                    return fixed;
-                }
-            }
-
-            // 4. 抽取真正的舞步 ID (將陣列完全攤平並過濾掉 99)
-            let coreDances = Array.isArray(seq[0]) ? seq.flat() : seq;
-            let validDances = coreDances.filter(v => v !== 99 && v !== undefined && v !== null);
-            if (validDances.length === 0) validDances = [Math.floor(Math.random() * DANCE_URLS.length)]; // 防呆
-
-            // 5. 如果偵測到「指定某人跳舞」，強制覆寫分配
-            if (isSingleTarget || matchCount > 0) {
+            if (isSingleTarget && !together) {
                 let fixedSeq = [[], [], []];
                 let targets = [p1, p2, p3];
 
-                // 防呆：如果只說了「單獨跳」但沒提到是誰，預設指派給第三位
-                if (isSingleTarget && matchCount === 0) {
-                    targets = [false, false, true];
+                if (!p1 && !p2 && !p3 && exclusive) {
+                    targets = [false, false, true]; 
                 }
 
                 for (let i = 0; i < 3; i++) {
-                    // 該跳的人給予動作，不該跳的人塞滿 99
-                    fixedSeq[i] = targets[i] ? [...validDances] : Array(validDances.length).fill(99);
+                    fixedSeq[i] = targets[i] ? [...seq] : Array(seq.length).fill(99);
                 }
-                logAction(`[系統防呆] 偵測到指定角色指令，已強制重組陣列: ${JSON.stringify(fixedSeq)}`);
+                logAction(`[系統防呆] 偵測到單人指令，已強制重組 1D 陣列為單人跳舞: ${JSON.stringify(fixedSeq)}`);
                 return fixedSeq;
             }
 
-            // 6. 如果是一般情況（大家一起跳），退回乾淨的一維陣列，避免重複播放閃爍
-            return validDances; 
+            return seq; // 維持一維陣列 (齊舞)
         }
 
 
