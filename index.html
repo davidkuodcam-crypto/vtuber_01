@@ -444,7 +444,7 @@
     </div>
 
     <div id="file-status">
-        <div class="file-status-item"><span class="icon-loading">●</span> 系統啟動...</div>
+        <div class="file-status-item"><span class="icon-loading">●</span> 系統啟மைப்பு啟動...</div>
     </div>
 
     <div id="api-status">
@@ -1552,15 +1552,24 @@
                 updateCameraPosition();
             }, 500);
             
-            // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose
-            if (idleActionC && currentActiveActions[0] !== idleActionC) {
-                idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play();
+            // ⭐⭐⭐ 安全恢復閒置動作，移除 reset() 防 A-pose，並確認權重狀態
+            if (idleActionC) {
+                if (currentActiveActions[0] && currentActiveActions[0] !== idleActionC) currentActiveActions[0].fadeOut(0.5);
+                if (idleActionC.getEffectiveWeight() < 1 || !idleActionC.isRunning()) {
+                    idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play();
+                }
             }
-            if (idleActionW && currentActiveActions[1] !== idleActionW) {
-                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+            if (idleActionW) {
+                if (currentActiveActions[1] && currentActiveActions[1] !== idleActionW) currentActiveActions[1].fadeOut(0.5);
+                if (idleActionW.getEffectiveWeight() < 1 || !idleActionW.isRunning()) {
+                    idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+                }
             }
-            if (idleActionD && currentActiveActions[2] !== idleActionD) {
-                idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play();
+            if (idleActionD) {
+                if (currentActiveActions[2] && currentActiveActions[2] !== idleActionD) currentActiveActions[2].fadeOut(0.5);
+                if (idleActionD.getEffectiveWeight() < 1 || !idleActionD.isRunning()) {
+                    idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play();
+                }
             }
 
             currentActiveActions = [null, null, null]; // ⭐ 清空追蹤
@@ -1811,11 +1820,23 @@
 
                 setTimeout(() => updateCameraPosition(), 500);
                 
-                // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，防止卡在 T-pose
-                // ⭐ 核心修正：只針對「非閒置」狀態的角色進行恢復，若已經是 99(Idle) 就不再重新 Reset 造成閃爍
-                if (idleActionC && currentActiveActions[0] !== idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
-                if (idleActionW && currentActiveActions[1] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
-                if (idleActionD && currentActiveActions[2] !== idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
+                // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，完全移除 reset() 防止卡在 T-pose/A-pose
+                // 並確認只在尚未完全播放時才觸發 fadeIn
+                if (idleActionC) {
+                    if (idleActionC.getEffectiveWeight() < 1 || !idleActionC.isRunning()) {
+                        idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play();
+                    }
+                }
+                if (idleActionW) {
+                    if (idleActionW.getEffectiveWeight() < 1 || !idleActionW.isRunning()) {
+                        idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+                    }
+                }
+                if (idleActionD) {
+                    if (idleActionD.getEffectiveWeight() < 1 || !idleActionD.isRunning()) {
+                        idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play();
+                    }
+                }
                 
                 // 清空追蹤
                 currentActiveActions = [null, null, null];
@@ -1878,13 +1899,8 @@
                     }
                     
                     if (idleA && oldAction !== idleA) {
-                        // 如果是從別的動作切換回 Idle，或者剛開始但之前沒在播
-                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
-                            idleA.reset();
-                            idleA.setEffectiveWeight(1); // ⭐ 防止無動畫
-                            idleA.fadeIn(0.5).play();
-                        } else if (idleA.getEffectiveWeight() < 1) {
-                            // 如果正在 fadeOut 中，補救回來
+                        // 移除 reset() 避免瞬間掉回 A-pose，確認當前權重不足時才過渡進來
+                        if (!idleA.isRunning() || idleA.getEffectiveWeight() < 1) {
                             idleA.setEffectiveWeight(1);
                             idleA.fadeIn(0.5).play();
                         }
@@ -2453,24 +2469,25 @@
                     
                     isOpeningRemark = false; // ⭐ 重置開場白標記
                     
-                    // ⭐⭐⭐ 修復：直接將說話動作淡出，不依賴權重判斷，防止漏接 ⭐⭐⭐
-                    if (talkingActionC) talkingActionC.fadeOut(0.5);
-                    if (talkingActionW) talkingActionW.fadeOut(0.5); 
-                    if (talkingActionD) talkingActionD.fadeOut(0.5); 
+                    // ⭐⭐⭐ 終極修復：無條件將可能的說話動作淡出，避免殘留
+                    if (talkingActionC && talkingActionC.getEffectiveWeight() > 0) talkingActionC.fadeOut(0.5);
+                    if (talkingActionW && talkingActionW.getEffectiveWeight() > 0) talkingActionW.fadeOut(0.5); 
+                    if (talkingActionD && talkingActionD.getEffectiveWeight() > 0) talkingActionD.fadeOut(0.5); 
                     
                     // 恢復閒置
-                    // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
+                    // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制打斷舞蹈
                     if (!isDancing) {
-                        // ⭐ 修復：移除 reset() 以防抖動，並且「無條件」確保閒置動作恢復，徹底解決卡在 A-pose 的問題
-                        if (idleActionC) {
+                        // ⭐ 修復：徹底移除所有 reset() 呼叫，並加入權重檢查，
+                        // 確保如果動畫已經在播放 (權重=1) 就不再強制淡入，從根源消滅 0-weight 造成的 A-pose 閃爍
+                        if (idleActionC && (idleActionC.getEffectiveWeight() < 1 || !idleActionC.isRunning())) {
                             idleActionC.setEffectiveWeight(1);
                             idleActionC.fadeIn(0.5).play();
                         }
-                        if (idleActionW) {
+                        if (idleActionW && (idleActionW.getEffectiveWeight() < 1 || !idleActionW.isRunning())) {
                             idleActionW.setEffectiveWeight(1);
                             idleActionW.fadeIn(0.5).play();
                         }
-                        if (idleActionD) {
+                        if (idleActionD && (idleActionD.getEffectiveWeight() < 1 || !idleActionD.isRunning())) {
                             idleActionD.setEffectiveWeight(1);
                             idleActionD.fadeIn(0.5).play();
                         }
