@@ -1456,9 +1456,11 @@
                         action.timeScale = 1;
                         action.setLoop(THREE.LoopOnce); 
                         action.clampWhenFinished = true; // ⭐ 完美停格等待：播完停在最後一幀定格
-                        action.setEffectiveWeight(1).play();
-                        if (oldAction && oldAction.getEffectiveWeight() > 0) {
-                            oldAction.crossFadeTo(action, 0.5, false); // 修改為 false 解決不預期變速
+                        
+                        action.enabled = true;
+                        action.fadeIn(0.5).play(); // ⭐ 使用 fadeIn 平滑過渡
+                        if (oldAction && oldAction !== action) {
+                            oldAction.fadeOut(0.5); 
                         }
                     }
                     
@@ -1556,13 +1558,14 @@
             }, 500);
             
             // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose (A-pose)
-            // ⭐ 使用 crossFadeTo 平滑返回 (Warp設為false)，強制TimeScale重置，絕對不呼叫 idle.reset() 防止抽動
+            // ⭐ 使用 fadeIn / fadeOut 平滑返回，強制TimeScale重置，絕對不呼叫 idle.reset() 防止抽動
             const safeReturnToIdle = (idle, activeAct) => {
                 if (!idle) return;
                 idle.timeScale = 1;
-                idle.setEffectiveWeight(1).play();
-                if (activeAct && activeAct !== idle && activeAct.getEffectiveWeight() > 0) {
-                    activeAct.crossFadeTo(idle, 0.5, false); // 修改為 false 解決不預期變速
+                idle.enabled = true;
+                idle.fadeIn(0.5).play();
+                if (activeAct && activeAct !== idle) {
+                    activeAct.fadeOut(0.5);
                 }
             };
             safeReturnToIdle(idleActionC, currentActiveActions[0]);
@@ -1706,9 +1709,7 @@
             let together = txt.includes("一起") || txt.includes("大家") || txt.includes("所有人") || txt.includes("我們") || txt.includes("全部");
             
             // ⭐ 避免把「第三個」誤判為「三個（一起）」
-            if ((txt.includes("3人") || txt.includes("三人") || txt.includes("3個") || txt.includes("三個")) && !p3) {
-                together = true;
-            }
+            // 移除原本依賴 "3個" 的判斷，徹底避免角色3被誤判為齊舞
 
             let is2D = Array.isArray(seq[0]);
 
@@ -1860,14 +1861,14 @@
                 bgm.currentTime = 0;
                 danceBtn.classList.remove('active');
 
-                // ⭐ 核心修正：使用 crossFadeTo 平滑過渡回 Idle (Warp設為false)，並確保時間軸與權重滿載
+                // ⭐ 核心修正：使用 fadeIn/fadeOut 平滑過渡回 Idle，絕對不呼叫 idle.reset() 避免抽動
                 const returnToIdle = (idle, activeAct) => {
                     if (!idle) return;
-                    // ⭐ 絕對不要呼叫 idle.reset()，讓動畫保持在當前時間軸，解決瞬間抽動問題
                     idle.timeScale = 1; // 確保原速
-                    idle.setEffectiveWeight(1).play();
-                    if (activeAct && activeAct !== idle && activeAct.getEffectiveWeight() > 0) {
-                        activeAct.crossFadeTo(idle, 0.5, false); // 修改為 false 解決不預期變速
+                    idle.enabled = true;
+                    idle.fadeIn(0.5).play();
+                    if (activeAct && activeAct !== idle) {
+                        activeAct.fadeOut(0.5);
                     }
                 };
                 returnToIdle(idleActionC, currentActiveActions[0]);
@@ -1945,14 +1946,16 @@
                         if (oldAction !== idleA) {
                             // 不呼叫 idle.reset()，防止切換回來時因為時間歸零而抽動
                             idleA.timeScale = 1; // 確保原速
-                            idleA.setEffectiveWeight(1).play();
-                            if (oldAction && oldAction.getEffectiveWeight() > 0) {
-                                oldAction.crossFadeTo(idleA, 0.5, false); // 修改為 false 解決不預期變速
+                            idleA.enabled = true;
+                            idleA.fadeIn(0.5).play();
+                            if (oldAction) {
+                                oldAction.fadeOut(0.5);
                             }
                         } else {
                             // 若本來就在播 Idle，只要保證滿速滿權重即可，不重新 Reset，防止原地抽一下
                             idleA.timeScale = 1;
-                            idleA.setEffectiveWeight(1).play();
+                            idleA.enabled = true;
+                            idleA.fadeIn(0.5).play();
                         }
                         currentActiveActions[vrmIndex] = idleA;
                     } else {
@@ -1984,10 +1987,11 @@
                         action.clampWhenFinished = !hasDuration; // 若有限制時間，不要停格，直接循環
                     }
                     
-                    action.setEffectiveWeight(1).play();
+                    action.enabled = true;
+                    action.fadeIn(0.5).play();
                     
-                    if (oldAction && oldAction !== action && oldAction.getEffectiveWeight() > 0) {
-                        oldAction.crossFadeTo(action, 0.5, false); // 修改為 false 解決不預期變速 (非常關鍵)
+                    if (oldAction && oldAction !== action) {
+                        oldAction.fadeOut(0.5);
                     }
                     
                     currentActiveActions[vrmIndex] = action; // 記錄目前動作
@@ -2301,13 +2305,29 @@
             if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) {
                 triggerAction(result.action, 2000);
             }
-            
-            // ⭐⭐⭐ 恢復文字修正功能：完全使用 index01.html 的寫法，已清空其它多餘邏輯 ⭐⭐⭐
-            if (result && result.corrected_text) {
-                const userMsgs = document.querySelectorAll('.message-user');
-                if (userMsgs.length > 0) {
-                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
+        }
+
+        // ⭐⭐⭐ 恢復 index01.html 的獨立文字校正 API 呼叫功能 ⭐⭐⭐
+        async function correctSpeechText(rawText) {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ role: "user", parts: [{ text: `請校正以下語音輸入的文字，修正可能的錯別字或語句不通順的地方。請直接回傳校正後的文字，不要包含任何解釋、引號或多餘的符號。需要校正的文字：\n${rawText}` }] }]
+                    })
+                });
+                
+                if (!response.ok) return rawText;
+                const data = await response.json();
+                let corrected = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (corrected) {
+                    return corrected.replace(/^["']|["']$/g, '').trim() || rawText;
                 }
+                return rawText;
+            } catch (error) {
+                console.error("Text correction error:", error);
+                return rawText;
             }
         }
 
@@ -2367,7 +2387,7 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐ 輕量化提示，避免覆寫 Prompt.txt 的核心格式要求 (保證能回傳 corrected_text)
+            // ⭐ 輕量化提示，避免覆寫 Prompt.txt 的核心格式要求
             finalSystemInstruction += `
 【排舞系統額外規則】
 1. 若要跳舞，"action" 必須是 "dance_sequence"。
@@ -2520,11 +2540,11 @@
                     if (!isDancing) {
                         const safeTalkTransition = (idle, talk) => {
                             if (!talk) return;
-                            talk.reset();
                             talk.timeScale = 1; // 確保說話動作原速
-                            talk.setEffectiveWeight(1).play();
-                            if (idle && idle !== talk && idle.getEffectiveWeight() > 0) {
-                                idle.crossFadeTo(talk, 0.2, false); // 修改為 false 解決不預期變速
+                            talk.enabled = true;
+                            talk.fadeIn(0.2).play();
+                            if (idle && idle !== talk) {
+                                idle.fadeOut(0.2); // 隱藏閒置，絕對不呼叫 idle.reset()
                             }
                         };
                         safeTalkTransition(idleActionC, talkingActionC);
@@ -2550,14 +2570,15 @@
                     isOpeningRemark = false; // ⭐ 重置開場白標記
                     
                     // 恢復閒置
-                    // ⭐⭐⭐ 關鍵：使用 crossFadeTo 平滑過渡 (Warp設為false) 並且絕對不呼叫 idle.reset() 防止跳舞結束抽動
+                    // ⭐⭐⭐ 關鍵：使用 fadeIn/fadeOut 平滑過渡，並確保 Idle 原速，絕對不呼叫 reset() 避免抽動
                     if (!isDancing) {
                         const safeIdleTransition = (idle, talk) => {
                             if (!idle) return;
                             idle.timeScale = 1; // 確保原速
-                            idle.setEffectiveWeight(1).play();
-                            if (talk && talk !== idle && talk.getEffectiveWeight() > 0) {
-                                talk.crossFadeTo(idle, 0.5, false); // 修改為 false 解決不預期變速
+                            idle.enabled = true;
+                            idle.fadeIn(0.5).play(); // 平滑顯示回閒置，不歸零時間軸
+                            if (talk && talk !== idle) {
+                                talk.fadeOut(0.5);
                             }
                         };
                         safeIdleTransition(idleActionC, talkingActionC);
@@ -2710,7 +2731,18 @@
                     silenceTimer = setTimeout(async () => { 
                         const rawText = userInput.value.trim();
                         if(rawText) {
-                            // ⭐⭐⭐ 修改：合併處理，不單獨呼叫校正 API，直接發送 ⭐⭐⭐
+                            // ⭐⭐⭐ 恢復：獨立的文字校正 API 呼叫 ⭐⭐⭐
+                            userInput.disabled = true;
+                            const oldPlaceholder = userInput.placeholder;
+                            userInput.placeholder = "文字校正中...";
+                            userInput.value = '';
+                            
+                            const correctedText = await correctSpeechText(rawText);
+                            
+                            userInput.disabled = false;
+                            userInput.placeholder = oldPlaceholder;
+                            userInput.value = correctedText;
+
                             handleSendMessage();
                         }
                     }, 1500);
