@@ -1443,7 +1443,7 @@
                     anyoneDancing = true;
                     dancersFinished[vrmIndex] = false; // 有動作的人標為未完成
                     
-                    // ⭐ 核心修復：如果新舊動作不同，淡出舊的；如果相同，強制 Stop 重置，防止權重抵消卡死
+                    // ⭐ 核心修復：避免相同動畫的 CrossFade 導致權重抵消卡死
                     if (oldAction && oldAction !== action) {
                         oldAction.fadeOut(0.5);
                     }
@@ -1457,8 +1457,7 @@
                         action.reset();
                         action.setLoop(THREE.LoopOnce); 
                         action.clampWhenFinished = true; // ⭐ 完美停格等待：播完停在最後一幀定格
-                        action.setEffectiveWeight(1);
-                        action.fadeIn(0.5); 
+                        action.setEffectiveWeight(1); // ⭐ 修復：移除 fadeIn，直接給權重讓它靠前一個動作 fadeOut 來平滑過渡
                         action.play();
                     }
                     
@@ -1552,15 +1551,15 @@
                 updateCameraPosition();
             }, 500);
             
-            // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose
+            // ⭐ 確保 Stop 後絕對給予權重，防止回歸 Rest Pose (移除 fadeIn 避免閃爍)
             if (idleActionC && currentActiveActions[0] !== idleActionC) {
-                idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play();
+                idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.play();
             }
             if (idleActionW && currentActiveActions[1] !== idleActionW) {
-                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.play();
             }
             if (idleActionD && currentActiveActions[2] !== idleActionD) {
-                idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play();
+                idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.play();
             }
 
             currentActiveActions = [null, null, null]; // ⭐ 清空追蹤
@@ -1662,9 +1661,19 @@
 
         // ⭐⭐⭐ 新增：防呆過濾器，強制將 AI 錯誤的 1D 齊舞指令修正為單人跳舞 ⭐⭐⭐
         function fixDanceSequence(seq, referenceText) {
-            // 只有當傳入的是有效陣列且為 1D 陣列時才介入處理
+            // 只有當傳入的是有效陣列才介入處理
             if (!seq || !Array.isArray(seq) || seq.length === 0) return seq;
-            if (Array.isArray(seq[0])) return seq; // 已經是 2D 陣列，代表 AI 有照做，信任 AI
+            
+            // ⭐ 核心修正：如果 AI 回傳 2D 陣列，但長度卻不是 3 (例如只給了 [[1,2,3]])
+            // 這種情況 AI 其實是把它當成一維陣列在用，會導致只有陣列第一項(第一個人)拿到舞步！
+            let flatSeq = seq;
+            if (Array.isArray(seq[0])) {
+                if (seq.length === 3) {
+                    return seq; // 真的是 3 個人的獨立 2D 陣列，直接信任 AI
+                } else {
+                    flatSeq = seq[0]; // 提取出內部的一維陣列來重新分配
+                }
+            }
 
             const txt = referenceText.toLowerCase();
             
@@ -1679,7 +1688,7 @@
             // 確保沒有要求大家一起跳
             const together = txt.includes("一起") || txt.includes("大家") || txt.includes("所有人");
 
-            // 若有要求單獨跳的語意，強制把 1D 陣列拆成 2D 單人跳陣列
+            // 若有要求單獨跳的語意，強制把 1D 陣列拆成標準 3 人的 2D 陣列
             if ((p1 || p2 || p3 || exclusive) && !together) {
                 let fixedSeq = [[], [], []];
                 let shouldDance = [false, false, false];
@@ -1688,20 +1697,20 @@
                 if (p2) shouldDance[1] = true;
                 if (p3) shouldDance[2] = true;
 
-                // 防呆：如果只說了「單獨跳」但完全沒提到是誰，或是辨識不到，預設指派給第三位或中間
+                // 防呆：如果只說了「單獨跳」但完全沒提到是誰，或是辨識不到，預設指派給第三位 (David)
                 if (!shouldDance.includes(true)) {
-                    shouldDance[2] = true; // 依據您的測試情境，預設指給第三位
+                    shouldDance[2] = true; 
                 }
 
                 for (let i = 0; i < 3; i++) {
-                    // 若此人該跳，就給原陣列；否則塞滿對應長度的 99 (不跳)
-                    fixedSeq[i] = shouldDance[i] ? [...seq] : Array(seq.length).fill(99);
+                    // 若此人該跳，就給原陣列；否則塞滿對應長度的 99 (原地不跳)
+                    fixedSeq[i] = shouldDance[i] ? [...flatSeq] : Array(flatSeq.length).fill(99);
                 }
                 
-                logAction(`[系統防呆] 攔截 AI 錯誤的 1D 齊舞陣列，已自動修正為單獨跳舞: ${JSON.stringify(fixedSeq)}`);
+                logAction(`[系統防呆] 攔截 AI 陣列結構異常，已自動重新分配為: ${JSON.stringify(fixedSeq)}`);
                 return fixedSeq;
             }
-            return seq; // 若無特殊關鍵字，維持原本陣列
+            return flatSeq; // 若無特殊關鍵字，維持一維陣列 (齊舞)
         }
 
 
@@ -1753,7 +1762,7 @@
                     let stepArray = [];
                     for (let c = 0; c < 3; c++) { 
                         let charSeq = seq[c] || [];
-                        // ⭐ 終極修復：如果這回合該角色已經沒有動作了，強制指派 99 (原地不動)，而不是亂給隨機舞蹈！
+                        // ⭐ 終極修復：如果這回合該角色已經沒有動作了，強制指派 99 (原地不動)
                         let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
                         if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
                         stepArray.push(danceId);
@@ -1811,11 +1820,10 @@
 
                 setTimeout(() => updateCameraPosition(), 500);
                 
-                // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，防止卡在 T-pose
-                // ⭐ 核心修正：只針對「非閒置」狀態的角色進行恢復，若已經是 99(Idle) 就不再重新 Reset 造成閃爍
-                if (idleActionC && currentActiveActions[0] !== idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
-                if (idleActionW && currentActiveActions[1] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
-                if (idleActionD && currentActiveActions[2] !== idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
+                // ⭐ 修復：確保跳舞結束回歸 Idle 時給予滿權重，移除 fadeIn 避免閃爍
+                if (idleActionC && currentActiveActions[0] !== idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.play(); }
+                if (idleActionW && currentActiveActions[1] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.play(); }
+                if (idleActionD && currentActiveActions[2] !== idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.play(); }
                 
                 // 清空追蹤
                 currentActiveActions = [null, null, null];
@@ -1881,12 +1889,11 @@
                         // 如果是從別的動作切換回 Idle，或者剛開始但之前沒在播
                         if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
                             idleA.reset();
-                            idleA.setEffectiveWeight(1); // ⭐ 防止無動畫
-                            idleA.fadeIn(0.5).play();
+                            idleA.setEffectiveWeight(1); 
+                            idleA.play(); // 移除 fadeIn 避免閃爍
                         } else if (idleA.getEffectiveWeight() < 1) {
-                            // 如果正在 fadeOut 中，補救回來
                             idleA.setEffectiveWeight(1);
-                            idleA.fadeIn(0.5).play();
+                            idleA.play();
                         }
                         currentActiveActions[vrmIndex] = idleA;
                     } else if (!idleA) {
@@ -1915,8 +1922,7 @@
                         action.reset();
                         action.setLoop(THREE.LoopOnce);
                         action.clampWhenFinished = true; // ⭐ 完美停格：保持定格，等其他人跳完
-                        action.setEffectiveWeight(1);
-                        action.fadeIn(0.5);
+                        action.setEffectiveWeight(1); // 移除 fadeIn 避免掉落至 0
                         action.play();
                     }
                     
@@ -2416,23 +2422,23 @@
                         // 淡出閒置
                         if (idleActionC) idleActionC.fadeOut(0.2);
                         if (idleActionW) idleActionW.fadeOut(0.2); 
-                        if (idleActionD) idleActionD.fadeOut(0.2); // 新增 D
+                        if (idleActionD) idleActionD.fadeOut(0.2); 
                         
-                        // ⭐ 修復：加入 setEffectiveWeight 確保講話時不會掉回無動畫狀態
+                        // ⭐ 修復：移除 fadeIn，改用 play 直接開啟，靠 Idle 的 fadeOut 達成平滑過渡
                         if (talkingActionC) {
                             talkingActionC.reset();
                             talkingActionC.setEffectiveWeight(1);
-                            talkingActionC.fadeIn(0.2).play();
+                            talkingActionC.play();
                         }
                         if (talkingActionW) {
                             talkingActionW.reset();
                             talkingActionW.setEffectiveWeight(1);
-                            talkingActionW.fadeIn(0.2).play();
+                            talkingActionW.play();
                         }
                         if (talkingActionD) {
                             talkingActionD.reset();
                             talkingActionD.setEffectiveWeight(1);
-                            talkingActionD.fadeIn(0.2).play();
+                            talkingActionD.play();
                         }
                     }
                 };
@@ -2455,7 +2461,7 @@
                     
                     // ⭐⭐⭐ 終極修復：檢查剛才是否真的有在播放「說話動作」 ⭐⭐⭐
                     // 如果一開始講話時正在跳舞，說話動作根本沒被觸發。
-                    // 此時若語音結束後盲目 reset idleAction，會把「跳舞結束時好不容易恢復的 Idle」打斷，導致 T-pose 閃爍（舉手）。
+                    // 此時若語音結束後盲目 reset idleAction，會把「跳舞結束時好不容易恢復的 Idle」打斷。
                     const wasTalkingC = talkingActionC && talkingActionC.isRunning() && talkingActionC.getEffectiveWeight() > 0;
                     const wasTalkingW = talkingActionW && talkingActionW.isRunning() && talkingActionW.getEffectiveWeight() > 0;
                     const wasTalkingD = talkingActionD && talkingActionD.isRunning() && talkingActionD.getEffectiveWeight() > 0;
@@ -2463,26 +2469,26 @@
                     // ⭐⭐⭐ 新增：停止說話動作，淡出回原本狀態 ⭐⭐⭐
                     if (talkingActionC) talkingActionC.fadeOut(0.5);
                     if (talkingActionW) talkingActionW.fadeOut(0.5); 
-                    if (talkingActionD) talkingActionD.fadeOut(0.5); // 新增 D
+                    if (talkingActionD) talkingActionD.fadeOut(0.5); 
                     
                     // 恢復閒置
                     // ⭐⭐⭐ 關鍵：必須再次檢查 !isDancing，防止語音 cancel 觸發 onend 時強制恢復 Idle
                     if (!isDancing) {
-                        // ⭐ 修復：加入 setEffectiveWeight 徹底解決 David 突然舉手的問題
-                        if (idleActionC) {
+                        // ⭐ 修復：加入 wasTalking 判斷，並且移除 fadeIn 以免權重瞬間歸零導致 T-pose 閃爍
+                        if (wasTalkingC && idleActionC) {
                             idleActionC.reset(); 
                             idleActionC.setEffectiveWeight(1);
-                            idleActionC.fadeIn(0.5).play();
+                            idleActionC.play();
                         }
-                        if (idleActionW) {
+                        if (wasTalkingW && idleActionW) {
                             idleActionW.reset(); 
                             idleActionW.setEffectiveWeight(1);
-                            idleActionW.fadeIn(0.5).play();
+                            idleActionW.play();
                         }
-                        if (idleActionD) {
+                        if (wasTalkingD && idleActionD) {
                             idleActionD.reset(); 
                             idleActionD.setEffectiveWeight(1);
-                            idleActionD.fadeIn(0.5).play();
+                            idleActionD.play();
                         }
                     }
 
