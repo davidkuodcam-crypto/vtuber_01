@@ -2187,16 +2187,15 @@
                 }
             }
             speak(speakText || "");
-
+            
             // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 ⭐⭐⭐
-            // (保證第二階段主系統如有校正，也能無縫覆蓋更新對話氣泡)
             if (result && result.corrected_text) {
                 const userMsgs = document.querySelectorAll('.message-user');
                 if (userMsgs.length > 0) {
                     userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
                 }
             }
-            
+
             // 處理表情
             if (result && result.emotion) {
                 setEmotion(result.emotion);
@@ -2208,51 +2207,7 @@
             }
         }
 
-        // ⭐⭐⭐ 新增：獨立的文字校正函式，先將語音/輸入文字送給 AI 修正 ⭐⭐⭐
-        async function correctSpeechText(rawText) {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒 timeout，避免等太久
-            try {
-                // ⭐ 強制 AI 將模糊不清的語音轉換為 Prompt.txt 定義的標準舞步名稱
-                const correctionPrompt = `你是一個負責修正語音辨識錯字或語法錯誤的助理。
-這是一個關於 3D 虛擬人物跳舞的系統，請將以下使用者的文字修正為語意通順的繁體中文句子。
-【非常重要：舞蹈名稱標準化】
-若使用者的文字暗示要跳舞，請務必將相關詞彙強制替換為以下四個標準名稱（必須一模一樣）：
-1. 霹靂舞定格A
-2. 湯瑪斯迴旋
-3. 嘻哈律動
-4. 霹靂舞定格B
-(例如：聽到「批哩舞A」、「破浪舞」等，修正為「霹靂舞定格A」；聽到「湯瑪士」、「迴旋」修正為「湯瑪斯迴旋」；「吸哈」、「律動」修正為「嘻哈律動」；「定格B」、「霹靂舞B」修正為「霹靂舞定格B」)
-
-請「只」回傳修正後的純文字，絕對不要包含任何解釋、引號、JSON 格式或多餘字元。若覺得不需修正，則直接回傳原句。
-
-原始文字：
-${rawText}`;
-
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ role: "user", parts: [{ text: correctionPrompt }] }],
-                        systemInstruction: { parts: [{ text: "你是一個錯字修正專家。只回傳修正後的字串，不加任何解釋。" }] }
-                    }),
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-
-                if (response.ok) {
-                    const data = await response.json();
-                    let corrected = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (corrected) {
-                        // 移除可能的前後引號並清除多餘換行
-                        return corrected.replace(/^["']|["']$/g, '').trim(); 
-                    }
-                }
-            } catch (e) {
-                console.warn("Text correction error:", e);
-            }
-            return rawText; // 如果校正失敗，直接回傳原始文字作為兜底
-        }
+        // 移除獨立的 correctSpeechText 函式，改為合併處理
 
         async function handleSendMessage() {
             // 防止重複點擊
@@ -2288,9 +2243,7 @@ ${rawText}`;
             }
 
             userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
-            
-            // ⭐ 先在畫面上印出使用者原始的輸入，並保留該訊息方塊的參考
-            const userMsgDiv = addMessage(text, 'user');
+            addMessage(text, 'user');
             
             if (isPreviewEnv) {
                 addMessage("【提示】預覽模式無法連接 AI，請部署至 Vercel。", 'system');
@@ -2298,28 +2251,9 @@ ${rawText}`;
                 return;
             }
 
-            const loadingMsg = addMessage("語意校正中...", 'system');
+            const loadingMsg = addMessage("Thinking...", 'system');
             
-            // ==========================================
-            // ⭐⭐⭐ 第一階段：透過 AI 修正語音錯字 ⭐⭐⭐
-            // ==========================================
-            const correctedText = await correctSpeechText(text);
-            
-            // 如果 AI 判定有修改且未出錯，更新對話框顯示給使用者看
-            if (correctedText && correctedText !== text && !correctedText.includes("Error")) {
-                // ⭐ 完全採用校正後的純文字，不加上 "(已校正)" 的後綴，以符合 Prompt 格式
-                userMsgDiv.innerHTML = correctedText;
-                console.log(`[語音校正] 原文: ${text} -> 校正: ${correctedText}`);
-            }
-            
-            loadingMsg.innerText = "Thinking...";
-            
-            // ==========================================
-            // ⭐⭐⭐ 第二階段：發送校正後的指令給主 AI ⭐⭐⭐
-            // ==========================================
-            
-            // 將「校正後的文字」存入歷史紀錄，讓系統端收到正確語意
-            chatHistory.push({ role: "user", parts: [{ text: correctedText }] });
+            chatHistory.push({ role: "user", parts: [{ text: text }] });
 
             let finalSystemInstruction = "";
             
@@ -2704,7 +2638,7 @@ ${rawText}`;
                 // 重置靜音計時器
                 clearTimeout(silenceTimer);
                 
-                // 如果有內容，設定 1.5 秒後自動發送
+                // 如果有內容，設定 3.0 秒後自動發送
                 if (userInput.value.trim()) {
                     silenceTimer = setTimeout(async () => { 
                         const rawText = userInput.value.trim();
@@ -2712,7 +2646,7 @@ ${rawText}`;
                             // ⭐⭐⭐ 修改：合併處理，不單獨呼叫校正 API，直接發送 ⭐⭐⭐
                             handleSendMessage();
                         }
-                    }, 1500);
+                    }, 3000);
                 }
             };
         } else {
