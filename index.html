@@ -2638,7 +2638,7 @@
                 // 重置靜音計時器
                 clearTimeout(silenceTimer);
                 
-                // 如果有內容，設定 3.0 秒後自動發送
+                // 如果有內容，設定 1.5 秒後自動發送
                 if (userInput.value.trim()) {
                     silenceTimer = setTimeout(async () => { 
                         const rawText = userInput.value.trim();
@@ -2646,7 +2646,7 @@
                             // ⭐⭐⭐ 修改：合併處理，不單獨呼叫校正 API，直接發送 ⭐⭐⭐
                             handleSendMessage();
                         }
-                    }, 3000);
+                    }, 1500);
                 }
             };
         } else {
