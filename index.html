@@ -2187,6 +2187,15 @@
                 }
             }
             speak(speakText || "");
+
+            // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 ⭐⭐⭐
+            // (保證第二階段主系統如有校正，也能無縫覆蓋更新對話氣泡)
+            if (result && result.corrected_text) {
+                const userMsgs = document.querySelectorAll('.message-user');
+                if (userMsgs.length > 0) {
+                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
+                }
+            }
             
             // 處理表情
             if (result && result.emotion) {
@@ -2204,13 +2213,16 @@
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒 timeout，避免等太久
             try {
+                // ⭐ 強制 AI 將模糊不清的語音轉換為 Prompt.txt 定義的標準舞步名稱
                 const correctionPrompt = `你是一個負責修正語音辨識錯字或語法錯誤的助理。
 這是一個關於 3D 虛擬人物跳舞的系統，請將以下使用者的文字修正為語意通順的繁體中文句子。
-請特別注意以下關鍵字可能的諧音錯誤並將其修正：
-- 霹靂舞 (可能被辨識成 批哩舞、霹靂無 等)
-- 湯瑪斯迴旋 (可能被辨識成 湯瑪士、湯姆士 等)
-- 嘻哈律動 (可能被辨識成 西哈、吸哈、嘻哈 等)
-- 定格 (可能被辨識成 訂格、停格 等)
+【非常重要：舞蹈名稱標準化】
+若使用者的文字暗示要跳舞，請務必將相關詞彙強制替換為以下四個標準名稱（必須一模一樣）：
+1. 霹靂舞定格A
+2. 湯瑪斯迴旋
+3. 嘻哈律動
+4. 霹靂舞定格B
+(例如：聽到「批哩舞A」、「破浪舞」等，修正為「霹靂舞定格A」；聽到「湯瑪士」、「迴旋」修正為「湯瑪斯迴旋」；「吸哈」、「律動」修正為「嘻哈律動」；「定格B」、「霹靂舞B」修正為「霹靂舞定格B」)
 
 請「只」回傳修正後的純文字，絕對不要包含任何解釋、引號、JSON 格式或多餘字元。若覺得不需修正，則直接回傳原句。
 
@@ -2295,7 +2307,8 @@ ${rawText}`;
             
             // 如果 AI 判定有修改且未出錯，更新對話框顯示給使用者看
             if (correctedText && correctedText !== text && !correctedText.includes("Error")) {
-                userMsgDiv.innerHTML = `${correctedText} <span style="font-size:0.75em; opacity:0.7;">(已校正)</span>`;
+                // ⭐ 完全採用校正後的純文字，不加上 "(已校正)" 的後綴，以符合 Prompt 格式
+                userMsgDiv.innerHTML = correctedText;
                 console.log(`[語音校正] 原文: ${text} -> 校正: ${correctedText}`);
             }
             
