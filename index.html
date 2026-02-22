@@ -603,8 +603,9 @@
         let currentActiveActions = [null, null, null];
         let currentDanceListeners = [null, null, null];
         
-        // ⭐⭐⭐ 新增：用於時間控制的 setTimeout 參考，以便在中止跳舞時清除計時器 ⭐⭐⭐
-        let currentDanceTimeout = null;
+        // ⭐⭐⭐ 回合制計時器 (取代舊的總倒數計時) ⭐⭐⭐
+        let phaseTimeout = null;
+        let isPhaseTimeUp = false;
 
         let chatHistory = [];
         let isSpeaking = false;
@@ -1281,13 +1282,12 @@
             generateSequences(danceRound);
             clearAllMixerListeners();
             
-            // 清除可能殘留的時間排程
-            if (currentDanceTimeout) { clearTimeout(currentDanceTimeout); currentDanceTimeout = null; }
+            if (phaseTimeout) { clearTimeout(phaseTimeout); phaseTimeout = null; }
 
             playCurrentStep();
         }
 
-        // ⭐⭐⭐ 手動按鈕跳舞（完全保持您的原廠設定：等動作播放完畢一次） ⭐⭐⭐
+        // 手動按鈕跳舞（完全保持原廠設定：等動作播放完畢一次）
         function playCurrentStep() {
             if (!isDancing) return;
 
@@ -1383,7 +1383,7 @@
             danceBtn.classList.remove('active');
             
             // ⭐⭐⭐ 清除時間排程 ⭐⭐⭐
-            if (currentDanceTimeout) { clearTimeout(currentDanceTimeout); currentDanceTimeout = null; }
+            if (phaseTimeout) { clearTimeout(phaseTimeout); phaseTimeout = null; }
             
             bgm.pause();
             bgm.currentTime = 0;
@@ -1427,7 +1427,7 @@
             }
         }
 
-        // ⭐⭐⭐ 1️⃣ JSON 解析器（升級支援提取 dance_steps 時間機制） ⭐⭐⭐
+        // ⭐⭐⭐ 1️⃣ JSON 解析器（嚴格支援 1D 時間機制格式） ⭐⭐⭐
         function safeParseAIJson(text) {
             try {
                 let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -1447,24 +1447,22 @@
                 const result = JSON.parse(jsonStr);
                 
                 if (result.action === "dance_sequence") {
-                    // ⭐ 新增相容：若 AI 採用了帶時間的 dance_steps 格式
                     if (result.dance_steps && Array.isArray(result.dance_steps)) {
                         result.parsed_steps = result.dance_steps.map(step => {
                             let m = Array.isArray(step.dances) ? step.dances : (typeof step.dances === 'number' ? [step.dances] : [99]);
                             let d = parseInt(step.duration);
                             return {
-                                moves: m.map(v => Array.isArray(v) ? v.map(n => isNaN(parseInt(n)) ? -1 : parseInt(n)) : (isNaN(parseInt(v)) ? -1 : parseInt(v))),
-                                duration: isNaN(d) ? 0 : d // 0 代表不使用時間鎖定，使用原本的播一次機制
+                                moves: m,
+                                duration: isNaN(d) ? 0 : d 
                             };
                         });
                     } 
-                    // 原本無時間控制的舊版降級相容
                     else if (result.dance_list) {
                         if (typeof result.dance_list === "number") result.dance_list = [result.dance_list];
                         if (Array.isArray(result.dance_list) && result.dance_list.length > 0) {
                             result.parsed_steps = [{
-                                moves: result.dance_list.map(item => Array.isArray(item) ? item.map(v => isNaN(parseInt(v)) ? -1 : parseInt(v)) : (isNaN(parseInt(item)) ? -1 : parseInt(item))),
-                                duration: 0 // 舊版沒時間，設為 0 使用原本邏輯
+                                moves: result.dance_list,
+                                duration: 0 
                             }];
                         } else {
                             result.parsed_steps = null;
@@ -1480,12 +1478,11 @@
             }
         }
 
-        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（升級：抓取「秒數」） ⭐⭐⭐
+        // ⭐⭐⭐ 2️⃣ fallback：從文字猜舞蹈（修改回傳真正的 1D 陣列） ⭐⭐⭐
         function guessDanceFromText(text) {
             if (!text) return null;
             const lowerText = text.toLowerCase();
             
-            // ⭐ 新增：捕捉使用者口語說的「X秒」
             let guessedDuration = 0;
             const timeMatch = lowerText.match(/(\d+)\s*秒/);
             if (timeMatch) guessedDuration = parseInt(timeMatch[1]);
@@ -1493,9 +1490,9 @@
             let guessedMoves = null;
 
             if (lowerText.includes("各自") || lowerText.includes("分別") || lowerText.includes("每個人")) {
-                guessedMoves = [[-1, -1, -1], [-1, -1, -1], [-1, -1, -1]]; 
+                guessedMoves = [-1, -1, -1]; // 修改: 改為標準 1D 陣列
             } else if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
-                guessedMoves = [3];
+                guessedMoves = [3, 3, 3];
             } else {
                 const map = {
                     "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
@@ -1506,7 +1503,7 @@
                 };
                 for (const key in map) {
                     if (lowerText.includes(key)) {
-                        guessedMoves = [map[key]];
+                        guessedMoves = [map[key], map[key], map[key]];
                         break;
                     }
                 }
@@ -1518,24 +1515,29 @@
             return null;
         }
 
+        // ⭐⭐⭐ 升級文字防呆：強制 3 個元素 ⭐⭐⭐
         function fixDanceSequence(seqData, referenceText) {
-            // 這個防呆用來修復陣列結構，現在傳入的是 {moves, duration} 陣列
             if (!seqData || !Array.isArray(seqData)) return seqData;
             
             return seqData.map(stepObj => {
                 let seq = stepObj.moves;
                 if (!seq || !Array.isArray(seq) || seq.length === 0) return stepObj;
-                if (Array.isArray(seq[0])) return stepObj; 
+                
+                // 保障長度必為 3
+                if (seq.length === 1) seq = [seq[0], seq[0], seq[0]];
+                while (seq.length < 3) seq.push(99);
 
                 const txt = referenceText.toLowerCase();
-                const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("c");
-                const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("w");
-                const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維");
+                
+                const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("角色1") || txt.includes("角色一");
+                const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("角色2") || txt.includes("角色二");
+                const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維") || txt.includes("角色3") || txt.includes("角色三");
+                
                 const exclusive = txt.includes("其他人不") || txt.includes("其他人不要") || txt.includes("單獨") || txt.includes("只有") || txt.includes("自己");
                 const together = txt.includes("一起") || txt.includes("大家") || txt.includes("所有人");
 
                 if ((p1 || p2 || p3 || exclusive) && !together) {
-                    let fixedSeq = [[], [], []];
+                    let fixedSeq = [99, 99, 99];
                     let shouldDance = [false, false, false];
                     
                     if (p1) shouldDance[0] = true;
@@ -1545,24 +1547,24 @@
                     if (!shouldDance.includes(true)) shouldDance[2] = true; 
 
                     for (let i = 0; i < 3; i++) {
-                        fixedSeq[i] = shouldDance[i] ? [...seq] : Array(seq.length).fill(99);
+                        fixedSeq[i] = shouldDance[i] ? seq[i] : 99;
                     }
                     
                     logAction(`[系統防呆] 修正齊舞陣列為單獨跳舞`);
                     return { moves: fixedSeq, duration: stepObj.duration };
                 }
-                return stepObj; 
+                return { moves: seq, duration: stepObj.duration }; 
             });
         }
 
 
-        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（升級：轉換為支援時間的物件佇列） ⭐⭐⭐
+        // ⭐⭐⭐ 3️⃣ 修正版：播放舞蹈序列（確保排程格式永遠是一維 3 人組） ⭐⭐⭐
         async function playDanceSequence(parsedSteps) {
             isDancing = true;
             danceBtn.classList.add('active');
 
             clearAllMixerListeners();
-            if (currentDanceTimeout) { clearTimeout(currentDanceTimeout); currentDanceTimeout = null; }
+            if (phaseTimeout) { clearTimeout(phaseTimeout); phaseTimeout = null; }
 
              danceActionsMap.forEach(group => {
                 group.forEach(action => action.fadeOut(0.5));
@@ -1585,43 +1587,38 @@
 
             currentDanceQueue = [];
             
-            // 處理排程 (parsedSteps 為物件陣列 [{moves: [...], duration: X}, ...])
             if (parsedSteps && parsedSteps.length > 0) {
                 parsedSteps.forEach(stepData => {
                     let seq = stepData.moves;
                     let duration = stepData.duration || 0;
                     
-                    let is2D = seq.length > 0 && Array.isArray(seq[0]);
-                    
-                    if (is2D) {
-                        let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
-                        for (let step = 0; step < maxSteps; step++) {
-                            let stepArray = [];
-                            for (let c = 0; c < 3; c++) { 
-                                let charSeq = seq[c] || [];
-                                let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
-                                if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
-                                stepArray.push(danceId);
-                            }
-                            // 如果一個物件內包含多步，平均分配或直接繼承時間（這裡直接繼承）
-                            currentDanceQueue.push({ moves: stepArray, duration: duration }); 
-                        }
-                    } else {
-                        // ⭐ 修復：1D 陣列代表齊舞，每一個元素是一個獨立的步驟
-                        seq.forEach(id => {
-                            let danceId = (id === -1 || isNaN(parseInt(id))) ? Math.floor(Math.random() * DANCE_URLS.length) : parseInt(id);
-                            // 將這一步轉換為三個人皆相同的動作
-                            let stepArray = [danceId, danceId, danceId]; 
-                            currentDanceQueue.push({ moves: stepArray, duration: duration });
-                        });
+                    // 完全扁平化，保證是 [c1, c2, c3]
+                    if (!Array.isArray(seq)) seq = [seq];
+                    if (seq.length > 0 && Array.isArray(seq[0])) {
+                        seq = [
+                            seq[0]?.[0] !== undefined ? seq[0][0] : 99,
+                            seq[1]?.[0] !== undefined ? seq[1][0] : 99,
+                            seq[2]?.[0] !== undefined ? seq[2][0] : 99
+                        ];
+                    } else if (seq.length === 1) {
+                        seq = [seq[0], seq[0], seq[0]];
                     }
+                    while(seq.length < 3) seq.push(99);
+
+                    let stepArray = seq.map(id => {
+                        let parsed = parseInt(id);
+                        if (parsed === 99) return 99;
+                        return (isNaN(parsed) || parsed < 0 || parsed >= DANCE_URLS.length) ? Math.floor(Math.random() * DANCE_URLS.length) : parsed;
+                    });
+                    
+                    currentDanceQueue.push({ moves: stepArray, duration: duration });
                 });
             }
 
             let firstObj = currentDanceQueue.length > 0 ? currentDanceQueue[0].moves : null;
-            let cFirst = firstObj ? (Array.isArray(firstObj) ? firstObj[0] : firstObj) : null;
-            let wFirst = firstObj ? (Array.isArray(firstObj) ? firstObj[1] : firstObj) : null;
-            let dFirst = firstObj ? (Array.isArray(firstObj) ? firstObj[2] : firstObj) : null;
+            let cFirst = firstObj ? firstObj[0] : null;
+            let wFirst = firstObj ? firstObj[1] : null;
+            let dFirst = firstObj ? firstObj[2] : null;
 
             if (idleActionC && cFirst !== 99) idleActionC.fadeOut(0.5);
             if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
@@ -1635,70 +1632,38 @@
             playNextDanceInQueue();
         }
 
-        // ⭐⭐⭐ AI 舞蹈引擎：時間與事件雙軌制核心 ⭐⭐⭐
+        // ⭐⭐⭐ AI 舞蹈引擎：保留原始時長 + 達到時限強制打斷的「回圈控制器」 ⭐⭐⭐
         function playNextDanceInQueue() {
             if (currentDanceQueue.length === 0) {
-                isDancing = false;
-                bgm.pause();
-                bgm.currentTime = 0;
-                danceBtn.classList.remove('active');
-
-                currentVrms.forEach((v, i) => {
-                    const fadeAction = currentActiveActions[i];
-                    let idleA = i === 0 ? idleActionC : (i === 1 ? idleActionW : idleActionD);
-                    if (fadeAction && fadeAction !== idleA) {
-                        fadeAction.fadeOut(0.5);
-                    }
-                });
-
-                clearAllMixerListeners();
-                if (currentDanceTimeout) { clearTimeout(currentDanceTimeout); currentDanceTimeout = null; }
-
-                setTimeout(() => updateCameraPosition(), 500);
-                
-                if (idleActionC && currentActiveActions[0] !== idleActionC) { idleActionC.reset(); idleActionC.setEffectiveWeight(1); idleActionC.fadeIn(0.5).play(); }
-                if (idleActionW && currentActiveActions[1] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
-                if (idleActionD && currentActiveActions[2] !== idleActionD) { idleActionD.reset(); idleActionD.setEffectiveWeight(1); idleActionD.fadeIn(0.5).play(); }
-                
-                currentActiveActions = [null, null, null];
-                
-                if (window.pendingMicResume) {
-                    window.pendingMicResume = false;
-                    setTimeout(() => {
-                        if (!isRecording) startRecording();
-                    }, 500);
-                }
+                stopDance();
                 return;
             }
 
             let nextObj = currentDanceQueue.shift(); 
-            let nextData = nextObj.moves;
-            let stepDuration = nextObj.duration; // 取得該步驟的秒數
-            let isTimeBased = (stepDuration > 0);
+            let moves = nextObj.moves;
+            let duration = nextObj.duration;
             
-            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)} ${isTimeBased ? `(定時: ${stepDuration}秒)` : '(等待完成)'}`);
+            isPhaseTimeUp = false;
+            if (phaseTimeout) { clearTimeout(phaseTimeout); phaseTimeout = null; }
             
-            // ⭐ 修復：強制確保 nextData 是包含 3 個人動作的陣列
-            if (Array.isArray(nextData)) {
-                nextData = nextData.map(val => {
-                    let v = parseInt(val);
-                    if (v === 99) return 99; 
-                    return (isNaN(v) || v < 0 || v >= DANCE_URLS.length) ? Math.floor(Math.random() * DANCE_URLS.length) : v;
-                });
-                while(nextData.length < 3) nextData.push(nextData[0] !== undefined ? nextData[0] : 99);
-            } else {
-                let v = parseInt(nextData);
-                if (v === 99) {
-                    nextData = [99, 99, 99]; 
-                } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
-                    let rnd = Math.floor(Math.random() * DANCE_URLS.length);
-                    nextData = [rnd, rnd, rnd];
-                } else {
-                    nextData = [v, v, v];
-                }
+            logAction(`[系統] 進入階段: ${JSON.stringify(moves)} (定時: ${duration > 0 ? duration + '秒' : '播完即止'})`);
+            
+            // 如果此回合有設定總秒數限制，啟動全域中斷計時器
+            if (duration > 0) {
+                phaseTimeout = setTimeout(() => {
+                    isPhaseTimeUp = true;
+                    logAction(`[系統] 階段時限 (${duration}秒) 抵達，強制進入下一階段`);
+                    playNextDanceInQueue(); 
+                }, duration * 1000);
             }
-            
-            currentPlayingDanceData = nextData; 
+
+            executePhase(moves, duration);
+        }
+
+        // 獨立出的階段執行器，負責單次播放並檢查是否需要「續杯」
+        function executePhase(moves, duration) {
+            if (!isDancing) return;
+            currentPlayingDanceData = moves; 
 
             let dancersFinished = [true, true, true]; 
             let anyoneDancing = false;
@@ -1707,78 +1672,44 @@
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
                 
-                // ⭐ 現在 nextData 保證是有 3 個元素的陣列
-                let nextIndex = nextData[vrmIndex];
+                let nextIndex = moves[vrmIndex];
                 if (nextIndex === undefined) nextIndex = 99;
                 
                 const oldAction = currentActiveActions[vrmIndex];
 
                 if (nextIndex === 99) {
                     dancersFinished[vrmIndex] = true; 
-                    
-                    let idleA = null;
-                    if (vrmIndex === 0) idleA = idleActionC;
-                    if (vrmIndex === 1) idleA = idleActionW;
-                    if (vrmIndex === 2) idleA = idleActionD;
+                    let idleA = vrmIndex === 0 ? idleActionC : (vrmIndex === 1 ? idleActionW : idleActionD);
                     
                     if (oldAction && oldAction !== idleA) {
                         oldAction.fadeOut(0.5);
                     }
-                    
                     if (idleA && oldAction !== idleA) {
-                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
-                            idleA.reset();
-                            idleA.setEffectiveWeight(1); 
-                            idleA.fadeIn(0.5).play();
-                        } else if (idleA.getEffectiveWeight() < 1) {
-                            idleA.setEffectiveWeight(1);
-                            idleA.fadeIn(0.5).play();
-                        }
+                        idleA.reset().setEffectiveWeight(1).fadeIn(0.5).play();
                         currentActiveActions[vrmIndex] = idleA;
                     } else if (!idleA) {
                         currentActiveActions[vrmIndex] = null;
                     }
-                    return; 
-                }
-                
-                const action = danceActionsMap[nextIndex]?.[vrmIndex];
-                
-                if (action) {
-                    anyoneDancing = true;
-                    dancersFinished[vrmIndex] = false; 
-                    
-                    if (oldAction && oldAction !== action) {
-                        oldAction.fadeOut(0.5);
-                    }
-
-                    if (oldAction === action) {
-                        action.stop(); 
-                        action.reset();
-                        action.setEffectiveWeight(1); 
-                        action.play();
-                    } else {
-                        action.reset();
+                } else {
+                    const action = danceActionsMap[nextIndex]?.[vrmIndex];
+                    if (action) {
+                        anyoneDancing = true;
+                        dancersFinished[vrmIndex] = false; 
                         
-                        // ⭐⭐⭐ 時間機制核心判斷 ⭐⭐⭐
-                        if (isTimeBased) {
-                            // 若有時間限制，設為無限重複迴圈 (不變更速度)
-                            action.setLoop(THREE.LoopRepeat);
-                            action.clampWhenFinished = false; 
-                        } else {
-                            // 若無時間限制，維持原本的播一次即鎖住
-                            action.setLoop(THREE.LoopOnce);
-                            action.clampWhenFinished = true; 
+                        if (oldAction && oldAction !== action) {
+                            oldAction.fadeOut(0.5);
                         }
-                        
+
+                        action.reset();
+                        // ⭐️ 無論如何都設為 LoopOnce，確保每次都能觸發 finished 事件等最晚的人
+                        action.setLoop(THREE.LoopOnce);
+                        action.clampWhenFinished = true; 
                         action.setEffectiveWeight(1);
                         action.fadeIn(0.5);
                         action.play();
-                    }
-                    
-                    currentActiveActions[vrmIndex] = action; 
+                        
+                        currentActiveActions[vrmIndex] = action; 
 
-                    // ⭐ 只有在沒有時間限制時，才掛載「等待完成」的監聽器
-                    if (!isTimeBased) {
                         const onFinished = (e) => {
                             if (e.action === action) {
                                 if (currentDanceListeners[vrmIndex]) {
@@ -1791,34 +1722,42 @@
 
                                 dancersFinished[vrmIndex] = true; 
 
+                                // 只有當所有跳舞的人都 "依照自己原始速度" 播完時
                                 if (dancersFinished.every(v => v) && !stepTriggered) {
                                     stepTriggered = true; 
-                                    playNextDanceInQueue(); 
+
+                                    if (duration > 0) {
+                                        // 情況 A：有指定時長
+                                        if (!isPhaseTimeUp) {
+                                            // 時限還沒到，但動作已結束，原地「續杯」重播一次
+                                            executePhase(moves, duration);
+                                        } 
+                                        // 若 isPhaseTimeUp = true，代表前面的 setTimeout 已強制打斷，這裡什麼都不做。
+                                    } else {
+                                        // 情況 B：無指定時長 (0)，播完一次就正常進入下一步
+                                        playNextDanceInQueue();
+                                    }
                                 }
                             }
                         };
                         assignMixerListener(vrm, vrmIndex, onFinished);
+                    } else {
+                        currentActiveActions[vrmIndex] = null;
                     }
-                } else {
-                    currentActiveActions[vrmIndex] = null;
                 }
             });
 
-            // ⭐⭐⭐ 時間排程觸發機制 ⭐⭐⭐
-            if (isTimeBased) {
-                // 如果有指定秒數，完全無視監聽器，直接用 setTimeout 推進下一步驟！
-                // 推進時，程式開頭的 fadeOut / fadeIn 就會自動營造出完美的漸變切換效果。
-                currentDanceTimeout = setTimeout(() => {
-                    if (isDancing) {
-                        playNextDanceInQueue();
+            // 備用機制：如果全部都是 99，手動跳下一步
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
+                setTimeout(() => {
+                    if (duration > 0 && !isPhaseTimeUp) {
+                         clearTimeout(phaseTimeout);
+                         playNextDanceInQueue();
+                    } else if (duration === 0) {
+                         playNextDanceInQueue();
                     }
-                }, stepDuration * 1000);
-            } else {
-                // 舊版備用機制：如果這一步大家都是 99 沒人跳，手動跳下一步
-                if (!anyoneDancing && !stepTriggered) {
-                    stepTriggered = true;
-                    setTimeout(() => playNextDanceInQueue(), 50);
-                }
+                }, 500);
             }
         }
 
@@ -1992,10 +1931,10 @@
                     if (result.parsed_steps && result.parsed_steps.length > 0) {
                         danceSteps = result.parsed_steps;
                     } else if (result.action === 'dance_random') {
-                        danceSteps = [{ moves: [Math.floor(Math.random() * DANCE_URLS.length)], duration: 0 }];
+                        danceSteps = [{ moves: [Math.floor(Math.random() * DANCE_URLS.length), Math.floor(Math.random() * DANCE_URLS.length), Math.floor(Math.random() * DANCE_URLS.length)], duration: 0 }];
                     } else {
                         danceSteps = guessDanceFromText(result.text);
-                        if (!danceSteps) danceSteps = [{ moves: [Math.floor(Math.random() * DANCE_URLS.length)], duration: 0 }];
+                        if (!danceSteps) danceSteps = [{ moves: [Math.floor(Math.random() * DANCE_URLS.length), Math.floor(Math.random() * DANCE_URLS.length), Math.floor(Math.random() * DANCE_URLS.length)], duration: 0 }];
                     }
                 }
             } else {
@@ -2094,7 +2033,7 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 系統指令全面更新：教導 AI 新增 duration 參數 ⭐⭐⭐
+            // ⭐⭐⭐ 系統指令全面更新：徹底廢除 2D 陣列混淆寫法 ⭐⭐⭐
             finalSystemInstruction += `
 【CRITICAL INSTRUCTIONS】
 1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json.
@@ -2102,13 +2041,17 @@
 3. **DANCE SYSTEM (WITH TIME CONTROL)**:
    - Dance IDs available: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B), 99(不跳舞/原地待命).
    - "action" must be "dance_sequence".
-   - **多回合排程與時間機制 (CRITICAL)**：若使用者要求「跳幾秒」或「連續動作」，請在 JSON 內提供 "dance_steps" 陣列，每個物件包含 "dances" (舞步陣列) 與 "duration" (該步持續秒數，數字型態)。
-   - **範例 1 (指定秒數齊舞與單獨跳)**: 要求「大家一起跳嘻哈10秒後，第一人單獨跳湯瑪斯15秒」:
-     "dance_steps": [{"dances": [2], "duration": 10}, {"dances": [[1], [99], [99]], "duration": 15}]
-   - **範例 2 (各自跳不同舞指定秒數)**: 要求「各自跳不同的舞10秒」:
-     "dance_steps": [{"dances": [[1], [2], [0]], "duration": 10}]
-   - **範例 3 (無指定秒數)**: 要求「跳一次霹靂舞」:
-     "dance_steps": [{"dances": [0], "duration": 0}] (duration設為0系統會自動播完一次)
+   - "dance_steps" 陣列中的每一個物件代表一個排程階段。
+   - "dances" **必須**是包含 3 個數字的陣列，分別代表 [第一人, 第二人, 第三人] 的動作 ID。
+   - "duration" 代表該階段持續的秒數 (系統會依照原本速度播放，到達時限即切換)。
+   - **範例 1 (大家一起跳嘻哈20秒)**:
+     "dance_steps": [{"dances": [2, 2, 2], "duration": 20}]
+   - **範例 2 (第一人跳湯瑪斯10秒，接著所有人跳霹靂舞15秒)**:
+     "dance_steps": [{"dances": [1, 99, 99], "duration": 10}, {"dances": [0, 0, 0], "duration": 15}]
+   - **範例 3 (各自跳不同舞指定秒數)**: 要求「各自跳不同的舞10秒」:
+     "dance_steps": [{"dances": [1, 2, 0], "duration": 10}]
+   - **範例 4 (無指定秒數，播完一次)**: 要求「跳一次」:
+     "dance_steps": [{"dances": [0, 0, 0], "duration": 0}]
 4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
 `;
 
