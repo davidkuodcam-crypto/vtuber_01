@@ -238,15 +238,15 @@
 
     .message-user { 
         align-self: flex-end; 
-        background-color: rgba(30, 136, 229, 0.9); /* 修改：藍底 */
+        background-color: rgba(30, 136, 229, 0.6); 
         border-bottom-right-radius: 2px; 
         color: #fff;
     }
     .message-ai { 
         align-self: flex-start; 
-        background-color: rgba(255, 255, 255, 0.9); 
+        background-color: rgba(255, 255, 255, 0.6); 
         border-bottom-left-radius: 2px; 
-        color: #333; 
+        color: #000000; 
         text-shadow: none;
         border: 1px solid #ffd700;
     }
@@ -1669,8 +1669,9 @@
             const txt = referenceText.toLowerCase();
             
             // 偵測是否明確指定特定角色
-            const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("c");
-            const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("w");
+            // ⭐ 修正：移除單一字母 'c' 和 'w' 的判斷，避免被 JSON 鍵值 (如 action, sequence) 誤觸發
+            const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("角色c");
+            const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("角色w");
             const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維");
             
             // 偵測是否有排他性字眼
@@ -2086,7 +2087,16 @@
             isMuted = !isMuted;
             muteBtn.classList.toggle('muted', isMuted);
             muteBtn.innerText = isMuted ? '🔇' : '🔊';
-            if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
+            
+            // ⭐⭐⭐ 修改：將 cancel 改為 pause 與 resume，以便重新開啟喇叭時能繼續剛剛被暫停的話語 ⭐⭐⭐
+            if (window.speechSynthesis) {
+                if (isMuted) {
+                    window.speechSynthesis.pause();
+                } else {
+                    window.speechSynthesis.resume();
+                }
+            }
+            
             // 連動背景音樂靜音
             bgm.muted = isMuted;
         });
@@ -2183,7 +2193,9 @@
             if (result && result.corrected_text) {
                 const userMsgs = document.querySelectorAll('.message-user');
                 if (userMsgs.length > 0) {
-                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
+                    // 套用與 addMessage 相同的安全過濾，防止破圖
+                    let safeText = result.corrected_text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+                    userMsgs[userMsgs.length - 1].innerHTML = safeText;
                 }
             }
 
@@ -2250,7 +2262,7 @@
             
             // ⭐⭐⭐ 先加入外部 System Prompt，但後面會再加上強制指令 ⭐⭐⭐
             if (externalSystemPrompt) finalSystemInstruction += externalSystemPrompt;
-            else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none" }`;
+            else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none", "corrected_text": "" }`;
 
             if (externalKnowledge) {
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
@@ -2267,7 +2279,7 @@
    - **多回合排程 (CRITICAL)**：當使用者要求「跳多次」或「連續跳不同舞」時，你必須在 "dance_list" 中產生對應數量的步驟。
    - **預設齊舞 (1D Array)**: 若使用者要求「大家一起跳兩次」，請回傳 [1, 1]。
    - **各自跳舞 (2D Array)**: 若使用者要求「第一人跳嘻哈，其他人不跳」，請回傳 [[2], [99], [99]]。若要求各自跳不同且跳兩次，請回傳 [[2,2], [0,0], [3,3]]。子陣列之間務必加上逗號！
-4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
+4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in the "corrected_text" field. (Mandatory)
 `;
 
             // Add AbortController for timeout
