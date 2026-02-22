@@ -2188,14 +2188,6 @@
             }
             speak(speakText || "");
             
-            // ⭐⭐⭐ 恢復文字修正功能：如果有校正後的文字，更新使用者的對話氣泡 ⭐⭐⭐
-            if (result && result.corrected_text) {
-                const userMsgs = document.querySelectorAll('.message-user');
-                if (userMsgs.length > 0) {
-                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
-                }
-            }
-
             // 處理表情
             if (result && result.emotion) {
                 setEmotion(result.emotion);
@@ -2207,7 +2199,48 @@
             }
         }
 
-        // 移除獨立的 correctSpeechText 函式，改為合併處理
+        // ⭐⭐⭐ 新增：獨立的文字校正函式，先將語音/輸入文字送給 AI 修正 ⭐⭐⭐
+        async function correctSpeechText(rawText) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒 timeout，避免等太久
+            try {
+                const correctionPrompt = `你是一個負責修正語音辨識錯字或語法錯誤的助理。
+這是一個關於 3D 虛擬人物跳舞的系統，請將以下使用者的文字修正為語意通順的繁體中文句子。
+請特別注意以下關鍵字可能的諧音錯誤並將其修正：
+- 霹靂舞 (可能被辨識成 批哩舞、霹靂無 等)
+- 湯瑪斯迴旋 (可能被辨識成 湯瑪士、湯姆士 等)
+- 嘻哈律動 (可能被辨識成 西哈、吸哈、嘻哈 等)
+- 定格 (可能被辨識成 訂格、停格 等)
+
+請「只」回傳修正後的純文字，絕對不要包含任何解釋、引號、JSON 格式或多餘字元。若覺得不需修正，則直接回傳原句。
+
+原始文字：
+${rawText}`;
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ role: "user", parts: [{ text: correctionPrompt }] }],
+                        systemInstruction: { parts: [{ text: "你是一個錯字修正專家。只回傳修正後的字串，不加任何解釋。" }] }
+                    }),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    let corrected = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (corrected) {
+                        // 移除可能的前後引號並清除多餘換行
+                        return corrected.replace(/^["']|["']$/g, '').trim(); 
+                    }
+                }
+            } catch (e) {
+                console.warn("Text correction error:", e);
+            }
+            return rawText; // 如果校正失敗，直接回傳原始文字作為兜底
+        }
 
         async function handleSendMessage() {
             // 防止重複點擊
@@ -2243,7 +2276,9 @@
             }
 
             userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
-            addMessage(text, 'user');
+            
+            // ⭐ 先在畫面上印出使用者原始的輸入，並保留該訊息方塊的參考
+            const userMsgDiv = addMessage(text, 'user');
             
             if (isPreviewEnv) {
                 addMessage("【提示】預覽模式無法連接 AI，請部署至 Vercel。", 'system');
@@ -2251,9 +2286,27 @@
                 return;
             }
 
-            const loadingMsg = addMessage("Thinking...", 'system');
+            const loadingMsg = addMessage("語意校正中...", 'system');
             
-            chatHistory.push({ role: "user", parts: [{ text: text }] });
+            // ==========================================
+            // ⭐⭐⭐ 第一階段：透過 AI 修正語音錯字 ⭐⭐⭐
+            // ==========================================
+            const correctedText = await correctSpeechText(text);
+            
+            // 如果 AI 判定有修改且未出錯，更新對話框顯示給使用者看
+            if (correctedText && correctedText !== text && !correctedText.includes("Error")) {
+                userMsgDiv.innerHTML = `${correctedText} <span style="font-size:0.75em; opacity:0.7;">(已校正)</span>`;
+                console.log(`[語音校正] 原文: ${text} -> 校正: ${correctedText}`);
+            }
+            
+            loadingMsg.innerText = "Thinking...";
+            
+            // ==========================================
+            // ⭐⭐⭐ 第二階段：發送校正後的指令給主 AI ⭐⭐⭐
+            // ==========================================
+            
+            // 將「校正後的文字」存入歷史紀錄，讓系統端收到正確語意
+            chatHistory.push({ role: "user", parts: [{ text: correctedText }] });
 
             let finalSystemInstruction = "";
             
