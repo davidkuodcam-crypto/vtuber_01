@@ -1607,8 +1607,13 @@
                             currentDanceQueue.push({ moves: stepArray, duration: duration }); 
                         }
                     } else {
-                        let mappedMoves = seq.map(id => id === -1 ? Math.floor(Math.random() * DANCE_URLS.length) : id);
-                        currentDanceQueue.push({ moves: mappedMoves, duration: duration });
+                        // ⭐ 修復：1D 陣列代表齊舞，每一個元素是一個獨立的步驟
+                        seq.forEach(id => {
+                            let danceId = (id === -1 || isNaN(parseInt(id))) ? Math.floor(Math.random() * DANCE_URLS.length) : parseInt(id);
+                            // 將這一步轉換為三個人皆相同的動作
+                            let stepArray = [danceId, danceId, danceId]; 
+                            currentDanceQueue.push({ moves: stepArray, duration: duration });
+                        });
                     }
                 });
             }
@@ -1673,20 +1678,23 @@
             
             logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)} ${isTimeBased ? `(定時: ${stepDuration}秒)` : '(等待完成)'}`);
             
+            // ⭐ 修復：強制確保 nextData 是包含 3 個人動作的陣列
             if (Array.isArray(nextData)) {
                 nextData = nextData.map(val => {
                     let v = parseInt(val);
                     if (v === 99) return 99; 
                     return (isNaN(v) || v < 0 || v >= DANCE_URLS.length) ? Math.floor(Math.random() * DANCE_URLS.length) : v;
                 });
+                while(nextData.length < 3) nextData.push(nextData[0] !== undefined ? nextData[0] : 99);
             } else {
                 let v = parseInt(nextData);
                 if (v === 99) {
-                    nextData = 99; 
+                    nextData = [99, 99, 99]; 
                 } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
-                    nextData = Math.floor(Math.random() * DANCE_URLS.length);
+                    let rnd = Math.floor(Math.random() * DANCE_URLS.length);
+                    nextData = [rnd, rnd, rnd];
                 } else {
-                    nextData = v;
+                    nextData = [v, v, v];
                 }
             }
             
@@ -1699,7 +1707,10 @@
             currentVrms.forEach((vrm, vrmIndex) => {
                 if (!vrm || !vrm.userData.mixer) return;
                 
-                let nextIndex = Array.isArray(nextData) ? nextData[vrmIndex] : nextData;
+                // ⭐ 現在 nextData 保證是有 3 個元素的陣列
+                let nextIndex = nextData[vrmIndex];
+                if (nextIndex === undefined) nextIndex = 99;
+                
                 const oldAction = currentActiveActions[vrmIndex];
 
                 if (nextIndex === 99) {
@@ -2092,12 +2103,12 @@
    - Dance IDs available: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B), 99(不跳舞/原地待命).
    - "action" must be "dance_sequence".
    - **多回合排程與時間機制 (CRITICAL)**：若使用者要求「跳幾秒」或「連續動作」，請在 JSON 內提供 "dance_steps" 陣列，每個物件包含 "dances" (舞步陣列) 與 "duration" (該步持續秒數，數字型態)。
-   - **範例 1 (指定秒數連續跳)**: 要求「大家一起跳嘻哈10秒後，第一人單獨跳湯瑪斯15秒」:
-     "dance_steps": [{"dances": [2, 2, 2], "duration": 10}, {"dances": [1, 99, 99], "duration": 15}]
+   - **範例 1 (指定秒數齊舞與單獨跳)**: 要求「大家一起跳嘻哈10秒後，第一人單獨跳湯瑪斯15秒」:
+     "dance_steps": [{"dances": [2], "duration": 10}, {"dances": [[1], [99], [99]], "duration": 15}]
    - **範例 2 (各自跳不同舞指定秒數)**: 要求「各自跳不同的舞10秒」:
-     "dance_steps": [{"dances": [1, 2, 0], "duration": 10}]
+     "dance_steps": [{"dances": [[1], [2], [0]], "duration": 10}]
    - **範例 3 (無指定秒數)**: 要求「跳一次霹靂舞」:
-     "dance_steps": [{"dances": [0, 0, 0], "duration": 0}] (duration設為0系統會自動播完一次)
+     "dance_steps": [{"dances": [0], "duration": 0}] (duration設為0系統會自動播完一次)
 4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
 `;
 
