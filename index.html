@@ -1669,9 +1669,8 @@
             const txt = referenceText.toLowerCase();
             
             // 偵測是否明確指定特定角色
-            // ⭐ 修正：移除單一字母 'c' 和 'w' 的判斷，避免被 JSON 鍵值 (如 action, sequence) 誤觸發
-            const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("角色c");
-            const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("角色w");
+            const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("c");
+            const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("w");
             const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維");
             
             // 偵測是否有排他性字眼
@@ -2193,9 +2192,7 @@
             if (result && result.corrected_text) {
                 const userMsgs = document.querySelectorAll('.message-user');
                 if (userMsgs.length > 0) {
-                    // 套用與 addMessage 相同的安全過濾，防止破圖
-                    let safeText = result.corrected_text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
-                    userMsgs[userMsgs.length - 1].innerHTML = safeText;
+                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
                 }
             }
 
@@ -2262,7 +2259,7 @@
             
             // ⭐⭐⭐ 先加入外部 System Prompt，但後面會再加上強制指令 ⭐⭐⭐
             if (externalSystemPrompt) finalSystemInstruction += externalSystemPrompt;
-            else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none", "corrected_text": "" }`;
+            else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none" }`;
 
             if (externalKnowledge) {
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
@@ -2279,7 +2276,7 @@
    - **多回合排程 (CRITICAL)**：當使用者要求「跳多次」或「連續跳不同舞」時，你必須在 "dance_list" 中產生對應數量的步驟。
    - **預設齊舞 (1D Array)**: 若使用者要求「大家一起跳兩次」，請回傳 [1, 1]。
    - **各自跳舞 (2D Array)**: 若使用者要求「第一人跳嘻哈，其他人不跳」，請回傳 [[2], [99], [99]]。若要求各自跳不同且跳兩次，請回傳 [[2,2], [0,0], [3,3]]。子陣列之間務必加上逗號！
-4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in the "corrected_text" field. (Mandatory)
+4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
 `;
 
             // Add AbortController for timeout
