@@ -1425,6 +1425,7 @@
             }
         }
 
+        // ⭐⭐⭐ 1️⃣ JSON 解析器：完美相容舊版 dance_list (將 [1,3] 轉換為連續跳躍排程) ⭐⭐⭐
         function safeParseAIJson(text) {
             try {
                 let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -1457,10 +1458,28 @@
                     else if (result.dance_list) {
                         if (typeof result.dance_list === "number") result.dance_list = [result.dance_list];
                         if (Array.isArray(result.dance_list) && result.dance_list.length > 0) {
-                            result.parsed_steps = [{
-                                moves: result.dance_list,
-                                duration: 0 
-                            }];
+                            // ⭐ 核心修復：相容舊版 Prompt，將舊版一維陣列 [1, 3] 拆解為「順序執行」的排程
+                            let is2D = result.dance_list.some(item => Array.isArray(item));
+                            if (is2D) {
+                                // 舊版的二維陣列 (各自跳舞)，打包成新系統的步驟
+                                let maxSteps = Math.max(...result.dance_list.map(arr => Array.isArray(arr) ? arr.length : 1));
+                                let newSteps = [];
+                                for (let step = 0; step < maxSteps; step++) {
+                                    let stepArray = [];
+                                    for (let c = 0; c < 3; c++) {
+                                        let charArr = Array.isArray(result.dance_list[c]) ? result.dance_list[c] : [result.dance_list[c]];
+                                        let val = charArr[step] !== undefined ? charArr[step] : 99;
+                                        stepArray.push(val);
+                                    }
+                                    newSteps.push({ moves: stepArray, duration: 0 });
+                                }
+                                result.parsed_steps = newSteps;
+                            } else {
+                                // 舊版一維陣列 (連續跳多個舞，[1, 3] 意思是「第一步大家跳1，第二步大家跳3」)
+                                result.parsed_steps = result.dance_list.map(danceId => {
+                                    return { moves: [danceId, danceId, danceId], duration: 0 };
+                                });
+                            }
                         } else {
                             result.parsed_steps = null;
                         }
@@ -1906,7 +1925,8 @@
             let danceSteps = null;
 
             if (result) {
-                logAction(`Parsed Result:\nAction: ${result.action}\nSteps: ${JSON.stringify(result.parsed_steps)}`);
+                // logAction 中只顯示解析成功，防止跳錯
+                logAction(`Parsed Result:\nAction: ${result.action}\n`);
                 if (result.action === 'dance_sequence' || result.action === 'dance_random') {
                     if (result.parsed_steps && result.parsed_steps.length > 0) {
                         danceSteps = result.parsed_steps;
@@ -1948,6 +1968,7 @@
             }
             speak(speakText || "");
             
+            // ⭐⭐⭐ 文字校正邏輯原封不動保留 ⭐⭐⭐
             if (result && result.corrected_text) {
                 const userMsgs = document.querySelectorAll('.message-user');
                 if (userMsgs.length > 0) {
@@ -2013,7 +2034,7 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 系統指令全面更新：嚴格禁止 AI 自行腦補發明秒數 ⭐⭐⭐
+            // ⭐⭐⭐ 系統指令維持不變 ⭐⭐⭐
             finalSystemInstruction += `
 【CRITICAL INSTRUCTIONS】
 1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json.
@@ -2261,6 +2282,7 @@
             updateCameraPosition();
         });
 
+        // ⭐⭐⭐ 完整保留原版錄音與文字疊加邏輯 ⭐⭐⭐
         let recognition = null;
         let isRecording = false;
         let silenceTimer = null;
@@ -2321,6 +2343,9 @@
 
             recognition.onresult = (e) => {
                 let interim = '';
+                // 重新組合最終結果與臨時結果
+                // 注意：這裡是簡易實作，直接覆蓋 input
+                // AITranslator 邏輯：
                 for (let i = e.resultIndex; i < e.results.length; ++i) {
                     if (e.results[i].isFinal) {
                         finalTranscript += e.results[i][0].transcript;
@@ -2329,14 +2354,20 @@
                     }
                 }
                 
+                // 將結果填入輸入框
+                // 為了讓使用者體驗更好，我們保留使用者可能手打的部分嗎？
+                // 這裡採用 AITranslator 的邏輯：直接由語音主導
                 userInput.value = finalTranscript + interim;
                 
+                // 重置靜音計時器
                 clearTimeout(silenceTimer);
                 
+                // 如果有內容，設定 1.5 秒後自動發送
                 if (userInput.value.trim()) {
                     silenceTimer = setTimeout(async () => { 
                         const rawText = userInput.value.trim();
                         if(rawText) {
+                            // ⭐⭐⭐ 修改：合併處理，不單獨呼叫校正 API，直接發送 ⭐⭐⭐
                             handleSendMessage();
                         }
                     }, 1500);
