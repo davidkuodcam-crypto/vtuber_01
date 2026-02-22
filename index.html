@@ -238,15 +238,15 @@
 
     .message-user { 
         align-self: flex-end; 
-        background-color: rgba(30, 136, 229, 0.6); 
+        background-color: rgba(30, 136, 229, 0.9); /* 修改：藍底 */
         border-bottom-right-radius: 2px; 
         color: #fff;
     }
     .message-ai { 
         align-self: flex-start; 
-        background-color: rgba(255, 255, 255, 0.6); 
+        background-color: rgba(255, 255, 255, 0.9); 
         border-bottom-left-radius: 2px; 
-        color: #000000; 
+        color: #333; 
         text-shadow: none;
         border: 1px solid #ffd700;
     }
@@ -2086,16 +2086,7 @@
             isMuted = !isMuted;
             muteBtn.classList.toggle('muted', isMuted);
             muteBtn.innerText = isMuted ? '🔇' : '🔊';
-            
-            // ⭐⭐⭐ 修改：將 cancel 改為 pause 與 resume，以便重新開啟喇叭時能繼續剛剛被暫停的話語 ⭐⭐⭐
-            if (window.speechSynthesis) {
-                if (isMuted) {
-                    window.speechSynthesis.pause();
-                } else {
-                    window.speechSynthesis.resume();
-                }
-            }
-            
+            if(isMuted) { window.speechSynthesis.cancel(); isSpeaking = false; }
             // 連動背景音樂靜音
             bgm.muted = isMuted;
         });
