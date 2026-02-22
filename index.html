@@ -1315,6 +1315,7 @@
                         action.setEffectiveWeight(1); 
                         action.play();
                     } else {
+                        action.stop(); // ⭐ 修改：加入 stop 清除殘留狀態
                         action.reset();
                         action.setLoop(THREE.LoopOnce); 
                         action.clampWhenFinished = true; 
@@ -1707,6 +1708,7 @@
                             oldAction.fadeOut(0.5);
                         }
 
+                        action.stop(); // ⭐ 修改：強制清除先前的殘留播放狀態
                         action.reset();
                         action.setLoop(THREE.LoopOnce);
                         action.clampWhenFinished = true; 
@@ -1731,13 +1733,16 @@
                                 if (dancersFinished.every(v => v) && !stepTriggered) {
                                     stepTriggered = true; 
 
-                                    if (duration > 0) {
-                                        if (!isPhaseTimeUp) {
-                                            executePhase(moves, duration);
-                                        } 
-                                    } else {
-                                        playNextDanceInQueue();
-                                    }
+                                    // ⭐ 修改：必須脫離 update 迴圈再執行切換，防止動畫引擎當機
+                                    setTimeout(() => {
+                                        if (duration > 0) {
+                                            if (!isPhaseTimeUp) {
+                                                executePhase(moves, duration);
+                                            } 
+                                        } else {
+                                            playNextDanceInQueue();
+                                        }
+                                    }, 50);
                                 }
                             }
                         };
@@ -1918,6 +1923,40 @@
             });
         }
 
+        // ⭐⭐⭐ 獨立的語音文字校正 API (完美還原) ⭐⭐⭐
+        async function correctSpeechText(rawText) {
+            try {
+                // 獨立於對話歷史的請求，節省 token 且不干擾記憶
+                const promptText = `請將以下語音辨識的文字進行錯字校正，只回傳校正後的文字，不要加任何標點符號或解釋：\n${rawText}`;
+                const payload = {
+                    contents: [{ role: "user", parts: [{ text: promptText }] }],
+                    systemInstruction: { parts: [{ text: "你是一個精準的文字校正助手。只輸出校正後的結果，不要有任何多餘的回覆。" }] }
+                };
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); 
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    let correctedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (correctedText) {
+                        return correctedText.replace(/[\n\r]+/g, '').trim();
+                    }
+                }
+            } catch (error) {
+                console.error("Text correction error:", error);
+            }
+            return rawText; // 失敗則退回原字串
+        }
+
         function handleAIResponse(aiText) {
             let result = safeParseAIJson(aiText);
             logAction(`Raw AI Text:\n${aiText}`);
@@ -1925,7 +1964,6 @@
             let danceSteps = null;
 
             if (result) {
-                // logAction 中只顯示解析成功，防止跳錯
                 logAction(`Parsed Result:\nAction: ${result.action}\n`);
                 if (result.action === 'dance_sequence' || result.action === 'dance_random') {
                     if (result.parsed_steps && result.parsed_steps.length > 0) {
@@ -1967,14 +2005,6 @@
                 }
             }
             speak(speakText || "");
-            
-            // ⭐⭐⭐ 文字校正邏輯原封不動保留 ⭐⭐⭐
-            if (result && result.corrected_text) {
-                const userMsgs = document.querySelectorAll('.message-user');
-                if (userMsgs.length > 0) {
-                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
-                }
-            }
 
             if (result && result.emotion) {
                 setEmotion(result.emotion);
@@ -2034,7 +2064,6 @@
                 finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
             }
 
-            // ⭐⭐⭐ 系統指令維持不變 ⭐⭐⭐
             finalSystemInstruction += `
 【CRITICAL INSTRUCTIONS】
 1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json.
@@ -2051,7 +2080,6 @@
      "dance_steps": [{"dances": [2, 2, 2], "duration": 20}]
    - **範例 3 (明確要求各自跳10秒)**: 要求「各自跳不同的舞10秒」
      "dance_steps": [{"dances": [1, 2, 0], "duration": 10}]
-4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
 `;
 
             const controller = new AbortController();
@@ -2282,7 +2310,6 @@
             updateCameraPosition();
         });
 
-        // ⭐⭐⭐ 完整保留原版錄音與文字疊加邏輯 ⭐⭐⭐
         let recognition = null;
         let isRecording = false;
         let silenceTimer = null;
@@ -2343,9 +2370,6 @@
 
             recognition.onresult = (e) => {
                 let interim = '';
-                // 重新組合最終結果與臨時結果
-                // 注意：這裡是簡易實作，直接覆蓋 input
-                // AITranslator 邏輯：
                 for (let i = e.resultIndex; i < e.results.length; ++i) {
                     if (e.results[i].isFinal) {
                         finalTranscript += e.results[i][0].transcript;
@@ -2354,20 +2378,18 @@
                     }
                 }
                 
-                // 將結果填入輸入框
-                // 為了讓使用者體驗更好，我們保留使用者可能手打的部分嗎？
-                // 這裡採用 AITranslator 的邏輯：直接由語音主導
                 userInput.value = finalTranscript + interim;
                 
-                // 重置靜音計時器
                 clearTimeout(silenceTimer);
                 
-                // 如果有內容，設定 1.5 秒後自動發送
                 if (userInput.value.trim()) {
                     silenceTimer = setTimeout(async () => { 
                         const rawText = userInput.value.trim();
                         if(rawText) {
-                            // ⭐⭐⭐ 修改：合併處理，不單獨呼叫校正 API，直接發送 ⭐⭐⭐
+                            // ⭐⭐⭐ 完美恢復您要求的「輸入框內建文字校正 API」 ⭐⭐⭐
+                            userInput.value = "語音校正中...";
+                            const correctedText = await correctSpeechText(rawText);
+                            userInput.value = correctedText;
                             handleSendMessage();
                         }
                     }, 1500);
