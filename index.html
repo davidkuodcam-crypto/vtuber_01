@@ -1669,8 +1669,9 @@
             const txt = referenceText.toLowerCase();
             
             // 偵測是否明確指定特定角色
-            const p1 = txt.includes("第一") || txt.includes("左邊") || txt.includes("c");
-            const p2 = txt.includes("第二") || txt.includes("中間") || txt.includes("w");
+            // ⭐ 修正：使用正則表達式 \b 邊界，避免匹配到英文單字中的 c 和 w (例如 action, sequence 內的字母)
+            const p1 = txt.includes("第一") || txt.includes("左邊") || /\b[cｃ]\b/.test(txt) || txt.includes("角色c");
+            const p2 = txt.includes("第二") || txt.includes("中間") || /\b[wｗ]\b/.test(txt) || txt.includes("角色w");
             const p3 = txt.includes("第三") || txt.includes("右邊") || txt.includes("david") || txt.includes("大維");
             
             // 偵測是否有排他性字眼
@@ -2156,7 +2157,14 @@
             // 如果判定要跳舞，執行跳舞
             if (danceSeq) {
                 // ⭐⭐⭐ 收集語境，幫助防呆函數判斷
-                let contextText = aiText;
+                let contextText = "";
+                // ⭐ 修正核心：只取 AI 實際說話的內容，避免原始 JSON 的 key 值 (如 action, sequence 內的 c) 干擾判斷
+                if (result && result.text) {
+                    contextText += result.text;
+                } else {
+                    contextText += aiText; // fallback
+                }
+
                 // 取出使用者最近一次說的話 (倒數第二筆紀錄)
                 if (chatHistory.length >= 2 && chatHistory[chatHistory.length - 2].role === "user") {
                     contextText += " " + chatHistory[chatHistory.length - 2].parts[0].text;
