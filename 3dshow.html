@@ -604,7 +604,7 @@
         const BGM_URL = 'https://davidkuodcam-crypto.github.io/VTuber/TheFinalBloom.mp3';
         const bgm = new Audio(BGM_URL);
         bgm.loop = true; // 循環播放
-        bgm.volume = 0.5; // 音量適中
+        bgm.volume = 1.0; // 音量
         // ⭐ 新增：雙重保險，確保因為某些瀏覽器不支援 loop 屬性時，音樂依然能無縫循環播到跳舞結束
         bgm.addEventListener('ended', function() {
             if (isDancing) {
