@@ -209,13 +209,13 @@
     }
 
     #chat-display {
-        background: rgba(255, 255, 255, 0.15); /* ⭐ 改回半透明，並大幅提高透明度 (數值越小越透明) */
+        background: rgba(255, 255, 255, 0.1); /* ⭐ 改回半透明，並大幅提高透明度 (數值越小越透明) */
         padding: 12px; 
         border-radius: 16px;
         height: 140px; 
         overflow-y: auto;
-        backdrop-filter: blur(8px); /* ⭐ 加回毛玻璃效果 */
-        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(4px); /* ⭐ 加回毛玻璃效果 */
+        -webkit-backdrop-filter: blur(4px);
         border: 1px solid rgba(255, 215, 0, 0.6);
         display: flex;
         flex-direction: column;
@@ -238,13 +238,13 @@
 
     .message-user { 
         align-self: flex-end; 
-        background-color: rgba(30, 136, 229, 0.6); 
+        background-color: rgba(30, 136, 229, 0.3); 
         border-bottom-right-radius: 2px; 
         color: #fff;
     }
     .message-ai { 
         align-self: flex-start; 
-        background-color: rgba(255, 255, 255, 0.6); 
+        background-color: rgba(255, 255, 255, 0.3); 
         border-bottom-left-radius: 2px; 
         color: #000000; 
         text-shadow: none;
