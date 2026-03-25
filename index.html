@@ -812,7 +812,10 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(vtuberContainer.clientWidth, vtuberContainer.clientHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
-        renderer.domElement.style.pointerEvents = 'auto'; // 允許觸控旋轉視角
+        
+        // ⭐ 關鍵修正：將 pointerEvents 改為 'none'，讓滑鼠可以穿透 3D 畫布點選後方網頁！
+        renderer.domElement.style.pointerEvents = 'none'; 
+        
         vtuberContainer.appendChild(renderer.domElement); // 將畫布放進容器內
 
         // 燈光優化：暖色光 (影響 Layer 0)
@@ -884,15 +887,16 @@
                 renderStatus();
 
                 try {
-                    let res = await fetch(`./${fileNameFolder}?t=${Date.now()}`);
-                    let usedPath = fileNameFolder;
+                    // ⭐ 修正：優先讀取根目錄，避免因為資料夾找不到而產生不必要的 404 紅字錯誤
+                    let res = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
+                    let usedPath = fileNameRoot;
                     
                     if (!res.ok) {
                          try {
-                             const resRoot = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
-                             if (resRoot.ok) {
-                                 res = resRoot;
-                                 usedPath = fileNameRoot;
+                             const resFolder = await fetch(`./${fileNameFolder}?t=${Date.now()}`);
+                             if (resFolder.ok) {
+                                 res = resFolder;
+                                 usedPath = fileNameFolder;
                              }
                          } catch(e) {}
                     }
@@ -910,6 +914,7 @@
                             fileIndex++;
                         }
                     } else {
+                        // 遇到真的沒有的檔案就會觸發最後一次 404 並停止
                         keepLoading = false;
                     }
                 } catch (e) {
@@ -1594,10 +1599,10 @@
                         action.play();
                     } else {
                         action.reset();
-                        action.setLoop(THREE.LoopOnce);
+                        action.setLoop(THREE.LoopOnce); 
                         action.clampWhenFinished = true; 
                         action.setEffectiveWeight(1);
-                        action.fadeIn(0.5);
+                        action.fadeIn(0.5); 
                         action.play();
                     }
                     
@@ -1617,7 +1622,19 @@
 
                             if (dancersFinished.every(v => v) && !stepTriggered) {
                                 stepTriggered = true; 
-                                playNextDanceInQueue(); 
+                                
+                                danceStepIndex++;
+                                if (danceStepIndex >= 4) {
+                                    danceStepIndex = 0;
+                                    danceRound++;
+                                    generateSequences(danceRound);
+                                    if (danceRound % 2 === 0) {
+                                        addMessage(`Round ${danceRound}: Next Moves!`, "system");
+                                    } else {
+                                        addMessage(`Round ${danceRound}: Sequential Mode!`, "system");
+                                    }
+                                }
+                                playCurrentStep();
                             }
                         }
                     };
@@ -1629,652 +1646,2594 @@
 
             if (!anyoneDancing && !stepTriggered) {
                 stepTriggered = true;
-                setTimeout(() => playNextDanceInQueue(), 50);
+                setTimeout(() => {
+                    danceStepIndex++;
+                    if (danceStepIndex >= 4) {
+                        danceStepIndex = 0;
+                        danceRound++;
+                        generateSequences(danceRound);
+                    }
+                    playCurrentStep();
+                }, 50);
             }
         }
 
-        danceBtn.addEventListener('click', toggleDance);
-        danceBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            toggleDance();
-        });
-
-        const VALID_EMOTIONS = ['neutral', 'happy', 'angry', 'sad', 'relaxed', 'surprised'];
-        function setEmotion(emotionName) {
-            if (currentVrms.length === 0) return;
-            if (emotionName === 'joy') emotionName = 'happy';
-            if (emotionName === 'sorrow') emotionName = 'sad';
-            if (emotionName === 'fun') emotionName = 'relaxed';
-            if (!VALID_EMOTIONS.includes(emotionName)) emotionName = 'neutral';
+        function stopDance() {
+            if (!isDancing) return;
             
-            updateDebugDisplay(emotionName, null);
+            isDancing = false;
+            danceBtn.classList.remove('active');
             
-            currentVrms.forEach(vrm => {
-                if(!vrm) return;
-                VALID_EMOTIONS.forEach(emo => vrm.expressionManager.setValue(emo, 0));
-                if (emotionName !== 'neutral') vrm.expressionManager.setValue(emotionName, 0.8);
+            bgm.pause();
+            bgm.currentTime = 0;
+            
+            const lyricsContainer = document.getElementById('lyrics-container');
+            if (lyricsContainer) lyricsContainer.style.opacity = 0;
+            
+            danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
             });
-        }
-
-        window.actionActive = false;
-        function triggerAction(actionName, duration) {
-            if (currentVrms.length === 0 || actionName === 'none') return;
-            updateDebugDisplay(null, `${actionName}`);
-            let shapeName = actionName === 'blink_left' ? 'blinkLeft' : (actionName === 'blink_right' ? 'blinkRight' : 'blink');
-            window.actionActive = true;
-            
-            currentVrms.forEach(vrm => {
-                if(vrm) vrm.expressionManager.setValue(shapeName, 1.0);
+            currentActiveActions.forEach((action, i) => {
+                let idleA = idleActionW;
+                if (action && action !== idleA) action.fadeOut(0.5);
             });
             
+            clearAllMixerListeners();
+            
+            currentDanceQueue = [];
+            currentPlayingDanceData = null; 
+            window.pendingMicResume = false; 
+            
+            // ⭐⭐⭐ 停止跳舞後恢復原本的左側版面大小 ⭐⭐⭐
             setTimeout(() => {
-                currentVrms.forEach(vrm => {
-                    if(vrm) vrm.expressionManager.setValue(shapeName, 0);
-                });
-                window.actionActive = false;
-                updateDebugDisplay(null, 'Done');
-            }, duration);
+                updateContainerSize(false);
+            }, 500);
+            
+            if (idleActionW && currentActiveActions[0] !== idleActionW) {
+                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+            }
+
+            currentActiveActions = [null]; 
         }
 
-        function updateDebugDisplay(emo, act) {
-            const debugDiv = document.getElementById('emotion-debug');
-            if(emo) debugDiv.innerHTML = debugDiv.innerHTML.replace(/情緒: .*/, `情緒: ${emo}`);
-            if(act) debugDiv.innerHTML = debugDiv.innerHTML.replace(/動作: .*/, `動作: ${act}`);
-        }
-
-        function addMessage(text, type) {
-            const chatDisplay = document.getElementById('chat-display');
-            const div = document.createElement('div');
-            div.className = `message message-${type}`;
-            
-            let safeText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
-            safeText = safeText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-            
-            div.innerHTML = safeText;
-            chatDisplay.appendChild(div);
-            chatDisplay.scrollTo({ top: chatDisplay.scrollHeight, behavior: 'smooth' });
-            return div;
-        }
-
-        function removeMessage(el) { if(el && el.parentNode) el.parentNode.removeChild(el); }
-
-        const statusDot = document.getElementById('status-dot');
-        const statusMsg = document.getElementById('status-msg');
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const muteBtn = document.getElementById('mute-btn');
-        const micBtn = document.getElementById('mic-btn'); 
-
-        async function testApiConnection() {
-            if (isPreviewEnv) {
-                statusDot.classList.add('status-preview');
-                statusMsg.innerText = "預覽模式";
-                userInput.disabled = false; sendBtn.disabled = false;
-                return;
-            }
-
-            statusMsg.innerText = "連線測試...";
-            statusDot.className = 'status-dot'; 
-            
-            setTimeout(() => {
-                 if (userInput.disabled) {
-                     userInput.disabled = false; 
-                     sendBtn.disabled = false;
-                 }
-            }, 1000);
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); 
-
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: "Test" }] }] }),
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-
-                if (response.ok) {
-                    statusDot.classList.add('status-connected');
-                    statusMsg.innerText = "系統連線正常";
-                } else {
-                    throw new Error("API Check Failed");
-                }
-            } catch (e) {
-                statusDot.classList.add('status-error');
-                statusMsg.innerText = "連線失敗 (可離線輸入)"; 
-                console.error("API Test Failed:", e);
-            } finally {
-                userInput.disabled = false; 
-                sendBtn.disabled = false;
-            }
-        }
-
-        muteBtn.addEventListener('click', () => {
-            isMuted = !isMuted;
-            muteBtn.classList.toggle('muted', isMuted);
-            muteBtn.innerText = isMuted ? '🔇' : '🔊';
-            
-            if (window.speechSynthesis) {
-                if (isMuted) {
-                    window.speechSynthesis.pause();
-                } else {
-                    window.speechSynthesis.resume();
-                }
-            }
-            
-            bgm.muted = isMuted;
-        });
-
-        async function unlockTTS() {
-            logTTS("正在解鎖語音...");
-            return new Promise(resolve => {
-                try {
-                    const u = new SpeechSynthesisUtterance(" ");
-                    window.currentUtterance = u; 
-                    u.volume = 0; 
-                    u.rate = 10; 
-                    u.onend = () => {
-                        logTTS("語音解鎖完成 (onend)");
-                        resolve();
-                    };
-                    setTimeout(() => {
-                        logTTS("語音解鎖完成 (timeout)");
-                        resolve();
-                    }, 200); 
-                    speechSynthesis.speak(u);
-                } catch(e) {
-                    logTTS(`語音解鎖失敗: ${e.message}`);
-                    resolve();
-                }
-            });
-        }
-
-        function handleAIResponse(aiText) {
-            let result = safeParseAIJson(aiText);
-            
-            logAction(`Raw AI Text:\n${aiText}`);
-            
-            let danceSeq = null;
-
-            if (result) {
-                logAction(`Parsed Result:\nAction: ${result.action}\nDance List: ${JSON.stringify(result.dance_list)}`);
-                if (result.action === 'dance_sequence' || result.action === 'dance_random') {
-                    if (Array.isArray(result.dance_list) && result.dance_list.length > 0) {
-                        danceSeq = result.dance_list;
-                    } else if (result.action === 'dance_random') {
-                        danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)];
-                    } else {
-                        danceSeq = guessDanceFromText(result.text);
-                        if (!danceSeq) danceSeq = [Math.floor(Math.random() * DANCE_URLS.length)];
-                    }
-                }
-            } else {
-                logAction(`Parse Failed! 使用關鍵字兜底猜測`);
-                danceSeq = guessDanceFromText(aiText);
-            }
-
-            if (danceSeq) {
-                let contextText = aiText;
-                if (chatHistory.length >= 2 && chatHistory[chatHistory.length - 2].role === "user") {
-                    contextText += " " + chatHistory[chatHistory.length - 2].parts[0].text;
-                }
-                danceSeq = fixDanceSequence(danceSeq, contextText);
-                playDanceSequence(danceSeq);
-            } 
-            
-            let speakText = aiText;
-            if (result && result.text) {
-                speakText = result.text;
-            } else {
-                try {
-                    const textMatch = aiText.match(/"text"\s*:\s*"((?:\\"|[^"])*)"/);
-                    if (textMatch) {
-                        speakText = textMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
-                    } else {
-                        speakText = aiText.replace(/```json/gi, '').replace(/```/g, ''); 
-                    }
-                } catch (e) {
-                    speakText = "我好像跳針了，但舞步已經安排好囉！";
-                }
-            }
-            speak(speakText || "");
-            
-            if (result && result.corrected_text) {
-                const userMsgs = document.querySelectorAll('.message-user');
-                if (userMsgs.length > 0) {
-                    userMsgs[userMsgs.length - 1].innerHTML = result.corrected_text;
-                }
-            }
-
-            if (result && result.emotion) {
-                setEmotion(result.emotion);
-            }
-            
-            if (result && result.action && result.action !== 'none' && !result.action.startsWith('dance')) {
-                triggerAction(result.action, 2000);
-            }
-        }
-
-        async function handleSendMessage() {
-            if (userInput.disabled || sendBtn.disabled) return;
-
-            const text = userInput.value.trim();
-            if (!text) return;
-            
-            if (isRecording) {
-                stopRecording(); 
-                window.shouldResumeMic = true; 
-            } else {
-                window.shouldResumeMic = false;
-            }
-
-            if (isDancing) stopDance();
-
-            if (window.speechSynthesis) {
-                window.speechSynthesis.cancel();
-            }
-
-            if (!isMuted && ttsSupported) {
-                logTTS("開始訊息發送流程...");
-                await Promise.race([
-                    unlockTTS(),
-                    new Promise(r => setTimeout(r, 300))
-                ]);
-            }
-
-            userInput.value = ''; userInput.disabled = true; sendBtn.disabled = true;
-            addMessage(text, 'user');
-            
-            if (isPreviewEnv) {
-                addMessage("【提示】預覽模式無法連接 AI，請部署至 Vercel。", 'system');
-                userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
-                return;
-            }
-
-            const loadingMsg = addMessage("Thinking...", 'system');
-            
-            chatHistory.push({ role: "user", parts: [{ text: text }] });
-
-            let finalSystemInstruction = "";
-            
-            if (externalSystemPrompt) finalSystemInstruction += externalSystemPrompt;
-            else finalSystemInstruction += `You are a virtual AI character. Reply in Traditional Chinese. Output JSON: { "text": "response", "emotion": "neutral", "action": "none" }`;
-
-            if (externalKnowledge) {
-                finalSystemInstruction += "\n\n====== KNOWLEDGE BASE ======\n" + externalKnowledge + "\n============================\n";
-            }
-
-            finalSystemInstruction += `
-【CRITICAL INSTRUCTIONS】
-1. **JSON FORMAT ONLY**: You MUST output a strictly valid JSON object. Do not wrap it in markdown block like \`\`\`json.
-2. **PERSONA**: Keep responses natural, conversational, and concise. Do NOT refer to yourself as code or mention JSON format to the user.
-3. **DANCE SYSTEM**:
-   - Dance IDs available: 0(霹靂舞A), 1(湯瑪斯), 2(嘻哈), 3(霹靂舞B), 99(不跳舞/原地待命).
-   - "action" must be "dance_sequence".
-   - **多回合排程 (CRITICAL)**：當使用者要求「跳多次」或「連續跳不同舞」時，你必須在 "dance_list" 中產生對應數量的步驟。
-   - **連續跳舞 (1D Array)**: 若使用者要求「連續跳兩次」，請回傳 [1, 1]。若單次請回傳 [2]。
-4. **SPEECH CORRECTION**: Correct any typos in the user's raw speech text and return it in "corrected_text".
-`;
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); 
-
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: chatHistory,
-                        systemInstruction: { parts: [{ text: finalSystemInstruction }] }
-                    }),
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-
-                if (!response.ok) {
-                    let errMsg = "Server Error";
-                    try {
-                         const errData = await response.json();
-                         if (errData.error) errMsg = errData.error;
-                    } catch(e) {}
-                    throw new Error(errMsg);
-                }
-
-                const data = await response.json();
-                removeMessage(loadingMsg);
-                
-                let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Error";
-                
-                chatHistory.push({ role: "model", parts: [{ text: rawText }] });
-                
-                handleAIResponse(rawText);
-                
-                let tempResult = safeParseAIJson(rawText);
-                let displayText = rawText;
-                if (tempResult && tempResult.text) {
-                    displayText = tempResult.text;
-                } else {
-                    try {
-                        const textMatch = rawText.match(/"text"\s*:\s*"((?:\\"|[^"])*)"/);
-                        if (textMatch) {
-                            displayText = textMatch[1].replace(/\\n/g, '<br>').replace(/\\"/g, '"');
-                        } else {
-                            displayText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
-                        }
-                    } catch(e) {
-                        displayText = "好喔！我們這就為您跳舞！";
-                    }
-                }
-                addMessage(displayText, 'ai');
-
-            } catch (error) {
-                console.error(error);
-                removeMessage(loadingMsg);
-                if (error.name === 'AbortError') {
-                    addMessage(`錯誤: 連線逾時 (Timeout)，請重試。`, 'system');
-                } else {
-                    addMessage(`錯誤: ${error.message}`, 'system');
-                }
-            } finally {
-                userInput.disabled = false; sendBtn.disabled = false; userInput.focus();
-            }
-        }
-
-        async function speak(text) {
-            if (isMuted) return;
-            if (!ttsSupported || !window.speechSynthesis) {
-                logTTS("❌ 說話失敗: 語音功能不支援");
-                return;
-            }
-
-            const cleanText = text
-                .replace(/\[.*?\]\(.*?\)/g, '')
-                .replace(/[^\u4e00-\u9fa5a-zA-Z0-9,.\?！。，、…~]/g, '');
-
-            if (!cleanText || cleanText.length === 0) {
-                if (window.shouldResumeMic) {
-                     setTimeout(() => { if(!isRecording) startRecording(); }, 500);
-                }
-                return;
-            }
-
-            logTTS(`準備說話: ${cleanText.substring(0, 10)}...`);
-
-            try {
-                if (speechSynthesis.getVoices().length === 0) {
-                    logTTS("等待語音列表...");
-                    await new Promise(r => setTimeout(r, 300));
-                }
-
-                speechSynthesis.cancel();
-                await new Promise(r => setTimeout(r, 50));
-
-                const u = new SpeechSynthesisUtterance(cleanText);
-                window.currentUtterance = u; 
-
-                if (isAndroid) {
-                    const voices = speechSynthesis.getVoices();
-                    const voice =
-                        voices.find(v => v.lang === 'zh-TW') ||
-                        voices.find(v => v.lang.includes('zh-TW')) ||
-                        voices.find(v => v.lang.includes('zh-HK')) ||
-                        voices.find(v => v.lang.includes('zh-CN')) ||
-                        voices.find(v => v.lang.includes('zh'));
-
-                    if (voice) {
-                        u.voice = voice;
-                        u.lang  = voice.lang;
-                        logTTS(`Android 使用語音: ${voice.name}`);
-                    } else {
-                        u.lang = 'zh-TW';
-                        logTTS("Android 使用預設 zh-TW");
-                    }
-                } else {
-                    u.lang = 'zh-TW';
-                }
-
-                u.volume = 1;
-
-                u.onstart = () => {
-                    isSpeaking = true;
-                    logTTS("開始播放 (onstart)");
-                    if (!isDancing) {
-                        if (idleActionW) idleActionW.fadeOut(0.2); 
-                        
-                        if (talkingActionW) {
-                            talkingActionW.reset();
-                            talkingActionW.setEffectiveWeight(1);
-                            talkingActionW.fadeIn(0.2).play();
-                        }
-                    }
-                };
-                
-                u.onend   = () => {
-                    isSpeaking = false;
-                    logTTS("播放結束 (onend)");
-                    currentVrms.forEach(vrm => {
-                        if(vrm) {
-                            vrm.expressionManager.setValue('aa', 0);
-                            if (isOpeningRemark) {
-                                vrm.expressionManager.setValue('happy', 0);
-                            }
-                        }
-                    });
-                    
-                    isOpeningRemark = false; 
-                    
-                    const wasTalkingW = talkingActionW && talkingActionW.isRunning() && talkingActionW.getEffectiveWeight() > 0;
-
-                    if (talkingActionW) talkingActionW.fadeOut(0.5); 
-                    
-                    if (!isDancing) {
-                        const safeRestoreIdle = (idleA) => {
-                            if (idleA) {
-                                if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
-                                    idleA.reset();
-                                    idleA.setEffectiveWeight(1);
-                                    idleA.fadeIn(0.5).play();
-                                } else {
-                                    idleA.setEffectiveWeight(1);
-                                }
-                            }
-                        };
-                        safeRestoreIdle(idleActionW);
-                    }
-
-                    if (window.shouldResumeMic) {
-                        if (isDancing) {
-                            window.pendingMicResume = true;
-                        } else {
-                            setTimeout(() => {
-                                if (!isRecording) startRecording();
-                            }, 500);
-                        }
-                    }
-                };
-
-                u.onerror = (e) => {
-                    if (e.error === 'interrupted' || e.error === 'canceled') {
-                        return; 
-                    }
-                    console.error("TTS error detail:", e.error);
-                    logTTS(`TTS 錯誤: ${e.error}`);
-                };
-
-                speechSynthesis.speak(u);
-
-            } catch (err) {
-                console.error("Speech error:", err);
-                logTTS(`Speech 執行錯誤: ${err.message}`);
-            }
-        }
-
-        sendBtn.addEventListener('click', handleSendMessage);
-        sendBtn.addEventListener('touchend', (e) => {
-            e.preventDefault(); 
-            handleSendMessage();
-        });
-
-        userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSendMessage(); });
-
-        window.addEventListener('resize', () => {
-            const width = vtuberContainer.clientWidth;
-            const height = vtuberContainer.clientHeight;
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
-            renderer.setSize(width, height);
-            updateCameraPosition();
-        });
-
-        let recognition = null;
-        let isRecording = false;
-        let silenceTimer = null;
-        let finalTranscript = '';
-        const voiceOverlay = document.getElementById('voice-overlay'); 
-
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SR();
-            
-            if (isIOS || isAndroid) {
-                recognition.continuous = false; 
-                recognition.maxAlternatives = 1; 
-            } else {
-                recognition.continuous = true; 
-            }
-            
-            recognition.interimResults = true; 
-            recognition.lang = 'zh-TW'; 
-
-            recognition.onstart = () => { 
-                isRecording = true; 
-                updateMicUI(true); 
-                if (window.speechSynthesis) window.speechSynthesis.cancel();
-                bgm.pause();
-                
-                isSpeaking = false; 
-            };
-            
-            recognition.onend = () => { 
-                if (isRecording) {
-                    if (isIOS || isAndroid) {
-                       setTimeout(() => safeStartRecognition(), 100);
-                    } else {
-                       setTimeout(() => {
-                           if (isRecording) safeStartRecognition(); 
-                       }, 250);
-                    }
-                } else {
-                    updateMicUI(false); 
-                }
-            };
-            
-            recognition.onerror = (e) => { 
-                if (e.error === 'no-speech' || e.error === 'aborted') {
-                    return;
-                }
-
-                console.error("Speech Recognition Error:", e.error);
-                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-                    isRecording = false;
-                    updateMicUI(false);
-                    alert("麥克風功能已被封鎖或不支援。\n請檢查瀏覽器權限設定，或嘗試在 Safari (iOS) / Chrome (Android) 中開啟。");
-                } else {
-                    recognition.stop();
-                }
-            };
-
-            recognition.onresult = (e) => {
-                let interim = '';
-                for (let i = e.resultIndex; i < e.results.length; ++i) {
-                    if (e.results[i].isFinal) {
-                        finalTranscript += e.results[i][0].transcript;
-                    } else {
-                        interim += e.results[i][0].transcript;
-                    }
-                }
-                
-                userInput.value = finalTranscript + interim;
-                
-                clearTimeout(silenceTimer);
-                
-                if (userInput.value.trim()) {
-                    silenceTimer = setTimeout(async () => { 
-                        const rawText = userInput.value.trim();
-                        if(rawText) {
-                            handleSendMessage();
-                        }
-                    }, 1500);
-                }
-            };
-        } else {
-            console.warn("瀏覽器不支援 Web Speech API");
-            micBtn.style.display = 'none';
-        }
-
-        function toggleRecording() {
-            if(!recognition) return;
-            if(isRecording) stopRecording(); else startRecording();
-        }
-
-        function startRecording() {
+        function toggleDance() {
             if (isDancing) {
                 stopDance();
+            } else {
+                loadAndPlayDance(); 
             }
+        }
 
-            if (window.speechSynthesis) {
-                try {
-                    window.speechSynthesis.cancel();
-                } catch(e) {}
+        function safeParseAIJson(text) {
+            try {
+                let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const start = cleanText.indexOf('{');
+                const end = cleanText.lastIndexOf('}');
+                if (start === -1 || end === -1) return null;
+                let jsonStr = cleanText.substring(start, end + 1);
+                jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
+                jsonStr = jsonStr.replace(/'/g, '"');
+                jsonStr = jsonStr
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') 
+                    .replace(/,\s*}/g, '}') 
+                    .replace(/,\s*]/g, ']'); 
+                    
+                const result = JSON.parse(jsonStr);
+                
+                if (result.action === "dance_sequence") {
+                    if (typeof result.dance_list === "number") {
+                        result.dance_list = [result.dance_list];
+                    }
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        result.dance_list = null; 
+                    } else {
+                        result.dance_list = result.dance_list.map(item => {
+                            if (Array.isArray(item)) {
+                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
+                            } else {
+                                let v = parseInt(item);
+                                return isNaN(v) ? -1 : v;
+                            }
+                        });
+                    }
+                }
+                return result;
+            } catch (err) {
+                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
+                return null;
             }
-            isSpeaking = false;
+        }
 
-            finalTranscript = ''; 
-            userInput.value = ''; 
-            isRecording = true; 
+        function guessDanceFromText(text) {
+            if (!text) return null;
+            const lowerText = text.toLowerCase();
             
-            safeStartRecognition();
-        }
-
-        function stopRecording() { 
-            isRecording = false; 
-            recognition.stop(); 
-            clearTimeout(silenceTimer); 
-            updateMicUI(false); 
-        }
-
-        function safeStartRecognition() { 
-            try { 
-                recognition.start(); 
-            } catch(e) {
-            } 
-        }
-
-        function updateMicUI(active) {
-            if(active) { 
-                micBtn.classList.add('recording-pulse'); 
-                micBtn.innerHTML = '<i class="fa-solid fa-microphone-lines"></i>'; 
-                voiceOverlay.style.display = 'block'; 
-            } else { 
-                micBtn.classList.remove('recording-pulse'); 
-                micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>';
-                voiceOverlay.style.display = 'none'; 
+            if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
+                return [3];
             }
+
+            const map = {
+                "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
+                "嘻哈": 2, "律動": 2, "hip hop": 2,
+                "跳舞": -1, "dance": -1, 
+                "隨機跳": -1, "隨便跳": -1
+            };
+            for (const key in map) {
+                if (lowerText.includes(key)) {
+                    return [map[key]]; 
+                }
+            }
+            return null;
         }
 
-        micBtn.addEventListener('click', (e) => {
-            logTTS(`麥克風按鈕觸發: ${e.type}`); 
+        function fixDanceSequence(seq, referenceText) {
+            if (Array.isArray(seq) && seq.length > 0 && Array.isArray(seq[0])) {
+                return seq[0];
+            }
+            return seq; 
+        }
+
+        async function playDanceSequence(sequence) {
+            isDancing = true;
+            danceBtn.classList.add('active');
+
+            clearAllMixerListeners();
+
+             danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            await loadDanceAssets(); 
             
-            if (isIOS && (isLineApp || isFbApp)) {
-                alert("⚠️ LINE/Facebook 內建瀏覽器不支援麥克風錄音。\n\n請點擊右上角/右下角選單，選擇「在 Safari 開啟」或「開啟預設瀏覽器」即可使用完整功能。");
+            isDancing = true;
+            updateContainerSize(true);
+            
+            try {
+                if (!bgm.paused) bgm.pause();
+                bgm.currentTime = 0;
+                bgm.muted = isMuted;
+                const playPromise = bgm.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
+                }
+            } catch(e) { console.error("BGM Fatal Error:", e); }
+
+            let seq = Array.isArray(sequence) ? sequence : [];
+            let is2D = seq.length > 0 && Array.isArray(seq[0]);
+            
+            currentDanceQueue = [];
+            
+            if (is2D) {
+                let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                for (let step = 0; step < maxSteps; step++) {
+                    let charSeq = seq[0] || [];
+                    let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
+                    if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
+                    currentDanceQueue.push(danceId); 
+                }
+            } else {
+                currentDanceQueue = seq.map(id => {
+                    if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
+                    return id;
+                });
+            }
+
+            let firstStep = currentDanceQueue.length > 0 ? currentDanceQueue[0] : null;
+            let wFirst = firstStep; 
+
+            if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
+            playNextDanceInQueue();
+        }
+
+        function playNextDanceInQueue() {
+            if (currentDanceQueue.length === 0) {
+                isDancing = false;
+                bgm.pause();
+                bgm.currentTime = 0;
+                danceBtn.classList.remove('active');
+
+                currentVrms.forEach((v, i) => {
+                    const fadeAction = currentActiveActions[i];
+                    let idleA = idleActionW;
+                    if (fadeAction && fadeAction !== idleA) {
+                        fadeAction.fadeOut(0.5);
+                    }
+                });
+
+                clearAllMixerListeners();
+
+                setTimeout(() => updateContainerSize(false), 500);
+                
+                if (idleActionW && currentActiveActions[0] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                
+                currentActiveActions = [null];
+                
+                if (window.pendingMicResume) {
+                    window.pendingMicResume = false;
+                    setTimeout(() => {
+                        if (!isRecording) startRecording();
+                    }, 500);
+                }
                 return;
             }
-            
-            toggleRecording();
-        });
 
-    </script>
-</body>
-</html>
+            let nextData = currentDanceQueue.shift(); 
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
+            
+            let v = parseInt(nextData);
+            if (v === 99) {
+                nextData = 99; 
+            } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
+                nextData = Math.floor(Math.random() * DANCE_URLS.length);
+            } else {
+                nextData = v;
+            }
+            
+            currentPlayingDanceData = nextData; 
+
+            let dancersFinished = [true]; 
+            let anyoneDancing = false;
+            let stepTriggered = false; 
+
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                let nextIndex = nextData;
+                const oldAction = currentActiveActions[vrmIndex];
+
+                if (nextIndex === 99) {
+                    dancersFinished[vrmIndex] = true; 
+                    
+                    let idleA = idleActionW;
+                    
+                    if (oldAction && oldAction !== idleA) {
+                        oldAction.fadeOut(0.5);
+                    }
+                    
+                    if (idleA && oldAction !== idleA) {
+                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
+                            idleA.reset();
+                            idleA.setEffectiveWeight(1); 
+                            idleA.fadeIn(0.5).play();
+                        } else if (idleA.getEffectiveWeight() < 1) {
+                            idleA.setEffectiveWeight(1);
+                            idleA.fadeIn(0.5).play();
+                        }
+                        currentActiveActions[vrmIndex] = idleA;
+                    } else if (!idleA) {
+                        currentActiveActions[vrmIndex] = null;
+                    }
+                    return; 
+                }
+                
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
+                
+                if (action) {
+                    anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; 
+                    
+                    if (oldAction && oldAction !== action) {
+                        oldAction.fadeOut(0.5);
+                    }
+
+                    if (oldAction === action) {
+                        action.stop(); 
+                        action.reset();
+                        action.setEffectiveWeight(1); 
+                        action.play();
+                    } else {
+                        action.reset();
+                        action.setLoop(THREE.LoopOnce); 
+                        action.clampWhenFinished = true; 
+                        action.setEffectiveWeight(1);
+                        action.fadeIn(0.5); 
+                        action.play();
+                    }
+                    
+                    currentActiveActions[vrmIndex] = action; 
+
+                    const onFinished = (e) => {
+                        if (e.action === action) {
+                            if (currentDanceListeners[vrmIndex]) {
+                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
+                                currentDanceListeners[vrmIndex] = null;
+                            }
+
+                            if (!isDancing) return;
+                            if (currentActiveActions[vrmIndex] !== action) return; 
+
+                            dancersFinished[vrmIndex] = true; 
+
+                            if (dancersFinished.every(v => v) && !stepTriggered) {
+                                stepTriggered = true; 
+                                
+                                danceStepIndex++;
+                                if (danceStepIndex >= 4) {
+                                    danceStepIndex = 0;
+                                    danceRound++;
+                                    generateSequences(danceRound);
+                                    if (danceRound % 2 === 0) {
+                                        addMessage(`Round ${danceRound}: Next Moves!`, "system");
+                                    } else {
+                                        addMessage(`Round ${danceRound}: Sequential Mode!`, "system");
+                                    }
+                                }
+                                playCurrentStep();
+                            }
+                        }
+                    };
+                    assignMixerListener(vrm, vrmIndex, onFinished);
+                } else {
+                    currentActiveActions[vrmIndex] = null;
+                }
+            });
+
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
+                setTimeout(() => {
+                    danceStepIndex++;
+                    if (danceStepIndex >= 4) {
+                        danceStepIndex = 0;
+                        danceRound++;
+                        generateSequences(danceRound);
+                    }
+                    playCurrentStep();
+                }, 50);
+            }
+        }
+
+        function stopDance() {
+            if (!isDancing) return;
+            
+            isDancing = false;
+            danceBtn.classList.remove('active');
+            
+            bgm.pause();
+            bgm.currentTime = 0;
+            
+            const lyricsContainer = document.getElementById('lyrics-container');
+            if (lyricsContainer) lyricsContainer.style.opacity = 0;
+            
+            danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+            currentActiveActions.forEach((action, i) => {
+                let idleA = idleActionW;
+                if (action && action !== idleA) action.fadeOut(0.5);
+            });
+            
+            clearAllMixerListeners();
+            
+            currentDanceQueue = [];
+            currentPlayingDanceData = null; 
+            window.pendingMicResume = false; 
+            
+            // ⭐⭐⭐ 停止跳舞後恢復原本的左側版面大小 ⭐⭐⭐
+            setTimeout(() => {
+                updateContainerSize(false);
+            }, 500);
+            
+            if (idleActionW && currentActiveActions[0] !== idleActionW) {
+                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+            }
+
+            currentActiveActions = [null]; 
+        }
+
+        function toggleDance() {
+            if (isDancing) {
+                stopDance();
+            } else {
+                loadAndPlayDance(); 
+            }
+        }
+
+        function safeParseAIJson(text) {
+            try {
+                let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const start = cleanText.indexOf('{');
+                const end = cleanText.lastIndexOf('}');
+                if (start === -1 || end === -1) return null;
+                let jsonStr = cleanText.substring(start, end + 1);
+                jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
+                jsonStr = jsonStr.replace(/'/g, '"');
+                jsonStr = jsonStr
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') 
+                    .replace(/,\s*}/g, '}') 
+                    .replace(/,\s*]/g, ']'); 
+                    
+                const result = JSON.parse(jsonStr);
+                
+                if (result.action === "dance_sequence") {
+                    if (typeof result.dance_list === "number") {
+                        result.dance_list = [result.dance_list];
+                    }
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        result.dance_list = null; 
+                    } else {
+                        result.dance_list = result.dance_list.map(item => {
+                            if (Array.isArray(item)) {
+                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
+                            } else {
+                                let v = parseInt(item);
+                                return isNaN(v) ? -1 : v;
+                            }
+                        });
+                    }
+                }
+                return result;
+            } catch (err) {
+                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
+                return null;
+            }
+        }
+
+        function guessDanceFromText(text) {
+            if (!text) return null;
+            const lowerText = text.toLowerCase();
+            
+            if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
+                return [3];
+            }
+
+            const map = {
+                "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
+                "嘻哈": 2, "律動": 2, "hip hop": 2,
+                "跳舞": -1, "dance": -1, 
+                "隨機跳": -1, "隨便跳": -1
+            };
+            for (const key in map) {
+                if (lowerText.includes(key)) {
+                    return [map[key]]; 
+                }
+            }
+            return null;
+        }
+
+        function fixDanceSequence(seq, referenceText) {
+            if (Array.isArray(seq) && seq.length > 0 && Array.isArray(seq[0])) {
+                return seq[0];
+            }
+            return seq; 
+        }
+
+        async function playDanceSequence(sequence) {
+            isDancing = true;
+            danceBtn.classList.add('active');
+
+            clearAllMixerListeners();
+
+             danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            await loadDanceAssets(); 
+            
+            isDancing = true;
+            updateContainerSize(true);
+            
+            try {
+                if (!bgm.paused) bgm.pause();
+                bgm.currentTime = 0;
+                bgm.muted = isMuted;
+                const playPromise = bgm.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
+                }
+            } catch(e) { console.error("BGM Fatal Error:", e); }
+
+            let seq = Array.isArray(sequence) ? sequence : [];
+            let is2D = seq.length > 0 && Array.isArray(seq[0]);
+            
+            currentDanceQueue = [];
+            
+            if (is2D) {
+                let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                for (let step = 0; step < maxSteps; step++) {
+                    let charSeq = seq[0] || [];
+                    let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
+                    if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
+                    currentDanceQueue.push(danceId); 
+                }
+            } else {
+                currentDanceQueue = seq.map(id => {
+                    if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
+                    return id;
+                });
+            }
+
+            let firstStep = currentDanceQueue.length > 0 ? currentDanceQueue[0] : null;
+            let wFirst = firstStep; 
+
+            if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
+            playNextDanceInQueue();
+        }
+
+        function playNextDanceInQueue() {
+            if (currentDanceQueue.length === 0) {
+                isDancing = false;
+                bgm.pause();
+                bgm.currentTime = 0;
+                danceBtn.classList.remove('active');
+
+                currentVrms.forEach((v, i) => {
+                    const fadeAction = currentActiveActions[i];
+                    let idleA = idleActionW;
+                    if (fadeAction && fadeAction !== idleA) {
+                        fadeAction.fadeOut(0.5);
+                    }
+                });
+
+                clearAllMixerListeners();
+
+                setTimeout(() => updateContainerSize(false), 500);
+                
+                if (idleActionW && currentActiveActions[0] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                
+                currentActiveActions = [null];
+                
+                if (window.pendingMicResume) {
+                    window.pendingMicResume = false;
+                    setTimeout(() => {
+                        if (!isRecording) startRecording();
+                    }, 500);
+                }
+                return;
+            }
+
+            let nextData = currentDanceQueue.shift(); 
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
+            
+            let v = parseInt(nextData);
+            if (v === 99) {
+                nextData = 99; 
+            } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
+                nextData = Math.floor(Math.random() * DANCE_URLS.length);
+            } else {
+                nextData = v;
+            }
+            
+            currentPlayingDanceData = nextData; 
+
+            let dancersFinished = [true]; 
+            let anyoneDancing = false;
+            let stepTriggered = false; 
+
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                let nextIndex = nextData;
+                const oldAction = currentActiveActions[vrmIndex];
+
+                if (nextIndex === 99) {
+                    dancersFinished[vrmIndex] = true; 
+                    
+                    let idleA = idleActionW;
+                    
+                    if (oldAction && oldAction !== idleA) {
+                        oldAction.fadeOut(0.5);
+                    }
+                    
+                    if (idleA && oldAction !== idleA) {
+                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
+                            idleA.reset();
+                            idleA.setEffectiveWeight(1); 
+                            idleA.fadeIn(0.5).play();
+                        } else if (idleA.getEffectiveWeight() < 1) {
+                            idleA.setEffectiveWeight(1);
+                            idleA.fadeIn(0.5).play();
+                        }
+                        currentActiveActions[vrmIndex] = idleA;
+                    } else if (!idleA) {
+                        currentActiveActions[vrmIndex] = null;
+                    }
+                    return; 
+                }
+                
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
+                
+                if (action) {
+                    anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; 
+                    
+                    if (oldAction && oldAction !== action) {
+                        oldAction.fadeOut(0.5);
+                    }
+
+                    if (oldAction === action) {
+                        action.stop(); 
+                        action.reset();
+                        action.setEffectiveWeight(1); 
+                        action.play();
+                    } else {
+                        action.reset();
+                        action.setLoop(THREE.LoopOnce); 
+                        action.clampWhenFinished = true; 
+                        action.setEffectiveWeight(1);
+                        action.fadeIn(0.5); 
+                        action.play();
+                    }
+                    
+                    currentActiveActions[vrmIndex] = action; 
+
+                    const onFinished = (e) => {
+                        if (e.action === action) {
+                            if (currentDanceListeners[vrmIndex]) {
+                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
+                                currentDanceListeners[vrmIndex] = null;
+                            }
+
+                            if (!isDancing) return;
+                            if (currentActiveActions[vrmIndex] !== action) return; 
+
+                            dancersFinished[vrmIndex] = true; 
+
+                            if (dancersFinished.every(v => v) && !stepTriggered) {
+                                stepTriggered = true; 
+                                
+                                danceStepIndex++;
+                                if (danceStepIndex >= 4) {
+                                    danceStepIndex = 0;
+                                    danceRound++;
+                                    generateSequences(danceRound);
+                                    if (danceRound % 2 === 0) {
+                                        addMessage(`Round ${danceRound}: Next Moves!`, "system");
+                                    } else {
+                                        addMessage(`Round ${danceRound}: Sequential Mode!`, "system");
+                                    }
+                                }
+                                playCurrentStep();
+                            }
+                        }
+                    };
+                    assignMixerListener(vrm, vrmIndex, onFinished);
+                } else {
+                    currentActiveActions[vrmIndex] = null;
+                }
+            });
+
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
+                setTimeout(() => {
+                    danceStepIndex++;
+                    if (danceStepIndex >= 4) {
+                        danceStepIndex = 0;
+                        danceRound++;
+                        generateSequences(danceRound);
+                    }
+                    playCurrentStep();
+                }, 50);
+            }
+        }
+
+        function stopDance() {
+            if (!isDancing) return;
+            
+            isDancing = false;
+            danceBtn.classList.remove('active');
+            
+            bgm.pause();
+            bgm.currentTime = 0;
+            
+            const lyricsContainer = document.getElementById('lyrics-container');
+            if (lyricsContainer) lyricsContainer.style.opacity = 0;
+            
+            danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+            currentActiveActions.forEach((action, i) => {
+                let idleA = idleActionW;
+                if (action && action !== idleA) action.fadeOut(0.5);
+            });
+            
+            clearAllMixerListeners();
+            
+            currentDanceQueue = [];
+            currentPlayingDanceData = null; 
+            window.pendingMicResume = false; 
+            
+            // ⭐⭐⭐ 停止跳舞後恢復原本的左側版面大小 ⭐⭐⭐
+            setTimeout(() => {
+                updateContainerSize(false);
+            }, 500);
+            
+            if (idleActionW && currentActiveActions[0] !== idleActionW) {
+                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+            }
+
+            currentActiveActions = [null]; 
+        }
+
+        function toggleDance() {
+            if (isDancing) {
+                stopDance();
+            } else {
+                loadAndPlayDance(); 
+            }
+        }
+
+        function safeParseAIJson(text) {
+            try {
+                let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const start = cleanText.indexOf('{');
+                const end = cleanText.lastIndexOf('}');
+                if (start === -1 || end === -1) return null;
+                let jsonStr = cleanText.substring(start, end + 1);
+                jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
+                jsonStr = jsonStr.replace(/'/g, '"');
+                jsonStr = jsonStr
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') 
+                    .replace(/,\s*}/g, '}') 
+                    .replace(/,\s*]/g, ']'); 
+                    
+                const result = JSON.parse(jsonStr);
+                
+                if (result.action === "dance_sequence") {
+                    if (typeof result.dance_list === "number") {
+                        result.dance_list = [result.dance_list];
+                    }
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        result.dance_list = null; 
+                    } else {
+                        result.dance_list = result.dance_list.map(item => {
+                            if (Array.isArray(item)) {
+                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
+                            } else {
+                                let v = parseInt(item);
+                                return isNaN(v) ? -1 : v;
+                            }
+                        });
+                    }
+                }
+                return result;
+            } catch (err) {
+                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
+                return null;
+            }
+        }
+
+        function guessDanceFromText(text) {
+            if (!text) return null;
+            const lowerText = text.toLowerCase();
+            
+            if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
+                return [3];
+            }
+
+            const map = {
+                "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
+                "嘻哈": 2, "律動": 2, "hip hop": 2,
+                "跳舞": -1, "dance": -1, 
+                "隨機跳": -1, "隨便跳": -1
+            };
+            for (const key in map) {
+                if (lowerText.includes(key)) {
+                    return [map[key]]; 
+                }
+            }
+            return null;
+        }
+
+        function fixDanceSequence(seq, referenceText) {
+            if (Array.isArray(seq) && seq.length > 0 && Array.isArray(seq[0])) {
+                return seq[0];
+            }
+            return seq; 
+        }
+
+        async function playDanceSequence(sequence) {
+            isDancing = true;
+            danceBtn.classList.add('active');
+
+            clearAllMixerListeners();
+
+             danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            await loadDanceAssets(); 
+            
+            isDancing = true;
+            updateContainerSize(true);
+            
+            try {
+                if (!bgm.paused) bgm.pause();
+                bgm.currentTime = 0;
+                bgm.muted = isMuted;
+                const playPromise = bgm.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
+                }
+            } catch(e) { console.error("BGM Fatal Error:", e); }
+
+            let seq = Array.isArray(sequence) ? sequence : [];
+            let is2D = seq.length > 0 && Array.isArray(seq[0]);
+            
+            currentDanceQueue = [];
+            
+            if (is2D) {
+                let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                for (let step = 0; step < maxSteps; step++) {
+                    let charSeq = seq[0] || [];
+                    let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
+                    if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
+                    currentDanceQueue.push(danceId); 
+                }
+            } else {
+                currentDanceQueue = seq.map(id => {
+                    if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
+                    return id;
+                });
+            }
+
+            let firstStep = currentDanceQueue.length > 0 ? currentDanceQueue[0] : null;
+            let wFirst = firstStep; 
+
+            if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
+            playNextDanceInQueue();
+        }
+
+        function playNextDanceInQueue() {
+            if (currentDanceQueue.length === 0) {
+                isDancing = false;
+                bgm.pause();
+                bgm.currentTime = 0;
+                danceBtn.classList.remove('active');
+
+                currentVrms.forEach((v, i) => {
+                    const fadeAction = currentActiveActions[i];
+                    let idleA = idleActionW;
+                    if (fadeAction && fadeAction !== idleA) {
+                        fadeAction.fadeOut(0.5);
+                    }
+                });
+
+                clearAllMixerListeners();
+
+                setTimeout(() => updateContainerSize(false), 500);
+                
+                if (idleActionW && currentActiveActions[0] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                
+                currentActiveActions = [null];
+                
+                if (window.pendingMicResume) {
+                    window.pendingMicResume = false;
+                    setTimeout(() => {
+                        if (!isRecording) startRecording();
+                    }, 500);
+                }
+                return;
+            }
+
+            let nextData = currentDanceQueue.shift(); 
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
+            
+            let v = parseInt(nextData);
+            if (v === 99) {
+                nextData = 99; 
+            } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
+                nextData = Math.floor(Math.random() * DANCE_URLS.length);
+            } else {
+                nextData = v;
+            }
+            
+            currentPlayingDanceData = nextData; 
+
+            let dancersFinished = [true]; 
+            let anyoneDancing = false;
+            let stepTriggered = false; 
+
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                let nextIndex = nextData;
+                const oldAction = currentActiveActions[vrmIndex];
+
+                if (nextIndex === 99) {
+                    dancersFinished[vrmIndex] = true; 
+                    
+                    let idleA = idleActionW;
+                    
+                    if (oldAction && oldAction !== idleA) {
+                        oldAction.fadeOut(0.5);
+                    }
+                    
+                    if (idleA && oldAction !== idleA) {
+                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
+                            idleA.reset();
+                            idleA.setEffectiveWeight(1); 
+                            idleA.fadeIn(0.5).play();
+                        } else if (idleA.getEffectiveWeight() < 1) {
+                            idleA.setEffectiveWeight(1);
+                            idleA.fadeIn(0.5).play();
+                        }
+                        currentActiveActions[vrmIndex] = idleA;
+                    } else if (!idleA) {
+                        currentActiveActions[vrmIndex] = null;
+                    }
+                    return; 
+                }
+                
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
+                
+                if (action) {
+                    anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; 
+                    
+                    if (oldAction && oldAction !== action) {
+                        oldAction.fadeOut(0.5);
+                    }
+
+                    if (oldAction === action) {
+                        action.stop(); 
+                        action.reset();
+                        action.setEffectiveWeight(1); 
+                        action.play();
+                    } else {
+                        action.reset();
+                        action.setLoop(THREE.LoopOnce); 
+                        action.clampWhenFinished = true; 
+                        action.setEffectiveWeight(1);
+                        action.fadeIn(0.5); 
+                        action.play();
+                    }
+                    
+                    currentActiveActions[vrmIndex] = action; 
+
+                    const onFinished = (e) => {
+                        if (e.action === action) {
+                            if (currentDanceListeners[vrmIndex]) {
+                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
+                                currentDanceListeners[vrmIndex] = null;
+                            }
+
+                            if (!isDancing) return;
+                            if (currentActiveActions[vrmIndex] !== action) return; 
+
+                            dancersFinished[vrmIndex] = true; 
+
+                            if (dancersFinished.every(v => v) && !stepTriggered) {
+                                stepTriggered = true; 
+                                
+                                danceStepIndex++;
+                                if (danceStepIndex >= 4) {
+                                    danceStepIndex = 0;
+                                    danceRound++;
+                                    generateSequences(danceRound);
+                                    if (danceRound % 2 === 0) {
+                                        addMessage(`Round ${danceRound}: Next Moves!`, "system");
+                                    } else {
+                                        addMessage(`Round ${danceRound}: Sequential Mode!`, "system");
+                                    }
+                                }
+                                playCurrentStep();
+                            }
+                        }
+                    };
+                    assignMixerListener(vrm, vrmIndex, onFinished);
+                } else {
+                    currentActiveActions[vrmIndex] = null;
+                }
+            });
+
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
+                setTimeout(() => {
+                    danceStepIndex++;
+                    if (danceStepIndex >= 4) {
+                        danceStepIndex = 0;
+                        danceRound++;
+                        generateSequences(danceRound);
+                    }
+                    playCurrentStep();
+                }, 50);
+            }
+        }
+
+        function stopDance() {
+            if (!isDancing) return;
+            
+            isDancing = false;
+            danceBtn.classList.remove('active');
+            
+            bgm.pause();
+            bgm.currentTime = 0;
+            
+            const lyricsContainer = document.getElementById('lyrics-container');
+            if (lyricsContainer) lyricsContainer.style.opacity = 0;
+            
+            danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+            currentActiveActions.forEach((action, i) => {
+                let idleA = idleActionW;
+                if (action && action !== idleA) action.fadeOut(0.5);
+            });
+            
+            clearAllMixerListeners();
+            
+            currentDanceQueue = [];
+            currentPlayingDanceData = null; 
+            window.pendingMicResume = false; 
+            
+            // ⭐⭐⭐ 停止跳舞後恢復原本的左側版面大小 ⭐⭐⭐
+            setTimeout(() => {
+                updateContainerSize(false);
+            }, 500);
+            
+            if (idleActionW && currentActiveActions[0] !== idleActionW) {
+                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+            }
+
+            currentActiveActions = [null]; 
+        }
+
+        function toggleDance() {
+            if (isDancing) {
+                stopDance();
+            } else {
+                loadAndPlayDance(); 
+            }
+        }
+
+        function safeParseAIJson(text) {
+            try {
+                let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const start = cleanText.indexOf('{');
+                const end = cleanText.lastIndexOf('}');
+                if (start === -1 || end === -1) return null;
+                let jsonStr = cleanText.substring(start, end + 1);
+                jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
+                jsonStr = jsonStr.replace(/'/g, '"');
+                jsonStr = jsonStr
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') 
+                    .replace(/,\s*}/g, '}') 
+                    .replace(/,\s*]/g, ']'); 
+                    
+                const result = JSON.parse(jsonStr);
+                
+                if (result.action === "dance_sequence") {
+                    if (typeof result.dance_list === "number") {
+                        result.dance_list = [result.dance_list];
+                    }
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        result.dance_list = null; 
+                    } else {
+                        result.dance_list = result.dance_list.map(item => {
+                            if (Array.isArray(item)) {
+                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
+                            } else {
+                                let v = parseInt(item);
+                                return isNaN(v) ? -1 : v;
+                            }
+                        });
+                    }
+                }
+                return result;
+            } catch (err) {
+                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
+                return null;
+            }
+        }
+
+        function guessDanceFromText(text) {
+            if (!text) return null;
+            const lowerText = text.toLowerCase();
+            
+            if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
+                return [3];
+            }
+
+            const map = {
+                "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
+                "嘻哈": 2, "律動": 2, "hip hop": 2,
+                "跳舞": -1, "dance": -1, 
+                "隨機跳": -1, "隨便跳": -1
+            };
+            for (const key in map) {
+                if (lowerText.includes(key)) {
+                    return [map[key]]; 
+                }
+            }
+            return null;
+        }
+
+        function fixDanceSequence(seq, referenceText) {
+            if (Array.isArray(seq) && seq.length > 0 && Array.isArray(seq[0])) {
+                return seq[0];
+            }
+            return seq; 
+        }
+
+        async function playDanceSequence(sequence) {
+            isDancing = true;
+            danceBtn.classList.add('active');
+
+            clearAllMixerListeners();
+
+             danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            await loadDanceAssets(); 
+            
+            isDancing = true;
+            updateContainerSize(true);
+            
+            try {
+                if (!bgm.paused) bgm.pause();
+                bgm.currentTime = 0;
+                bgm.muted = isMuted;
+                const playPromise = bgm.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
+                }
+            } catch(e) { console.error("BGM Fatal Error:", e); }
+
+            let seq = Array.isArray(sequence) ? sequence : [];
+            let is2D = seq.length > 0 && Array.isArray(seq[0]);
+            
+            currentDanceQueue = [];
+            
+            if (is2D) {
+                let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                for (let step = 0; step < maxSteps; step++) {
+                    let charSeq = seq[0] || [];
+                    let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
+                    if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
+                    currentDanceQueue.push(danceId); 
+                }
+            } else {
+                currentDanceQueue = seq.map(id => {
+                    if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
+                    return id;
+                });
+            }
+
+            let firstStep = currentDanceQueue.length > 0 ? currentDanceQueue[0] : null;
+            let wFirst = firstStep; 
+
+            if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
+            playNextDanceInQueue();
+        }
+
+        function playNextDanceInQueue() {
+            if (currentDanceQueue.length === 0) {
+                isDancing = false;
+                bgm.pause();
+                bgm.currentTime = 0;
+                danceBtn.classList.remove('active');
+
+                currentVrms.forEach((v, i) => {
+                    const fadeAction = currentActiveActions[i];
+                    let idleA = idleActionW;
+                    if (fadeAction && fadeAction !== idleA) {
+                        fadeAction.fadeOut(0.5);
+                    }
+                });
+
+                clearAllMixerListeners();
+
+                setTimeout(() => updateContainerSize(false), 500);
+                
+                if (idleActionW && currentActiveActions[0] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                
+                currentActiveActions = [null];
+                
+                if (window.pendingMicResume) {
+                    window.pendingMicResume = false;
+                    setTimeout(() => {
+                        if (!isRecording) startRecording();
+                    }, 500);
+                }
+                return;
+            }
+
+            let nextData = currentDanceQueue.shift(); 
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
+            
+            let v = parseInt(nextData);
+            if (v === 99) {
+                nextData = 99; 
+            } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
+                nextData = Math.floor(Math.random() * DANCE_URLS.length);
+            } else {
+                nextData = v;
+            }
+            
+            currentPlayingDanceData = nextData; 
+
+            let dancersFinished = [true]; 
+            let anyoneDancing = false;
+            let stepTriggered = false; 
+
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                let nextIndex = nextData;
+                const oldAction = currentActiveActions[vrmIndex];
+
+                if (nextIndex === 99) {
+                    dancersFinished[vrmIndex] = true; 
+                    
+                    let idleA = idleActionW;
+                    
+                    if (oldAction && oldAction !== idleA) {
+                        oldAction.fadeOut(0.5);
+                    }
+                    
+                    if (idleA && oldAction !== idleA) {
+                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
+                            idleA.reset();
+                            idleA.setEffectiveWeight(1); 
+                            idleA.fadeIn(0.5).play();
+                        } else if (idleA.getEffectiveWeight() < 1) {
+                            idleA.setEffectiveWeight(1);
+                            idleA.fadeIn(0.5).play();
+                        }
+                        currentActiveActions[vrmIndex] = idleA;
+                    } else if (!idleA) {
+                        currentActiveActions[vrmIndex] = null;
+                    }
+                    return; 
+                }
+                
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
+                
+                if (action) {
+                    anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; 
+                    
+                    if (oldAction && oldAction !== action) {
+                        oldAction.fadeOut(0.5);
+                    }
+
+                    if (oldAction === action) {
+                        action.stop(); 
+                        action.reset();
+                        action.setEffectiveWeight(1); 
+                        action.play();
+                    } else {
+                        action.reset();
+                        action.setLoop(THREE.LoopOnce); 
+                        action.clampWhenFinished = true; 
+                        action.setEffectiveWeight(1);
+                        action.fadeIn(0.5); 
+                        action.play();
+                    }
+                    
+                    currentActiveActions[vrmIndex] = action; 
+
+                    const onFinished = (e) => {
+                        if (e.action === action) {
+                            if (currentDanceListeners[vrmIndex]) {
+                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
+                                currentDanceListeners[vrmIndex] = null;
+                            }
+
+                            if (!isDancing) return;
+                            if (currentActiveActions[vrmIndex] !== action) return; 
+
+                            dancersFinished[vrmIndex] = true; 
+
+                            if (dancersFinished.every(v => v) && !stepTriggered) {
+                                stepTriggered = true; 
+                                
+                                danceStepIndex++;
+                                if (danceStepIndex >= 4) {
+                                    danceStepIndex = 0;
+                                    danceRound++;
+                                    generateSequences(danceRound);
+                                    if (danceRound % 2 === 0) {
+                                        addMessage(`Round ${danceRound}: Next Moves!`, "system");
+                                    } else {
+                                        addMessage(`Round ${danceRound}: Sequential Mode!`, "system");
+                                    }
+                                }
+                                playCurrentStep();
+                            }
+                        }
+                    };
+                    assignMixerListener(vrm, vrmIndex, onFinished);
+                } else {
+                    currentActiveActions[vrmIndex] = null;
+                }
+            });
+
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
+                setTimeout(() => {
+                    danceStepIndex++;
+                    if (danceStepIndex >= 4) {
+                        danceStepIndex = 0;
+                        danceRound++;
+                        generateSequences(danceRound);
+                    }
+                    playCurrentStep();
+                }, 50);
+            }
+        }
+
+        function stopDance() {
+            if (!isDancing) return;
+            
+            isDancing = false;
+            danceBtn.classList.remove('active');
+            
+            bgm.pause();
+            bgm.currentTime = 0;
+            
+            const lyricsContainer = document.getElementById('lyrics-container');
+            if (lyricsContainer) lyricsContainer.style.opacity = 0;
+            
+            danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+            currentActiveActions.forEach((action, i) => {
+                let idleA = idleActionW;
+                if (action && action !== idleA) action.fadeOut(0.5);
+            });
+            
+            clearAllMixerListeners();
+            
+            currentDanceQueue = [];
+            currentPlayingDanceData = null; 
+            window.pendingMicResume = false; 
+            
+            // ⭐⭐⭐ 停止跳舞後恢復原本的左側版面大小 ⭐⭐⭐
+            setTimeout(() => {
+                updateContainerSize(false);
+            }, 500);
+            
+            if (idleActionW && currentActiveActions[0] !== idleActionW) {
+                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+            }
+
+            currentActiveActions = [null]; 
+        }
+
+        function toggleDance() {
+            if (isDancing) {
+                stopDance();
+            } else {
+                loadAndPlayDance(); 
+            }
+        }
+
+        function safeParseAIJson(text) {
+            try {
+                let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const start = cleanText.indexOf('{');
+                const end = cleanText.lastIndexOf('}');
+                if (start === -1 || end === -1) return null;
+                let jsonStr = cleanText.substring(start, end + 1);
+                jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
+                jsonStr = jsonStr.replace(/'/g, '"');
+                jsonStr = jsonStr
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') 
+                    .replace(/,\s*}/g, '}') 
+                    .replace(/,\s*]/g, ']'); 
+                    
+                const result = JSON.parse(jsonStr);
+                
+                if (result.action === "dance_sequence") {
+                    if (typeof result.dance_list === "number") {
+                        result.dance_list = [result.dance_list];
+                    }
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        result.dance_list = null; 
+                    } else {
+                        result.dance_list = result.dance_list.map(item => {
+                            if (Array.isArray(item)) {
+                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
+                            } else {
+                                let v = parseInt(item);
+                                return isNaN(v) ? -1 : v;
+                            }
+                        });
+                    }
+                }
+                return result;
+            } catch (err) {
+                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
+                return null;
+            }
+        }
+
+        function guessDanceFromText(text) {
+            if (!text) return null;
+            const lowerText = text.toLowerCase();
+            
+            if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
+                return [3];
+            }
+
+            const map = {
+                "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
+                "嘻哈": 2, "律動": 2, "hip hop": 2,
+                "跳舞": -1, "dance": -1, 
+                "隨機跳": -1, "隨便跳": -1
+            };
+            for (const key in map) {
+                if (lowerText.includes(key)) {
+                    return [map[key]]; 
+                }
+            }
+            return null;
+        }
+
+        function fixDanceSequence(seq, referenceText) {
+            if (Array.isArray(seq) && seq.length > 0 && Array.isArray(seq[0])) {
+                return seq[0];
+            }
+            return seq; 
+        }
+
+        async function playDanceSequence(sequence) {
+            isDancing = true;
+            danceBtn.classList.add('active');
+
+            clearAllMixerListeners();
+
+             danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            await loadDanceAssets(); 
+            
+            isDancing = true;
+            updateContainerSize(true);
+            
+            try {
+                if (!bgm.paused) bgm.pause();
+                bgm.currentTime = 0;
+                bgm.muted = isMuted;
+                const playPromise = bgm.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
+                }
+            } catch(e) { console.error("BGM Fatal Error:", e); }
+
+            let seq = Array.isArray(sequence) ? sequence : [];
+            let is2D = seq.length > 0 && Array.isArray(seq[0]);
+            
+            currentDanceQueue = [];
+            
+            if (is2D) {
+                let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                for (let step = 0; step < maxSteps; step++) {
+                    let charSeq = seq[0] || [];
+                    let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
+                    if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
+                    currentDanceQueue.push(danceId); 
+                }
+            } else {
+                currentDanceQueue = seq.map(id => {
+                    if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
+                    return id;
+                });
+            }
+
+            let firstStep = currentDanceQueue.length > 0 ? currentDanceQueue[0] : null;
+            let wFirst = firstStep; 
+
+            if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
+            playNextDanceInQueue();
+        }
+
+        function playNextDanceInQueue() {
+            if (currentDanceQueue.length === 0) {
+                isDancing = false;
+                bgm.pause();
+                bgm.currentTime = 0;
+                danceBtn.classList.remove('active');
+
+                currentVrms.forEach((v, i) => {
+                    const fadeAction = currentActiveActions[i];
+                    let idleA = idleActionW;
+                    if (fadeAction && fadeAction !== idleA) {
+                        fadeAction.fadeOut(0.5);
+                    }
+                });
+
+                clearAllMixerListeners();
+
+                setTimeout(() => updateContainerSize(false), 500);
+                
+                if (idleActionW && currentActiveActions[0] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                
+                currentActiveActions = [null];
+                
+                if (window.pendingMicResume) {
+                    window.pendingMicResume = false;
+                    setTimeout(() => {
+                        if (!isRecording) startRecording();
+                    }, 500);
+                }
+                return;
+            }
+
+            let nextData = currentDanceQueue.shift(); 
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
+            
+            let v = parseInt(nextData);
+            if (v === 99) {
+                nextData = 99; 
+            } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
+                nextData = Math.floor(Math.random() * DANCE_URLS.length);
+            } else {
+                nextData = v;
+            }
+            
+            currentPlayingDanceData = nextData; 
+
+            let dancersFinished = [true]; 
+            let anyoneDancing = false;
+            let stepTriggered = false; 
+
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                let nextIndex = nextData;
+                const oldAction = currentActiveActions[vrmIndex];
+
+                if (nextIndex === 99) {
+                    dancersFinished[vrmIndex] = true; 
+                    
+                    let idleA = idleActionW;
+                    
+                    if (oldAction && oldAction !== idleA) {
+                        oldAction.fadeOut(0.5);
+                    }
+                    
+                    if (idleA && oldAction !== idleA) {
+                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
+                            idleA.reset();
+                            idleA.setEffectiveWeight(1); 
+                            idleA.fadeIn(0.5).play();
+                        } else if (idleA.getEffectiveWeight() < 1) {
+                            idleA.setEffectiveWeight(1);
+                            idleA.fadeIn(0.5).play();
+                        }
+                        currentActiveActions[vrmIndex] = idleA;
+                    } else if (!idleA) {
+                        currentActiveActions[vrmIndex] = null;
+                    }
+                    return; 
+                }
+                
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
+                
+                if (action) {
+                    anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; 
+                    
+                    if (oldAction && oldAction !== action) {
+                        oldAction.fadeOut(0.5);
+                    }
+
+                    if (oldAction === action) {
+                        action.stop(); 
+                        action.reset();
+                        action.setEffectiveWeight(1); 
+                        action.play();
+                    } else {
+                        action.reset();
+                        action.setLoop(THREE.LoopOnce); 
+                        action.clampWhenFinished = true; 
+                        action.setEffectiveWeight(1);
+                        action.fadeIn(0.5); 
+                        action.play();
+                    }
+                    
+                    currentActiveActions[vrmIndex] = action; 
+
+                    const onFinished = (e) => {
+                        if (e.action === action) {
+                            if (currentDanceListeners[vrmIndex]) {
+                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
+                                currentDanceListeners[vrmIndex] = null;
+                            }
+
+                            if (!isDancing) return;
+                            if (currentActiveActions[vrmIndex] !== action) return; 
+
+                            dancersFinished[vrmIndex] = true; 
+
+                            if (dancersFinished.every(v => v) && !stepTriggered) {
+                                stepTriggered = true; 
+                                
+                                danceStepIndex++;
+                                if (danceStepIndex >= 4) {
+                                    danceStepIndex = 0;
+                                    danceRound++;
+                                    generateSequences(danceRound);
+                                    if (danceRound % 2 === 0) {
+                                        addMessage(`Round ${danceRound}: Next Moves!`, "system");
+                                    } else {
+                                        addMessage(`Round ${danceRound}: Sequential Mode!`, "system");
+                                    }
+                                }
+                                playCurrentStep();
+                            }
+                        }
+                    };
+                    assignMixerListener(vrm, vrmIndex, onFinished);
+                } else {
+                    currentActiveActions[vrmIndex] = null;
+                }
+            });
+
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
+                setTimeout(() => {
+                    danceStepIndex++;
+                    if (danceStepIndex >= 4) {
+                        danceStepIndex = 0;
+                        danceRound++;
+                        generateSequences(danceRound);
+                    }
+                    playCurrentStep();
+                }, 50);
+            }
+        }
+
+        function stopDance() {
+            if (!isDancing) return;
+            
+            isDancing = false;
+            danceBtn.classList.remove('active');
+            
+            bgm.pause();
+            bgm.currentTime = 0;
+            
+            const lyricsContainer = document.getElementById('lyrics-container');
+            if (lyricsContainer) lyricsContainer.style.opacity = 0;
+            
+            danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+            currentActiveActions.forEach((action, i) => {
+                let idleA = idleActionW;
+                if (action && action !== idleA) action.fadeOut(0.5);
+            });
+            
+            clearAllMixerListeners();
+            
+            currentDanceQueue = [];
+            currentPlayingDanceData = null; 
+            window.pendingMicResume = false; 
+            
+            // ⭐⭐⭐ 停止跳舞後恢復原本的左側版面大小 ⭐⭐⭐
+            setTimeout(() => {
+                updateContainerSize(false);
+            }, 500);
+            
+            if (idleActionW && currentActiveActions[0] !== idleActionW) {
+                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+            }
+
+            currentActiveActions = [null]; 
+        }
+
+        function toggleDance() {
+            if (isDancing) {
+                stopDance();
+            } else {
+                loadAndPlayDance(); 
+            }
+        }
+
+        function safeParseAIJson(text) {
+            try {
+                let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const start = cleanText.indexOf('{');
+                const end = cleanText.lastIndexOf('}');
+                if (start === -1 || end === -1) return null;
+                let jsonStr = cleanText.substring(start, end + 1);
+                jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
+                jsonStr = jsonStr.replace(/'/g, '"');
+                jsonStr = jsonStr
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') 
+                    .replace(/,\s*}/g, '}') 
+                    .replace(/,\s*]/g, ']'); 
+                    
+                const result = JSON.parse(jsonStr);
+                
+                if (result.action === "dance_sequence") {
+                    if (typeof result.dance_list === "number") {
+                        result.dance_list = [result.dance_list];
+                    }
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        result.dance_list = null; 
+                    } else {
+                        result.dance_list = result.dance_list.map(item => {
+                            if (Array.isArray(item)) {
+                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
+                            } else {
+                                let v = parseInt(item);
+                                return isNaN(v) ? -1 : v;
+                            }
+                        });
+                    }
+                }
+                return result;
+            } catch (err) {
+                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
+                return null;
+            }
+        }
+
+        function guessDanceFromText(text) {
+            if (!text) return null;
+            const lowerText = text.toLowerCase();
+            
+            if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
+                return [3];
+            }
+
+            const map = {
+                "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
+                "嘻哈": 2, "律動": 2, "hip hop": 2,
+                "跳舞": -1, "dance": -1, 
+                "隨機跳": -1, "隨便跳": -1
+            };
+            for (const key in map) {
+                if (lowerText.includes(key)) {
+                    return [map[key]]; 
+                }
+            }
+            return null;
+        }
+
+        function fixDanceSequence(seq, referenceText) {
+            if (Array.isArray(seq) && seq.length > 0 && Array.isArray(seq[0])) {
+                return seq[0];
+            }
+            return seq; 
+        }
+
+        async function playDanceSequence(sequence) {
+            isDancing = true;
+            danceBtn.classList.add('active');
+
+            clearAllMixerListeners();
+
+             danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            await loadDanceAssets(); 
+            
+            isDancing = true;
+            updateContainerSize(true);
+            
+            try {
+                if (!bgm.paused) bgm.pause();
+                bgm.currentTime = 0;
+                bgm.muted = isMuted;
+                const playPromise = bgm.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
+                }
+            } catch(e) { console.error("BGM Fatal Error:", e); }
+
+            let seq = Array.isArray(sequence) ? sequence : [];
+            let is2D = seq.length > 0 && Array.isArray(seq[0]);
+            
+            currentDanceQueue = [];
+            
+            if (is2D) {
+                let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                for (let step = 0; step < maxSteps; step++) {
+                    let charSeq = seq[0] || [];
+                    let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
+                    if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
+                    currentDanceQueue.push(danceId); 
+                }
+            } else {
+                currentDanceQueue = seq.map(id => {
+                    if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
+                    return id;
+                });
+            }
+
+            let firstStep = currentDanceQueue.length > 0 ? currentDanceQueue[0] : null;
+            let wFirst = firstStep; 
+
+            if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
+            playNextDanceInQueue();
+        }
+
+        function playNextDanceInQueue() {
+            if (currentDanceQueue.length === 0) {
+                isDancing = false;
+                bgm.pause();
+                bgm.currentTime = 0;
+                danceBtn.classList.remove('active');
+
+                currentVrms.forEach((v, i) => {
+                    const fadeAction = currentActiveActions[i];
+                    let idleA = idleActionW;
+                    if (fadeAction && fadeAction !== idleA) {
+                        fadeAction.fadeOut(0.5);
+                    }
+                });
+
+                clearAllMixerListeners();
+
+                setTimeout(() => updateContainerSize(false), 500);
+                
+                if (idleActionW && currentActiveActions[0] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                
+                currentActiveActions = [null];
+                
+                if (window.pendingMicResume) {
+                    window.pendingMicResume = false;
+                    setTimeout(() => {
+                        if (!isRecording) startRecording();
+                    }, 500);
+                }
+                return;
+            }
+
+            let nextData = currentDanceQueue.shift(); 
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
+            
+            let v = parseInt(nextData);
+            if (v === 99) {
+                nextData = 99; 
+            } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
+                nextData = Math.floor(Math.random() * DANCE_URLS.length);
+            } else {
+                nextData = v;
+            }
+            
+            currentPlayingDanceData = nextData; 
+
+            let dancersFinished = [true]; 
+            let anyoneDancing = false;
+            let stepTriggered = false; 
+
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                let nextIndex = nextData;
+                const oldAction = currentActiveActions[vrmIndex];
+
+                if (nextIndex === 99) {
+                    dancersFinished[vrmIndex] = true; 
+                    
+                    let idleA = idleActionW;
+                    
+                    if (oldAction && oldAction !== idleA) {
+                        oldAction.fadeOut(0.5);
+                    }
+                    
+                    if (idleA && oldAction !== idleA) {
+                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
+                            idleA.reset();
+                            idleA.setEffectiveWeight(1); 
+                            idleA.fadeIn(0.5).play();
+                        } else if (idleA.getEffectiveWeight() < 1) {
+                            idleA.setEffectiveWeight(1);
+                            idleA.fadeIn(0.5).play();
+                        }
+                        currentActiveActions[vrmIndex] = idleA;
+                    } else if (!idleA) {
+                        currentActiveActions[vrmIndex] = null;
+                    }
+                    return; 
+                }
+                
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
+                
+                if (action) {
+                    anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; 
+                    
+                    if (oldAction && oldAction !== action) {
+                        oldAction.fadeOut(0.5);
+                    }
+
+                    if (oldAction === action) {
+                        action.stop(); 
+                        action.reset();
+                        action.setEffectiveWeight(1); 
+                        action.play();
+                    } else {
+                        action.reset();
+                        action.setLoop(THREE.LoopOnce); 
+                        action.clampWhenFinished = true; 
+                        action.setEffectiveWeight(1);
+                        action.fadeIn(0.5); 
+                        action.play();
+                    }
+                    
+                    currentActiveActions[vrmIndex] = action; 
+
+                    const onFinished = (e) => {
+                        if (e.action === action) {
+                            if (currentDanceListeners[vrmIndex]) {
+                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
+                                currentDanceListeners[vrmIndex] = null;
+                            }
+
+                            if (!isDancing) return;
+                            if (currentActiveActions[vrmIndex] !== action) return; 
+
+                            dancersFinished[vrmIndex] = true; 
+
+                            if (dancersFinished.every(v => v) && !stepTriggered) {
+                                stepTriggered = true; 
+                                
+                                danceStepIndex++;
+                                if (danceStepIndex >= 4) {
+                                    danceStepIndex = 0;
+                                    danceRound++;
+                                    generateSequences(danceRound);
+                                    if (danceRound % 2 === 0) {
+                                        addMessage(`Round ${danceRound}: Next Moves!`, "system");
+                                    } else {
+                                        addMessage(`Round ${danceRound}: Sequential Mode!`, "system");
+                                    }
+                                }
+                                playCurrentStep();
+                            }
+                        }
+                    };
+                    assignMixerListener(vrm, vrmIndex, onFinished);
+                } else {
+                    currentActiveActions[vrmIndex] = null;
+                }
+            });
+
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
+                setTimeout(() => {
+                    danceStepIndex++;
+                    if (danceStepIndex >= 4) {
+                        danceStepIndex = 0;
+                        danceRound++;
+                        generateSequences(danceRound);
+                    }
+                    playCurrentStep();
+                }, 50);
+            }
+        }
+
+        function stopDance() {
+            if (!isDancing) return;
+            
+            isDancing = false;
+            danceBtn.classList.remove('active');
+            
+            bgm.pause();
+            bgm.currentTime = 0;
+            
+            const lyricsContainer = document.getElementById('lyrics-container');
+            if (lyricsContainer) lyricsContainer.style.opacity = 0;
+            
+            danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+            currentActiveActions.forEach((action, i) => {
+                let idleA = idleActionW;
+                if (action && action !== idleA) action.fadeOut(0.5);
+            });
+            
+            clearAllMixerListeners();
+            
+            currentDanceQueue = [];
+            currentPlayingDanceData = null; 
+            window.pendingMicResume = false; 
+            
+            // ⭐⭐⭐ 停止跳舞後恢復原本的左側版面大小 ⭐⭐⭐
+            setTimeout(() => {
+                updateContainerSize(false);
+            }, 500);
+            
+            if (idleActionW && currentActiveActions[0] !== idleActionW) {
+                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+            }
+
+            currentActiveActions = [null]; 
+        }
+
+        function toggleDance() {
+            if (isDancing) {
+                stopDance();
+            } else {
+                loadAndPlayDance(); 
+            }
+        }
+
+        function safeParseAIJson(text) {
+            try {
+                let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const start = cleanText.indexOf('{');
+                const end = cleanText.lastIndexOf('}');
+                if (start === -1 || end === -1) return null;
+                let jsonStr = cleanText.substring(start, end + 1);
+                jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
+                jsonStr = jsonStr.replace(/'/g, '"');
+                jsonStr = jsonStr
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') 
+                    .replace(/,\s*}/g, '}') 
+                    .replace(/,\s*]/g, ']'); 
+                    
+                const result = JSON.parse(jsonStr);
+                
+                if (result.action === "dance_sequence") {
+                    if (typeof result.dance_list === "number") {
+                        result.dance_list = [result.dance_list];
+                    }
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        result.dance_list = null; 
+                    } else {
+                        result.dance_list = result.dance_list.map(item => {
+                            if (Array.isArray(item)) {
+                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
+                            } else {
+                                let v = parseInt(item);
+                                return isNaN(v) ? -1 : v;
+                            }
+                        });
+                    }
+                }
+                return result;
+            } catch (err) {
+                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
+                return null;
+            }
+        }
+
+        function guessDanceFromText(text) {
+            if (!text) return null;
+            const lowerText = text.toLowerCase();
+            
+            if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
+                return [3];
+            }
+
+            const map = {
+                "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
+                "嘻哈": 2, "律動": 2, "hip hop": 2,
+                "跳舞": -1, "dance": -1, 
+                "隨機跳": -1, "隨便跳": -1
+            };
+            for (const key in map) {
+                if (lowerText.includes(key)) {
+                    return [map[key]]; 
+                }
+            }
+            return null;
+        }
+
+        function fixDanceSequence(seq, referenceText) {
+            if (Array.isArray(seq) && seq.length > 0 && Array.isArray(seq[0])) {
+                return seq[0];
+            }
+            return seq; 
+        }
+
+        async function playDanceSequence(sequence) {
+            isDancing = true;
+            danceBtn.classList.add('active');
+
+            clearAllMixerListeners();
+
+             danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            await loadDanceAssets(); 
+            
+            isDancing = true;
+            updateContainerSize(true);
+            
+            try {
+                if (!bgm.paused) bgm.pause();
+                bgm.currentTime = 0;
+                bgm.muted = isMuted;
+                const playPromise = bgm.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
+                }
+            } catch(e) { console.error("BGM Fatal Error:", e); }
+
+            let seq = Array.isArray(sequence) ? sequence : [];
+            let is2D = seq.length > 0 && Array.isArray(seq[0]);
+            
+            currentDanceQueue = [];
+            
+            if (is2D) {
+                let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                for (let step = 0; step < maxSteps; step++) {
+                    let charSeq = seq[0] || [];
+                    let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
+                    if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
+                    currentDanceQueue.push(danceId); 
+                }
+            } else {
+                currentDanceQueue = seq.map(id => {
+                    if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
+                    return id;
+                });
+            }
+
+            let firstStep = currentDanceQueue.length > 0 ? currentDanceQueue[0] : null;
+            let wFirst = firstStep; 
+
+            if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
+            playNextDanceInQueue();
+        }
+
+        function playNextDanceInQueue() {
+            if (currentDanceQueue.length === 0) {
+                isDancing = false;
+                bgm.pause();
+                bgm.currentTime = 0;
+                danceBtn.classList.remove('active');
+
+                currentVrms.forEach((v, i) => {
+                    const fadeAction = currentActiveActions[i];
+                    let idleA = idleActionW;
+                    if (fadeAction && fadeAction !== idleA) {
+                        fadeAction.fadeOut(0.5);
+                    }
+                });
+
+                clearAllMixerListeners();
+
+                setTimeout(() => updateContainerSize(false), 500);
+                
+                if (idleActionW && currentActiveActions[0] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                
+                currentActiveActions = [null];
+                
+                if (window.pendingMicResume) {
+                    window.pendingMicResume = false;
+                    setTimeout(() => {
+                        if (!isRecording) startRecording();
+                    }, 500);
+                }
+                return;
+            }
+
+            let nextData = currentDanceQueue.shift(); 
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
+            
+            let v = parseInt(nextData);
+            if (v === 99) {
+                nextData = 99; 
+            } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
+                nextData = Math.floor(Math.random() * DANCE_URLS.length);
+            } else {
+                nextData = v;
+            }
+            
+            currentPlayingDanceData = nextData; 
+
+            let dancersFinished = [true]; 
+            let anyoneDancing = false;
+            let stepTriggered = false; 
+
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                let nextIndex = nextData;
+                const oldAction = currentActiveActions[vrmIndex];
+
+                if (nextIndex === 99) {
+                    dancersFinished[vrmIndex] = true; 
+                    
+                    let idleA = idleActionW;
+                    
+                    if (oldAction && oldAction !== idleA) {
+                        oldAction.fadeOut(0.5);
+                    }
+                    
+                    if (idleA && oldAction !== idleA) {
+                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
+                            idleA.reset();
+                            idleA.setEffectiveWeight(1); 
+                            idleA.fadeIn(0.5).play();
+                        } else if (idleA.getEffectiveWeight() < 1) {
+                            idleA.setEffectiveWeight(1);
+                            idleA.fadeIn(0.5).play();
+                        }
+                        currentActiveActions[vrmIndex] = idleA;
+                    } else if (!idleA) {
+                        currentActiveActions[vrmIndex] = null;
+                    }
+                    return; 
+                }
+                
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
+                
+                if (action) {
+                    anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; 
+                    
+                    if (oldAction && oldAction !== action) {
+                        oldAction.fadeOut(0.5);
+                    }
+
+                    if (oldAction === action) {
+                        action.stop(); 
+                        action.reset();
+                        action.setEffectiveWeight(1); 
+                        action.play();
+                    } else {
+                        action.reset();
+                        action.setLoop(THREE.LoopOnce); 
+                        action.clampWhenFinished = true; 
+                        action.setEffectiveWeight(1);
+                        action.fadeIn(0.5); 
+                        action.play();
+                    }
+                    
+                    currentActiveActions[vrmIndex] = action; 
+
+                    const onFinished = (e) => {
+                        if (e.action === action) {
+                            if (currentDanceListeners[vrmIndex]) {
+                                vrm.userData.mixer.removeEventListener('finished', currentDanceListeners[vrmIndex]);
+                                currentDanceListeners[vrmIndex] = null;
+                            }
+
+                            if (!isDancing) return;
+                            if (currentActiveActions[vrmIndex] !== action) return; 
+
+                            dancersFinished[vrmIndex] = true; 
+
+                            if (dancersFinished.every(v => v) && !stepTriggered) {
+                                stepTriggered = true; 
+                                
+                                danceStepIndex++;
+                                if (danceStepIndex >= 4) {
+                                    danceStepIndex = 0;
+                                    danceRound++;
+                                    generateSequences(danceRound);
+                                    if (danceRound % 2 === 0) {
+                                        addMessage(`Round ${danceRound}: Next Moves!`, "system");
+                                    } else {
+                                        addMessage(`Round ${danceRound}: Sequential Mode!`, "system");
+                                    }
+                                }
+                                playCurrentStep();
+                            }
+                        }
+                    };
+                    assignMixerListener(vrm, vrmIndex, onFinished);
+                } else {
+                    currentActiveActions[vrmIndex] = null;
+                }
+            });
+
+            if (!anyoneDancing && !stepTriggered) {
+                stepTriggered = true;
+                setTimeout(() => {
+                    danceStepIndex++;
+                    if (danceStepIndex >= 4) {
+                        danceStepIndex = 0;
+                        danceRound++;
+                        generateSequences(danceRound);
+                    }
+                    playCurrentStep();
+                }, 50);
+            }
+        }
+
+        function stopDance() {
+            if (!isDancing) return;
+            
+            isDancing = false;
+            danceBtn.classList.remove('active');
+            
+            bgm.pause();
+            bgm.currentTime = 0;
+            
+            const lyricsContainer = document.getElementById('lyrics-container');
+            if (lyricsContainer) lyricsContainer.style.opacity = 0;
+            
+            danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+            currentActiveActions.forEach((action, i) => {
+                let idleA = idleActionW;
+                if (action && action !== idleA) action.fadeOut(0.5);
+            });
+            
+            clearAllMixerListeners();
+            
+            currentDanceQueue = [];
+            currentPlayingDanceData = null; 
+            window.pendingMicResume = false; 
+            
+            // ⭐⭐⭐ 停止跳舞後恢復原本的左側版面大小 ⭐⭐⭐
+            setTimeout(() => {
+                updateContainerSize(false);
+            }, 500);
+            
+            if (idleActionW && currentActiveActions[0] !== idleActionW) {
+                idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play();
+            }
+
+            currentActiveActions = [null]; 
+        }
+
+        function toggleDance() {
+            if (isDancing) {
+                stopDance();
+            } else {
+                loadAndPlayDance(); 
+            }
+        }
+
+        function safeParseAIJson(text) {
+            try {
+                let cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const start = cleanText.indexOf('{');
+                const end = cleanText.lastIndexOf('}');
+                if (start === -1 || end === -1) return null;
+                let jsonStr = cleanText.substring(start, end + 1);
+                jsonStr = jsonStr.replace(/[\n\r]+/g, ' ');
+                jsonStr = jsonStr.replace(/\]\s*\[/g, '], [');
+                jsonStr = jsonStr.replace(/'/g, '"');
+                jsonStr = jsonStr
+                    .replace(/"dance_list"\s*:\s*,/g, '"dance_list":[],') 
+                    .replace(/,\s*}/g, '}') 
+                    .replace(/,\s*]/g, ']'); 
+                    
+                const result = JSON.parse(jsonStr);
+                
+                if (result.action === "dance_sequence") {
+                    if (typeof result.dance_list === "number") {
+                        result.dance_list = [result.dance_list];
+                    }
+                    if (!Array.isArray(result.dance_list) || result.dance_list.length === 0) {
+                        result.dance_list = null; 
+                    } else {
+                        result.dance_list = result.dance_list.map(item => {
+                            if (Array.isArray(item)) {
+                                return item.map(v => parseInt(v)).map(v => isNaN(v) ? -1 : v);
+                            } else {
+                                let v = parseInt(item);
+                                return isNaN(v) ? -1 : v;
+                            }
+                        });
+                    }
+                }
+                return result;
+            } catch (err) {
+                console.warn("JSON 修復失敗:", err, "\nRaw text:", text);
+                return null;
+            }
+        }
+
+        function guessDanceFromText(text) {
+            if (!text) return null;
+            const lowerText = text.toLowerCase();
+            
+            if (lowerText.includes("定格b") || lowerText.includes("霹靂舞b")) {
+                return [3];
+            }
+
+            const map = {
+                "霹靂": 0, "街舞": 0, "hiphop": 0, "breakdance": 0,
+                "wave": 1, "揮手": 1, "湯瑪斯": 1, "flair": 1, "thomas": 1,
+                "嘻哈": 2, "律動": 2, "hip hop": 2,
+                "跳舞": -1, "dance": -1, 
+                "隨機跳": -1, "隨便跳": -1
+            };
+            for (const key in map) {
+                if (lowerText.includes(key)) {
+                    return [map[key]]; 
+                }
+            }
+            return null;
+        }
+
+        function fixDanceSequence(seq, referenceText) {
+            if (Array.isArray(seq) && seq.length > 0 && Array.isArray(seq[0])) {
+                return seq[0];
+            }
+            return seq; 
+        }
+
+        async function playDanceSequence(sequence) {
+            isDancing = true;
+            danceBtn.classList.add('active');
+
+            clearAllMixerListeners();
+
+             danceActionsMap.forEach(group => {
+                group.forEach(action => action.fadeOut(0.5));
+            });
+
+            await loadDanceAssets(); 
+            
+            isDancing = true;
+            updateContainerSize(true);
+            
+            try {
+                if (!bgm.paused) bgm.pause();
+                bgm.currentTime = 0;
+                bgm.muted = isMuted;
+                const playPromise = bgm.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => { console.warn("BGM Auto-play failed:", error); });
+                }
+            } catch(e) { console.error("BGM Fatal Error:", e); }
+
+            let seq = Array.isArray(sequence) ? sequence : [];
+            let is2D = seq.length > 0 && Array.isArray(seq[0]);
+            
+            currentDanceQueue = [];
+            
+            if (is2D) {
+                let maxSteps = Math.max(...seq.map(arr => Array.isArray(arr) ? arr.length : 0));
+                for (let step = 0; step < maxSteps; step++) {
+                    let charSeq = seq[0] || [];
+                    let danceId = charSeq[step] !== undefined ? charSeq[step] : 99;
+                    if (danceId === -1) danceId = Math.floor(Math.random() * DANCE_URLS.length);
+                    currentDanceQueue.push(danceId); 
+                }
+            } else {
+                currentDanceQueue = seq.map(id => {
+                    if (id === -1) return Math.floor(Math.random() * DANCE_URLS.length); 
+                    return id;
+                });
+            }
+
+            let firstStep = currentDanceQueue.length > 0 ? currentDanceQueue[0] : null;
+            let wFirst = firstStep; 
+
+            if (idleActionW && wFirst !== 99) idleActionW.fadeOut(0.5);
+            if (talkingActionW) talkingActionW.fadeOut(0.5);
+            
+            logAction(`[系統] 開始執行舞蹈排程 Queue: ${JSON.stringify(currentDanceQueue)}`);
+            playNextDanceInQueue();
+        }
+
+        function playNextDanceInQueue() {
+            if (currentDanceQueue.length === 0) {
+                isDancing = false;
+                bgm.pause();
+                bgm.currentTime = 0;
+                danceBtn.classList.remove('active');
+
+                currentVrms.forEach((v, i) => {
+                    const fadeAction = currentActiveActions[i];
+                    let idleA = idleActionW;
+                    if (fadeAction && fadeAction !== idleA) {
+                        fadeAction.fadeOut(0.5);
+                    }
+                });
+
+                clearAllMixerListeners();
+
+                setTimeout(() => updateContainerSize(false), 500);
+                
+                if (idleActionW && currentActiveActions[0] !== idleActionW) { idleActionW.reset(); idleActionW.setEffectiveWeight(1); idleActionW.fadeIn(0.5).play(); }
+                
+                currentActiveActions = [null];
+                
+                if (window.pendingMicResume) {
+                    window.pendingMicResume = false;
+                    setTimeout(() => {
+                        if (!isRecording) startRecording();
+                    }, 500);
+                }
+                return;
+            }
+
+            let nextData = currentDanceQueue.shift(); 
+            logAction(`[系統] 執行排程步驟: ${JSON.stringify(nextData)}`);
+            
+            let v = parseInt(nextData);
+            if (v === 99) {
+                nextData = 99; 
+            } else if (isNaN(v) || v < 0 || v >= DANCE_URLS.length) {
+                nextData = Math.floor(Math.random() * DANCE_URLS.length);
+            } else {
+                nextData = v;
+            }
+            
+            currentPlayingDanceData = nextData; 
+
+            let dancersFinished = [true]; 
+            let anyoneDancing = false;
+            let stepTriggered = false; 
+
+            currentVrms.forEach((vrm, vrmIndex) => {
+                if (!vrm || !vrm.userData.mixer) return;
+                
+                let nextIndex = nextData;
+                const oldAction = currentActiveActions[vrmIndex];
+
+                if (nextIndex === 99) {
+                    dancersFinished[vrmIndex] = true; 
+                    
+                    let idleA = idleActionW;
+                    
+                    if (oldAction && oldAction !== idleA) {
+                        oldAction.fadeOut(0.5);
+                    }
+                    
+                    if (idleA && oldAction !== idleA) {
+                        if (!idleA.isRunning() || idleA.getEffectiveWeight() === 0) {
+                            idleA.reset();
+                            idleA.setEffectiveWeight(1); 
+                            idleA.fadeIn(0.5).play();
+                        } else if (idleA.getEffectiveWeight() < 1) {
+                            idleA.setEffectiveWeight(1);
+                            idleA.fadeIn(0.5).play();
+                        }
+                        currentActiveActions[vrmIndex] = idleA;
+                    } else if (!idleA) {
+                        currentActiveActions[vrmIndex] = null;
+                    }
+                    return; 
+                }
+                
+                const action = danceActionsMap[nextIndex]?.[vrmIndex];
+                
+                if (action) {
+                    anyoneDancing = true;
+                    dancersFinished[vrmIndex] = false; 
+                    
+                    if (oldAction && oldAction !== action) {
+                        oldAction.fadeOut(0.5);
+                    }
+
+                    if (oldAction === action) {
+                        action.stop(); 
+                        action.reset();
+                        action.setEffectiveWeight(1); 
+                        action.play();
+                    } else {
+                        action.reset();
+                        action.setLoop(THREE.LoopOnce); 
+                        action.clampWhenFinished = true; 
+                        action.setEffectiveWeight(1);
+                        action.fadeIn(0.5); 
+                        action.play();
+                    }
