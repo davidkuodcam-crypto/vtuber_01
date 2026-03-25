@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <title>AI VTuber - 數位系校內展 (Voice Enabled)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<!-- 引入 FontAwesome 用於麥克風圖示 -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
     /* 全域設定：確保邊框計算不影響寬度 */
@@ -442,7 +441,6 @@
 
 </style>
 
-<!-- ⭐ 新增: ES Module Shims，確保 importmap 在所有瀏覽器都能正常運作 -->
 <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
 
 <script type="importmap">
@@ -465,7 +463,6 @@
         <button id="start-btn">慶祝數位系校內展</button>
     </div>
 
-    <!-- 瀏覽器不支援警告 -->
     <div id="browser-warning">
         <h3>⚠️ 瀏覽器功能限制</h3>
         <p>檢測到目前的瀏覽器 (例如 LINE/FB 內建瀏覽器) 不支援語音功能。</p>
@@ -482,7 +479,6 @@
         <span id="status-msg">連線中...</span>
     </div>
     
-    <!-- Android 語音診斷面板 (預設隱藏) -->
     <div id="tts-debug">TTS 系統診斷中...</div>
     
     <div id="emotion-debug">
@@ -490,27 +486,22 @@
         動作: None
     </div>
 
-    <!-- ⭐⭐⭐ 新增：動作指令監控面板 (Action Debug Panel) ⭐⭐⭐ -->
     <div id="action-debug-panel">等待動作指令...</div>
 
-    <!-- ⭐⭐⭐ 新增：歌詞顯示區 ⭐⭐⭐ -->
     <div id="lyrics-container"></div>
 
     <div id="chat-container">
         <div id="chat-display">
-            <!-- 訊息將由 JavaScript 動態加入 -->
-        </div>
+            </div>
         <div id="input-area">
             <button id="dance-btn" class="control-btn" title="熱舞組曲">💃</button>
             <button id="mute-btn" class="control-btn" title="切換聲音">🔊</button>
             
-            <!-- ⭐⭐⭐ 輸入框包裹區與語音波動條 ⭐⭐⭐ -->
             <div class="input-wrapper">
                 <input type="text" id="user-input" placeholder="請輸入訊息..." disabled>
                 <div id="voice-overlay"></div>
             </div>
 
-            <!-- ⭐⭐⭐ 新增麥克風按鈕 ⭐⭐⭐ -->
             <button id="mic-btn" class="control-btn" title="語音輸入"><i class="fa-solid fa-microphone"></i></button>
 
             <button id="send-btn" disabled>發送</button>
@@ -986,32 +977,20 @@
             }
             renderStatus();
 
-            statusText.innerText = "讀取雲端知識庫...";
+            statusText.innerText = "讀取知識庫...";
             let fileIndex = 1;
             let keepLoading = true;
             let loadedCount = 0;
             
             while (keepLoading) {
                 const fileNameRoot = `KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
-                const fileNameFolder = `KnowledgeBase/KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
                 
                 kbStatusHTML = `<span class="icon-loading">●</span> 掃描 KB${String(fileIndex).padStart(2,'0')}...`;
                 renderStatus();
 
                 try {
-                    let res = await fetch(`./${fileNameFolder}?t=${Date.now()}`);
-                    let usedPath = fileNameFolder;
-                    
-                    if (!res.ok) {
-                         // 嘗試從根目錄讀取
-                         try {
-                             const resRoot = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
-                             if (resRoot.ok) {
-                                 res = resRoot;
-                                 usedPath = fileNameRoot;
-                             }
-                         } catch(e) {}
-                    }
+                    let res = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
+                    let usedPath = fileNameRoot;
 
                     if (res.ok) {
                         const text = await res.text();
@@ -1058,7 +1037,7 @@
                     VRMUtils.rotateVRM0(vrm);
                     scene.add(vrm.scene);
                     
-                    // --- ⭐⭐⭐ 隊形排列 (防穿模且美觀) ⭐⭐⭐ ---
+                    // --- ⭐⭐⭐ 隊形排列 (防穿模且美觀) ---
                     if (index === 0) {
                         // 第一個角色：靠近中線，稍微往前
                         vrm.scene.position.set(-0.25, 0.0, 0.4);
