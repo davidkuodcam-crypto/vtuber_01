@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unity VRM Animation Guide</title>
+    <style>
+        :root {
+            --primary: #0ea5e9;
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #cbd5e1;
+            --accent: #38bdf8;
+            --success: #10b981;
+        }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+        canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            opacity: 0.4;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+        h1 {
+            font-size: 2.8rem;
+            color: var(--primary);
+            margin-bottom: 5px;
+            text-shadow: 0 0 10px rgba(14, 165, 233, 0.3);
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+            margin-top: 10px;
+        }
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+            border-left: 5px solid var(--primary);
+            transition: transform 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        h2 {
+            color: var(--accent);
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+            margin-top: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .step {
+            margin-bottom: 25px;
+            padding: 15px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            transition: background 0.3s;
+        }
+        .step.completed {
+            background: rgba(16, 185, 129, 0.1);
+            border-left: 3px solid var(--success);
+        }
+        .step-title {
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: #fbbf24;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .step-num {
+            background: var(--primary);
+            color: white;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 0.9rem;
+        }
+        .step.completed .step-num {
+            background: var(--success);
+        }
+        .step-title input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: var(--success);
+        }
+        .step-content {
+            margin-left: 40px;
+            margin-top: 10px;
+        }
+        .step.completed .step-content {
+            color: #94a3b8;
+        }
+        .highlight {
+            background: #334155;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #38bdf8;
+            font-family: monospace;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        .note {
+            background: rgba(245, 158, 11, 0.1);
+            border-left: 4px solid #f59e0b;
+            padding: 10px 15px;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.95rem;
+            margin-top: 15px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 50px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        
+        /* Progress Bar */
+        .progress-container {
+            width: 100%;
+            background-color: #334155;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 10px;
+            background-color: var(--success);
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+        .progress-text {
+            text-align: right;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 背景 Canvas 特效 -->
+    <canvas id="bgCanvas"></canvas>
+
+    <div class="container">
+        <header>
+            <h1>Unity VRM Animation Guide</h1>
+            <div class="subtitle">VRM 1.0 動作套用與 VRMA 匯出教學</div>
+        </header>
+
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="progress-text" id="progressText">完成度：0%</div>
+
+        <div class="card">
+            <h2>📝 課前準備</h2>
+            <ul>
+                <li><strong>軟體：</strong><a href="https://unity.com/releases/editor/archive" target="_blank" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;">Unity Editor</a> (建議使用 2021.3 或 2022.3 LTS 版本)。</li>
+                <li><strong>套件：</strong>最新版 <a href="https://github.com/vrm-c/UniVRM/releases" target="_blank" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;"><span class="highlight">UniVRM 1.0</span></a> (請下載 <code>VRM-0.xxx.x.unitypackage</code>，注意不要與 VRM 0.x 版本混淆)。</li>
+                <li><strong>素材：</strong>一個 <code>.vrm</code> 虛擬角色檔案，以及一個 <code>.fbx</code> 動作檔案 (例如從 <a href="https://www.mixamo.com/" target="_blank" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;">Mixamo</a> 下載)。</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>🚀 任務一：匯入 VRM 模型並套用 FBX 動作</h2>
+            
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">1</span>匯入 UniVRM 套件與角色
+                </label>
+                <div class="step-content">
+                    <p>將下載好的 <code>VRM-0.xxx.x.unitypackage</code> 拖曳進 Unity 下方的 Project 面板中安裝。接著，將準備好的 <code>.vrm</code> 檔案直接拖曳進 Project 面板，Unity 會自動解析並生成角色的 Prefab 檔案。將該 Prefab 拖曳到左側 Hierarchy 中放入場景。</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">2</span>設定 FBX 為 Humanoid 骨架 (關鍵步驟)
+                </label>
+                <div class="step-content">
+                    <p>將 <code>.fbx</code> 動作檔案拖曳進 Project 面板。點擊該 FBX 檔案，在右側的 <strong>Inspector</strong> 面板中切換到 <strong>Rig</strong> 標籤。</p>
+                    <p>將 <span class="highlight">Animation Type</span> 從 Generic 更改為 <span class="highlight">Humanoid</span>，然後點擊右下角的 <strong>Apply</strong>。這能確保 FBX 的動作完美重定向 (Retargeting) 到 VRM 角色上。</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">3</span>設定 Animator 狀態機 (State Machine)
+                </label>
+                <div class="step-content">
+                    <p>在 Project 面板空白處點擊右鍵：<code>Create</code> -> <code>Animator Controller</code>，將其命名為 <code>VRM_Anim</code>。</p>
+                    <p>點選 Hierarchy 中的 VRM 角色，在右側的 <strong>Animator</strong> 元件中，將剛剛建立的 <code>VRM_Anim</code> 拖曳到 <strong>Controller</strong> 欄位裡。</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">4</span>套用動作並測試
+                </label>
+                <div class="step-content">
+                    <p>雙擊打開 <code>VRM_Anim</code> 進入 Animator 視窗。在 Project 面板中點擊 FBX 檔案旁邊的小三角形展開它，找到 <strong>Animation Clip</strong> (帶有三角形播放圖示的檔案)。</p>
+                    <p>將該 Clip 拖曳進 Animator 視窗中，它會自動變成橘色的預設狀態 (Default State)。按下 Unity 頂部的 Play 播放鍵，角色就會開始動作了！</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>💾 任務二：將 FBX 動作匯出成 VRMA 檔案</h2>
+            <p>VRMA (VRM Animation) 是專為 VRM 設計的動作格式。透過 UniVRM 1.0，我們可以將轉換好的動作獨立匯出，方便在其他網頁或應用程式中重複使用。</p>
+            
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">5</span>選取動作檔案
+                </label>
+                <div class="step-content">
+                    <p>在 Project 面板中，選取剛剛展開的 FBX 檔案內的 <strong>Animation Clip</strong>。</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">6</span>執行 VRMA 匯出
+                </label>
+                <div class="step-content">
+                    <p>在選取狀態下，點擊 Unity 頂部選單的 <span class="highlight">VRM1</span> -> <span class="highlight">VRM Animation Export</span> (依 UniVRM 版本不同，也可能顯示為 <code>Export VRMA</code>)。此時會開啟動作匯出的設定視窗。</p>
+                    <div class="note">
+                        <strong>💡 提示：</strong>部分版本支援直接在 Hierarchy 選取掛載了 Animator 且設定好動作的 VRM 角色，再透過頂部選單匯出動作。
+                    </div>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">7</span>指定參考的 VRM 模型 (關鍵步驟)
+                </label>
+                <div class="step-content">
+                    <p>在彈出的匯出視窗中，找到 <strong>VRM</strong> 欄位（或是要求指定 Avatar 的欄位）。</p>
+                    <p>將您在任務一匯入的 <code>.vrm</code> 角色 Prefab (或 Hierarchy 中的角色物件) 拖曳到這個欄位中。<strong>這個步驟非常重要</strong>，因為轉換器需要參考一個標準的 VRM 模型來讀取正確的骨架比例與對應關係。</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">8</span>確認與匯出存檔
+                </label>
+                <div class="step-content">
+                    <p>確認視窗中沒有紅色的錯誤警告後，點擊右下角的 <strong>Export</strong>，設定檔名與存檔路徑，即可獲得標準的 <code>.vrma</code> 動作檔案！</p>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            &copy; 2026 資訊科技教學講義 | 實作中有任何問題，歡迎隨時提問。
+        </footer>
+    </div>
+
+    <script>
+        // 1. 進度條與勾選邏輯
+        const checkboxes = document.querySelectorAll('.step-checkbox');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const totalSteps = checkboxes.length;
+
+        function updateProgress() {
+            let completed = 0;
+            checkboxes.forEach(cb => {
+                const stepDiv = cb.closest('.step');
+                if (cb.checked) {
+                    completed++;
+                    stepDiv.classList.add('completed');
+                } else {
+                    stepDiv.classList.remove('completed');
+                }
+            });
+            
+            const percentage = Math.round((completed / totalSteps) * 100);
+            progressBar.style.width = `${percentage}%`;
+            progressText.innerText = `完成度：${percentage}% (${completed}/${totalSteps})`;
+        }
+
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', updateProgress);
+        });
+
+        // 2. 具備互動感的 Canvas 網狀節點背景
+        const canvas = document.getElementById('bgCanvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let particles = [];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        class Particle {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.vx = (Math.random() - 0.5) * 0.8;
+                this.vy = (Math.random() - 0.5) * 0.8;
+                this.radius = Math.random() * 1.5 + 1;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                if (this.x < 0 || this.x > width) this.vx *= -1;
+                if (this.y < 0 || this.y > height) this.vy *= -1;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#0ea5e9';
+                ctx.fill();
+            }
+        }
+
+        for (let i = 0; i < 60; i++) {
+            particles.push(new Particle());
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+                particles[i].draw();
+                
+                for (let j = i + 1; j < particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < 120) {
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.strokeStyle = `rgba(14, 165, 233, ${1 - dist/120})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.stroke();
+                    }
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+        
+        animate();
+    </script>
+</body>
+</html>
