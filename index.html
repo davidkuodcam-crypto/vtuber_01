@@ -978,19 +978,32 @@
             }
             renderStatus();
 
-            statusText.innerText = "讀取知識庫...";
-            const MAX_KB_FILES = 3; // ⭐ 修改：設定最大檔案數量，避免 404 錯誤
+            statusText.innerText = "讀取雲端知識庫...";
+            let fileIndex = 1;
+            let keepLoading = true;
             let loadedCount = 0;
             
-            for (let fileIndex = 1; fileIndex <= MAX_KB_FILES; fileIndex++) {
+            while (keepLoading) {
                 const fileNameRoot = `KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
+                const fileNameFolder = `KnowledgeBase/KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
                 
-                kbStatusHTML = `<span class="icon-loading">●</span> 讀取 KB${String(fileIndex).padStart(2,'0')}...`;
+                kbStatusHTML = `<span class="icon-loading">●</span> 掃描 KB${String(fileIndex).padStart(2,'0')}...`;
                 renderStatus();
 
                 try {
-                    let res = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
-                    let usedPath = fileNameRoot;
+                    let res = await fetch(`./${fileNameFolder}?t=${Date.now()}`);
+                    let usedPath = fileNameFolder;
+                    
+                    if (!res.ok) {
+                         // 嘗試從根目錄讀取
+                         try {
+                             const resRoot = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
+                             if (resRoot.ok) {
+                                 res = resRoot;
+                                 usedPath = fileNameRoot;
+                             }
+                         } catch(e) {}
+                    }
 
                     if (res.ok) {
                         const text = await res.text();
@@ -1000,10 +1013,16 @@
                             }
                             externalKnowledge += `\n\n【KB: ${usedPath}】\n${text}`;
                             loadedCount++;
+                            fileIndex++;
+                        } else {
+                            fileIndex++;
                         }
+                    } else {
+                        // 404 is expected when no more files
+                        keepLoading = false;
                     }
                 } catch (e) {
-                    console.warn(`無法讀取 ${fileNameRoot}`, e);
+                    keepLoading = false;
                 }
             }
 
@@ -1031,7 +1050,7 @@
                     VRMUtils.rotateVRM0(vrm);
                     scene.add(vrm.scene);
                     
-                    // --- ⭐⭐⭐ 隊形排列 (防穿模且美觀) ---
+                    // --- ⭐⭐⭐ 隊形排列 (防穿模且美觀) ⭐⭐⭐ ---
                     if (index === 0) {
                         // 第一個角色：靠近中線，稍微往前
                         vrm.scene.position.set(-0.25, 0.0, 0.4);
@@ -1672,6 +1691,10 @@
             if (isDancing) {
                 stopDance();
             } else {
+                // ⭐ 新增：按下跳舞按鈕準備跳舞時，強制關閉麥克風
+                if (typeof isRecording !== 'undefined' && isRecording) {
+                    stopRecording();
+                }
                 loadAndPlayDance(); 
             }
         }
@@ -1812,6 +1835,11 @@
             // 在 await 之前先將狀態設為 true
             isDancing = true;
             danceBtn.classList.add('active');
+
+            // ⭐ 新增：跳舞前，強制關閉麥克風
+            if (typeof isRecording !== 'undefined' && isRecording) {
+                stopRecording();
+            }
 
             // 清理可能殘留的監聽器，防止漏網之魚
             clearAllMixerListeners();
@@ -2788,7 +2816,7 @@
 
         function stopRecording() { 
             isRecording = false; 
-            recognition.stop(); 
+            if (recognition) recognition.stop(); // 增加防呆確保不報錯
             clearTimeout(silenceTimer); 
             updateMicUI(false); 
         }
@@ -2825,6 +2853,12 @@
             
             toggleRecording();
         });
+
+        // ⭐⭐⭐ 移除：如果是手機版 (Android/iOS)，隱藏麥克風按鈕，僅保留PC版功能 ⭐⭐⭐
+        // (已依要求恢復 Android 13 等手機裝置的語音輸入顯示)
+        // if (isAndroid || isIOS) {
+        //     micBtn.style.display = 'none';
+        // }
 
     </script>
 </body>
