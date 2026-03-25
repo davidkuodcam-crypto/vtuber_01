@@ -13,6 +13,7 @@
             --text-muted: #cbd5e1;
             --accent: #38bdf8;
             --success: #10b981;
+            --warning: #f59e0b;
         }
         body {
             margin: 0;
@@ -103,6 +104,7 @@
             justify-content: center;
             border-radius: 50%;
             font-size: 0.9rem;
+            flex-shrink: 0;
         }
         .step.completed .step-num {
             background: var(--success);
@@ -135,7 +137,15 @@
         }
         .note {
             background: rgba(245, 158, 11, 0.1);
-            border-left: 4px solid #f59e0b;
+            border-left: 4px solid var(--warning);
+            padding: 10px 15px;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.95rem;
+            margin-top: 15px;
+        }
+        .alert {
+            background: rgba(239, 68, 68, 0.1);
+            border-left: 4px solid #ef4444;
             padding: 10px 15px;
             border-radius: 0 8px 8px 0;
             font-size: 0.95rem;
@@ -168,16 +178,85 @@
             color: var(--text-muted);
             margin-top: 5px;
         }
+
+        /* Expression Grid */
+        .expression-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .exp-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .exp-card h4 {
+            margin: 0 0 8px 0;
+            color: var(--accent);
+            border-bottom: 1px dashed #475569;
+            padding-bottom: 5px;
+        }
+        .exp-card ul {
+            margin: 0;
+            padding-left: 18px;
+            font-family: monospace;
+            color: #cbd5e1;
+        }
+        
+        /* Code Block */
+        .code-container {
+            position: relative;
+            margin-top: 15px;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(51, 65, 85, 0.9);
+            color: var(--text-main);
+            border: 1px solid #475569;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            z-index: 5;
+        }
+        .copy-btn:hover {
+            background: #64748b;
+            color: #fff;
+        }
+        .copy-btn.copied {
+            background: var(--success);
+            border-color: var(--success);
+            color: #fff;
+        }
+        .code-block {
+            background: #020617;
+            padding: 45px 15px 15px 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid #334155;
+            color: #38bdf8;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.95rem;
+            line-height: 1.4;
+        }
+        .code-comment { color: #10b981; }
+        .code-keyword { color: #f472b6; }
+        .code-string { color: #fde047; }
+        .code-class { color: #fbbf24; }
     </style>
 </head>
 <body>
-    <!-- 背景 Canvas 特效 -->
     <canvas id="bgCanvas"></canvas>
 
     <div class="container">
         <header>
             <h1>Unity VRM Animation Guide</h1>
-            <div class="subtitle">VRM 1.0 動作套用與 VRMA 匯出教學</div>
+            <div class="subtitle">VRM 1.0 動作套用、VRMA匯出與表情系統深度解析</div>
         </header>
 
         <div class="progress-container">
@@ -190,7 +269,7 @@
             <ul>
                 <li><strong>軟體：</strong><a href="https://unity.com/releases/editor/archive" target="_blank" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;">Unity Editor</a> (建議使用 2021.3 或 2022.3 LTS 版本)。</li>
                 <li><strong>套件：</strong>最新版 <a href="https://github.com/vrm-c/UniVRM/releases" target="_blank" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;"><span class="highlight">UniVRM 1.0</span></a> (請下載 <code>VRM-0.xxx.x.unitypackage</code>，注意不要與 VRM 0.x 版本混淆)。</li>
-                <li><strong>素材：</strong>一個 <code>.vrm</code> 虛擬角色檔案，以及一個 <code>.fbx</code> 動作檔案 (例如從 <a href="https://www.mixamo.com/" target="_blank" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;">Mixamo</a> 下載)。</li>
+                <li><strong>素材：</strong>一個 <code>.vrm</code> 虛擬角色檔案，以及一個 <code>.fbx</code> 動作檔案 (例如從 <a href="https://www.mixamo.com/" target="_blank" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;">Mixamo</a> 下載)。我們也會在任務四使用 <a href="https://assetstore.unity.com/packages/3d/characters/unity-chan-model-18705" target="_blank" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;">Unity-Chan! Model</a> 做為對照範例。</li>
             </ul>
         </div>
 
@@ -262,9 +341,6 @@
                 </label>
                 <div class="step-content">
                     <p>在選取狀態下，點擊 Unity 頂部選單的 <span class="highlight">VRM1</span> -> <span class="highlight">VRM Animation Export</span> (依 UniVRM 版本不同，也可能顯示為 <code>Export VRMA</code>)。此時會開啟動作匯出的設定視窗。</p>
-                    <div class="note">
-                        <strong>💡 提示：</strong>部分版本支援直接在 Hierarchy 選取掛載了 Animator 且設定好動作的 VRM 角色，再透過頂部選單匯出動作。
-                    </div>
                 </div>
             </div>
 
@@ -274,8 +350,7 @@
                     <span class="step-num">7</span>指定參考的 VRM 模型 (關鍵步驟)
                 </label>
                 <div class="step-content">
-                    <p>在彈出的匯出視窗中，找到 <strong>VRM</strong> 欄位（或是要求指定 Avatar 的欄位）。</p>
-                    <p>將您在任務一匯入的 <code>.vrm</code> 角色 Prefab (或 Hierarchy 中的角色物件) 拖曳到這個欄位中。<strong>這個步驟非常重要</strong>，因為轉換器需要參考一個標準的 VRM 模型來讀取正確的骨架比例與對應關係。</p>
+                    <p>在彈出的匯出視窗中，找到 <strong>VRM</strong> 欄位。將您在任務一匯入的 <code>.vrm</code> 角色 Prefab 拖曳到這個欄位中。<strong>這個步驟非常重要</strong>，因為轉換器需要參考一個標準的 VRM 模型來讀取正確的骨架比例。</p>
                 </div>
             </div>
 
@@ -285,11 +360,264 @@
                     <span class="step-num">8</span>確認與匯出存檔
                 </label>
                 <div class="step-content">
-                    <p>確認視窗中沒有紅色的錯誤警告後，點擊右下角的 <strong>Export</strong>，設定檔名與存檔路徑，即可獲得標準的 <code>.vrma</code> 動作檔案！</p>
+                    <p>確認視窗中沒有紅色的錯誤警告後，點擊右下角的 <strong>Export</strong>，設定檔名與存檔路徑，即可獲得標準的 <code>.vrma</code> 動作檔案。</p>
                 </div>
             </div>
         </div>
         
+        <div class="card">
+            <h2>🎭 任務三：VRM 表情系統 (Expressions) 深度解析</h2>
+            <p>VRM 擁有標準化的表情系統，透過控制臉部網格的 BlendShape，我們可以在不同模型之間共用同一套表情程式碼。接下來我們將從基礎到進階，逐步掌握這套系統。</p>
+            
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">9</span>認識所有 VRM 預設表情 (Preset Expressions)
+                </label>
+                <div class="step-content">
+                    <p>在 VRM 1.0 中，表情主要透過 <code>ExpressionKey</code> 來呼叫，並分為三大控制部位：</p>
+                    <div class="expression-grid">
+                        <div class="exp-card">
+                            <h4>🙂 情緒 (Emotion)</h4>
+                            <p style="font-size: 0.85rem; margin-bottom:5px; color:#94a3b8;">控制眉毛、眼眶與整體臉部</p>
+                            <ul>
+                                <li>ExpressionKey.Happy</li>
+                                <li>ExpressionKey.Angry</li>
+                                <li>ExpressionKey.Sad</li>
+                                <li>ExpressionKey.Relaxed</li>
+                                <li>ExpressionKey.Surprised</li>
+                                <li>ExpressionKey.Neutral (恢復自然)</li>
+                            </ul>
+                        </div>
+                        <div class="exp-card">
+                            <h4>👄 唇型 (LipSync)</h4>
+                            <p style="font-size: 0.85rem; margin-bottom:5px; color:#94a3b8;">控制嘴巴開合與發音嘴型</p>
+                            <ul>
+                                <li>ExpressionKey.Aa (ㄚ)</li>
+                                <li>ExpressionKey.Ih (ㄧ)</li>
+                                <li>ExpressionKey.Ou (ㄨ)</li>
+                                <li>ExpressionKey.Ee (ㄝ)</li>
+                                <li>ExpressionKey.Oh (ㄛ)</li>
+                            </ul>
+                        </div>
+                        <div class="exp-card">
+                            <h4>👀 眨眼 (Blink)</h4>
+                            <p style="font-size: 0.85rem; margin-bottom:5px; color:#94a3b8;">控制眼皮閉合</p>
+                            <ul>
+                                <li>ExpressionKey.Blink (雙眼)</li>
+                                <li>ExpressionKey.BlinkLeft (左眼)</li>
+                                <li>ExpressionKey.BlinkRight (右眼)</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">10</span>等級一：基礎控制 (一鍵觸發情緒)
+                </label>
+                <div class="step-content">
+                    <p>建立一個 C# 腳本命名為 <code>VRMBasicExpression</code>，綁定到場景中的空物件上，並將 VRM 角色拖入 <code>vrmInstance</code> 欄位。這示範了如何透過權重 (0.0f 到 1.0f) 來開關表情。</p>
+                    <div class="code-container">
+                        <button class="copy-btn" onclick="copyCode(this)">複製程式碼</button>
+                        <div class="code-block">
+<span class="code-keyword">using</span> UnityEngine;
+<span class="code-keyword">using</span> UniVRM10;
+
+<span class="code-keyword">public class</span> <span class="code-class">VRMBasicExpression</span> : MonoBehaviour
+{
+    <span class="code-keyword">public</span> Vrm10Instance vrmInstance;
+
+    <span class="code-keyword">void</span> Update()
+    {
+        <span class="code-keyword">if</span> (vrmInstance == null) <span class="code-keyword">return</span>;
+
+        <span class="code-comment">// 按下空白鍵時：將 Happy 權重設為 1.0 (完全開啟)</span>
+        <span class="code-keyword">if</span> (Input.GetKeyDown(KeyCode.Space))
+        {
+            vrmInstance.Runtime.Expression.SetWeight(ExpressionKey.Happy, 1.0f);
+        }
+
+        <span class="code-comment">// 放開空白鍵時：將 Happy 權重設為 0.0 (關閉)</span>
+        <span class="code-keyword">if</span> (Input.GetKeyUp(KeyCode.Space))
+        {
+            vrmInstance.Runtime.Expression.SetWeight(ExpressionKey.Happy, 0.0f);
+        }
+    }
+}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">11</span>等級二：進階控制 (平滑過渡與母音對嘴)
+                </label>
+                <div class="step-content">
+                    <p>有時候表情或說話不能只是 0 與 1 的切換，而是需要漸變。建立 <code>VRMLipSyncExample</code> 腳本，我們利用數學函式 <code>Mathf.PingPong</code> 讓角色連續發出「Aa(ㄚ)」的平滑嘴型，就像在呼吸或說話一樣。</p>
+                    <div class="code-container">
+                        <button class="copy-btn" onclick="copyCode(this)">複製程式碼</button>
+                        <div class="code-block">
+<span class="code-keyword">using</span> UnityEngine;
+<span class="code-keyword">using</span> UniVRM10;
+
+<span class="code-keyword">public class</span> <span class="code-class">VRMLipSyncExample</span> : MonoBehaviour
+{
+    <span class="code-keyword">public</span> Vrm10Instance vrmInstance;
+    <span class="code-keyword">public float</span> talkingSpeed = 5.0f; <span class="code-comment">// 嘴巴開合速度</span>
+
+    <span class="code-keyword">void</span> Update()
+    {
+        <span class="code-keyword">if</span> (vrmInstance == null) <span class="code-keyword">return</span>;
+
+        <span class="code-comment">// 計算平滑數值 (會在 0.0 到 1.0 之間來回彈跳)</span>
+        <span class="code-keyword">float</span> weight = Mathf.PingPong(Time.time * talkingSpeed, 1.0f);
+
+        <span class="code-comment">// 將數值動態指派給 Aa(ㄚ) 嘴型</span>
+        vrmInstance.Runtime.Expression.SetWeight(ExpressionKey.Aa, weight);
+    }
+}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">12</span>等級三：高階控制 (呼叫自訂表情)
+                </label>
+                <div class="step-content">
+                    <p>除了預設表情，許多模型師會在 VRM 中加入「星星眼 (StarEye)」、「貓耳下垂」等自訂表情。我們無法使用 <code>ExpressionKey.Happy</code> 這種預設語法，必須使用 <code>CreateCustom</code> 來動態呼叫。</p>
+                    <div class="code-container">
+                        <button class="copy-btn" onclick="copyCode(this)">複製程式碼</button>
+                        <div class="code-block">
+<span class="code-keyword">using</span> UnityEngine;
+<span class="code-keyword">using</span> UniVRM10;
+
+<span class="code-keyword">public class</span> <span class="code-class">VRMCustomExpression</span> : MonoBehaviour
+{
+    <span class="code-keyword">public</span> Vrm10Instance vrmInstance;
+    <span class="code-keyword">public string</span> customExpressionName = <span class="code-string">"star_eye"</span>; <span class="code-comment">// 填入模型師設定的表情名稱</span>
+
+    <span class="code-keyword">void</span> Update()
+    {
+        <span class="code-keyword">if</span> (vrmInstance == null) <span class="code-keyword">return</span>;
+
+        <span class="code-keyword">if</span> (Input.GetKeyDown(KeyCode.Return)) <span class="code-comment">// 按下 Enter 鍵</span>
+        {
+            <span class="code-comment">// 建立自訂的 ExpressionKey 並賦予權重 1.0</span>
+            ExpressionKey customKey = ExpressionKey.CreateCustom(customExpressionName);
+            vrmInstance.Runtime.Expression.SetWeight(customKey, 1.0f);
+        }
+    }
+}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">13</span>⚠️ 表情系統實作注意事項
+                </label>
+                <div class="step-content">
+                    <p>在開發 VRM 專案時，請務必遵守以下規範，避免產生 Bug：</p>
+                    <div class="alert">
+                        <strong>不要直接修改 SkinnedMeshRenderer：</strong><br>
+                        千萬不要用 Unity 原生的 <code>SetBlendShapeWeight()</code> 來改臉部網格。必須統一使用 <code>vrmInstance.Runtime.Expression.SetWeight()</code>。因為 VRM 內部有防止穿模的機制（例如設定了「大笑時覆蓋眨眼」），直接改網格會破壞這套保護機制。
+                    </div>
+                    <div class="note">
+                        <strong>權重的範圍：</strong><br>
+                        傳入 <code>SetWeight</code> 的數值必須是 <code>float</code> 型態，且範圍建議嚴格限制在 <strong>0.0f 到 1.0f</strong> 之間。超過 1.0 雖然有時有效，但極易造成模型臉部破圖 (Mesh Distortion)。
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔍 任務四：FBX 模型與 VRM 的差異 (以 Unity-Chan 為例)</h2>
+            <p>在 VRM 尚未普及之前，遊戲開發者通常直接使用 <code>.fbx</code> 格式的模型（例如著名的 Unity-Chan）。學習兩者的差異，能幫助你理解為什麼現代虛擬偶像與遊戲都傾向使用 VRM。</p>
+            
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">14</span>傳統 FBX 控制表情的痛點 (名稱不統一)
+                </label>
+                <div class="step-content">
+                    <p>如果你從 Asset Store 下載 <a href="https://assetstore.unity.com/packages/3d/characters/unity-chan-model-18705" target="_blank" style="color: var(--accent); text-decoration: underline; text-underline-offset: 3px;"><strong>Unity-Chan! Model</strong></a> 並放入場景，你會發現她沒有 <code>Vrm10Instance</code>。要改變她的表情，你必須在她的臉部子物件 (例如 <code>MTH_DEF</code> 網格) 上找到 <strong>Skinned Mesh Renderer</strong> 元件。</p>
+                    <p><strong>最大痛點：</strong>Unity-Chan 的微笑可能叫 <code>smile1</code>，但換成另一個 FBX 角色可能叫 <code>Face_Happy</code>。因為缺乏標準，你每換一個 FBX 模型，程式碼就要全部重寫！</p>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">15</span>實作：FBX 專用的表情程式碼
+                </label>
+                <div class="step-content">
+                    <p>我們來看看控制傳統 FBX 模型 (如 Unity-Chan) 臉部表情的寫法。請注意這與 VRM 寫法的兩大差異：</p>
+                    <ol>
+                        <li>必須直接取得 <code>SkinnedMeshRenderer</code> 元件。</li>
+                        <li>權重數值 (Weight) 在 Unity 原生系統中是 <strong>0 到 100</strong>，而 VRM 是 <strong>0.0 到 1.0</strong>。</li>
+                    </ol>
+                    <div class="code-container">
+                        <button class="copy-btn" onclick="copyCode(this)">複製程式碼</button>
+                        <div class="code-block">
+<span class="code-keyword">using</span> UnityEngine;
+
+<span class="code-keyword">public class</span> <span class="code-class">FBXExpressionExample</span> : MonoBehaviour
+{
+    <span class="code-comment">// 需要手動拖曳擁有 BlendShape 的「臉部網格」物件</span>
+    <span class="code-keyword">public</span> SkinnedMeshRenderer faceMeshRenderer;
+
+    <span class="code-comment">// FBX 的表情索引值 (可能要自己慢慢測試第幾個是笑臉)</span>
+    <span class="code-keyword">public int</span> smileBlendShapeIndex = 0;
+
+    <span class="code-keyword">void</span> Update()
+    {
+        <span class="code-keyword">if</span> (faceMeshRenderer == null) <span class="code-keyword">return</span>;
+
+        <span class="code-keyword">if</span> (Input.GetKeyDown(KeyCode.Space))
+        {
+            <span class="code-comment">// Unity 原生的表情控制：(索引值, 權重 0~100)</span>
+            <span class="code-comment">// 注意這裡輸入的是 100f，這與 VRM 的 1.0f 完全不同！</span>
+            faceMeshRenderer.SetBlendShapeWeight(smileBlendShapeIndex, 100f);
+        }
+
+        <span class="code-keyword">if</span> (Input.GetKeyUp(KeyCode.Space))
+        {
+            <span class="code-comment">// 恢復原狀，設為 0</span>
+            faceMeshRenderer.SetBlendShapeWeight(smileBlendShapeIndex, 0f);
+        }
+    }
+}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="step">
+                <label class="step-title">
+                    <input type="checkbox" class="step-checkbox">
+                    <span class="step-num">16</span>結論：為什麼 VRM 更好？
+                </label>
+                <div class="step-content">
+                    <p>透過比較，我們可以總結出 VRM (相對於 FBX) 在角色控制上的強大優勢：</p>
+                    <ul>
+                        <li><strong>通用性：</strong>VRM 統一了 <code>ExpressionKey.Happy</code>，同一套程式碼套用在 A 角色和 B 角色上都會正確笑出來。</li>
+                        <li><strong>防穿模機制：</strong>FBX 如果同時把「嘴巴張開」和「微笑」都調到 100，常常會導致牙齒穿出臉頰破圖；而 VRM 的設定檔允許防呆覆蓋。</li>
+                        <li><strong>統一材質：</strong>除了表情，FBX 的材質球 (Material) 常常在不同電腦或專案中遺失或變成粉紅色；VRM 內建了 MToon 標準動漫材質，確保匯入即用。</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
         <footer>
             &copy; 2026 資訊科技教學講義 | 實作中有任何問題，歡迎隨時提問。
         </footer>
@@ -323,7 +651,35 @@
             cb.addEventListener('change', updateProgress);
         });
 
-        // 2. 具備互動感的 Canvas 網狀節點背景
+        // 複製程式碼功能
+        function copyCode(btn) {
+            const codeBlock = btn.nextElementSibling;
+            const textToCopy = codeBlock.innerText;
+            
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            document.body.appendChild(textArea);
+            textArea.select();
+            
+            try {
+                document.execCommand('copy');
+                const originalText = btn.innerText;
+                btn.innerText = "✅ 已複製！";
+                btn.classList.add('copied');
+                
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                console.error('複製失敗', err);
+                btn.innerText = "❌ 複製失敗";
+            }
+            
+            document.body.removeChild(textArea);
+        }
+
+        // 2. 背景特效
         const canvas = document.getElementById('bgCanvas');
         const ctx = canvas.getContext('2d');
         let width, height;
