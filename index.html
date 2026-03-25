@@ -978,51 +978,32 @@
             }
             renderStatus();
 
-            statusText.innerText = "讀取雲端知識庫...";
-            let fileIndex = 1;
-            let keepLoading = true;
+            statusText.innerText = "讀取知識庫...";
+            const MAX_KB_FILES = 3; // ⭐ 修改：設定最大檔案數量，避免 404 錯誤
             let loadedCount = 0;
             
-            while (keepLoading) {
+            for (let fileIndex = 1; fileIndex <= MAX_KB_FILES; fileIndex++) {
                 const fileNameRoot = `KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
-                const fileNameFolder = `KnowledgeBase/KnowledgeBase${String(fileIndex).padStart(2, '0')}.txt`;
                 
-                kbStatusHTML = `<span class="icon-loading">●</span> 掃描 KB${String(fileIndex).padStart(2,'0')}...`;
+                kbStatusHTML = `<span class="icon-loading">●</span> 讀取 KB${String(fileIndex).padStart(2,'0')}...`;
                 renderStatus();
 
                 try {
-                    let res = await fetch(`./${fileNameFolder}?t=${Date.now()}`);
-                    let usedPath = fileNameFolder;
+                    // ⭐ 只從同層目錄讀取，徹底移除 /KnowledgeBase/ 資料夾的邏輯
+                    let res = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
                     
-                    if (!res.ok) {
-                         // 嘗試從根目錄讀取
-                         try {
-                             const resRoot = await fetch(`./${fileNameRoot}?t=${Date.now()}`);
-                             if (resRoot.ok) {
-                                 res = resRoot;
-                                 usedPath = fileNameRoot;
-                             }
-                         } catch(e) {}
-                    }
-
                     if (res.ok) {
                         const text = await res.text();
                         if (text.trim().length > 0) {
                             if (fileIndex === 1) {
                                 openingRemark = text;
                             }
-                            externalKnowledge += `\n\n【KB: ${usedPath}】\n${text}`;
+                            externalKnowledge += `\n\n【KB: ${fileNameRoot}】\n${text}`;
                             loadedCount++;
-                            fileIndex++;
-                        } else {
-                            fileIndex++;
                         }
-                    } else {
-                        // 404 is expected when no more files
-                        keepLoading = false;
                     }
                 } catch (e) {
-                    keepLoading = false;
+                    console.warn(`無法讀取 ${fileNameRoot}`, e);
                 }
             }
 
@@ -2853,12 +2834,6 @@
             
             toggleRecording();
         });
-
-        // ⭐⭐⭐ 移除：如果是手機版 (Android/iOS)，隱藏麥克風按鈕，僅保留PC版功能 ⭐⭐⭐
-        // (已依要求恢復 Android 13 等手機裝置的語音輸入顯示)
-        // if (isAndroid || isIOS) {
-        //     micBtn.style.display = 'none';
-        // }
 
     </script>
 </body>
