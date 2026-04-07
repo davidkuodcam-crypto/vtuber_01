@@ -21,7 +21,7 @@
 
   <!-- 系統核心變數與 API 設定 -->
   <script>
-    const apiKey = "AIzaSyAtdY1VIf__RKKssL_o7xaBbG3McxcrMvU"; // API Key will be provided by the environment
+    const apiKey = ""; // API Key will be provided by the environment
 
     const allVoices = [
       "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", 
@@ -668,19 +668,35 @@
           setTimeout(() => { if(state.currentSimPatientId === p.id) setSpeakingState(false); }, aiText.length * 280);
 
         } else {
-          // 模式 A: 修正為參考 index.html 的瀏覽器內建 Web Speech API，不需消耗語音 API Key
-          const langMap = {'中文': 'zh-TW', '英文': 'en-US', '法文': 'fr-FR', '德文': 'de-DE', '西班牙文': 'es-ES', '日文': 'ja-JP', '韓文': 'ko-KR', '越南文': 'vi-VN', '印尼文': 'id-ID', '泰文': 'th-TH'};
-          
-          window.speechSynthesis.cancel();
-          const utterance = new SpeechSynthesisUtterance(aiText);
-          utterance.rate = p.speechSpeed;
-          utterance.lang = langMap[p.language] || 'zh-TW';
-          
-          utterance.onstart = () => { setSpeakingState(true); };
-          utterance.onend = () => { if(state.currentSimPatientId === p.id) setSpeakingState(false); };
-          utterance.onerror = () => { if(state.currentSimPatientId === p.id) setSpeakingState(false); };
+          // 模式 A: 恢復使用 Google Gemini TTS API，並結合語言設定
+          let styleText = "正常";
+          if (p.speechSpeed <= 0.7) styleText = "非常緩慢且停頓較多";
+          else if (p.speechSpeed <= 0.9) styleText = "有些猶豫且稍慢";
+          else if (p.speechSpeed <= 1.4) styleText = "語氣稍快";
+          else if (p.speechSpeed > 1.4) styleText = "非常急促";
 
-          window.speechSynthesis.speak(utterance);
+          const audioPayload = {
+            contents: [{ parts: [{ text: `請用${p.language || '中文'}，以${styleText}的語氣說：${aiText}` }] }],
+            generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: p.voiceName } } } },
+            model: "gemini-2.5-flash-preview-tts"
+          };
+
+          const audioResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(audioPayload)
+          });
+
+          const base64Data = audioResult.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+          if (base64Data) {
+            const binaryString = window.atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+            const wavBlob = createWavFile(bytes.buffer, 24000);
+            
+            dom.audioPlayer.src = URL.createObjectURL(wavBlob);
+            dom.audioPlayer.playbackRate = p.speechSpeed;
+            dom.audioPlayer.play();
+            setSpeakingState(true);
+          }
         }
       } catch (error) {
         console.error("錯誤:", error);
@@ -911,7 +927,7 @@
       closeDeleteModal(); // 關閉視窗
     }
 
-    // 聲音測試鈕 (修正為瀏覽器原生語音 API)
+    // 聲音測試鈕 (恢復為使用 Google Gemini TTS API)
     async function testVoice() {
       const btn = dom.btnTestVoice;
       const originalHtml = btn.innerHTML;
@@ -923,6 +939,7 @@
         const name = dom.editName.value.trim() || '未命名';
         const speed = parseFloat(dom.editSpeed.value);
         const language = dom.editLanguage.value;
+        const voiceName = dom.editVoice.value;
         
         const testGreetings = {
           '中文': `你好，醫生。我是${name}，這是我說話的聲音。`,
@@ -937,25 +954,39 @@
           '泰文': `สวัสดีครับ/ค่ะ หมอ ฉันชื่อ ${name} และนี่คือเสียงของฉัน`
         };
         const text = testGreetings[language] || testGreetings['中文'];
-        const langMap = {'中文': 'zh-TW', '英文': 'en-US', '法文': 'fr-FR', '德文': 'de-DE', '西班牙文': 'es-ES', '日文': 'ja-JP', '韓文': 'ko-KR', '越南文': 'vi-VN', '印尼文': 'id-ID', '泰文': 'th-TH'};
 
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = speed;
-        utterance.lang = langMap[language] || 'zh-TW';
-        
-        utterance.onend = () => {
-          btn.innerHTML = originalHtml;
-          lucide.createIcons();
-          btn.disabled = false;
-        };
-        utterance.onerror = () => {
-          btn.innerHTML = originalHtml;
-          lucide.createIcons();
-          btn.disabled = false;
+        const audioPayload = {
+          contents: [{ parts: [{ text: text }] }],
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } },
+          model: "gemini-2.5-flash-preview-tts"
         };
 
-        window.speechSynthesis.speak(utterance);
+        const audioResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(audioPayload)
+        });
+
+        const base64Data = audioResult.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64Data) {
+          const binaryString = window.atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+          const wavBlob = createWavFile(bytes.buffer, 24000);
+          
+          // 設定播放完畢後還原按鈕狀態
+          dom.audioPlayer.onended = () => {
+            btn.innerHTML = originalHtml;
+            lucide.createIcons();
+            btn.disabled = false;
+            setSpeakingState(false);
+            dom.audioPlayer.onended = () => setSpeakingState(false); // 恢復預設事件
+          };
+
+          dom.audioPlayer.src = URL.createObjectURL(wavBlob);
+          dom.audioPlayer.playbackRate = speed;
+          dom.audioPlayer.play();
+        } else {
+           throw new Error("API 未回傳音訊資料");
+        }
       } catch (e) {
         alert("測試語音失敗，請稍後再試。");
         btn.innerHTML = originalHtml;
