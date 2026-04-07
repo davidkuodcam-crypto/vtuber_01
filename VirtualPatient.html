@@ -675,11 +675,10 @@
           else if (p.speechSpeed <= 1.4) styleText = "語氣稍快";
           else if (p.speechSpeed > 1.4) styleText = "非常急促";
 
-          // 修正：移除會導致 400 錯誤的 model 屬性，並加入空 tools 防止 chat.js 注入搜尋工具
+          // 修正：移除會導致 400 錯誤的 tools 陣列
           const audioPayload = {
             contents: [{ parts: [{ text: `請用${p.language || '中文'}，以${styleText}的語氣說：${aiText}` }] }],
-            generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: p.voiceName } } } },
-            tools: [] // 避免與後端 chat.js 的 google_search 衝突
+            generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: p.voiceName } } } }
           };
 
           // 修正：更換為呼叫後端 API
@@ -957,11 +956,10 @@
         };
         const text = testGreetings[language] || testGreetings['中文'];
 
-        // 修正：移除會導致 400 錯誤的 model 屬性，並加入空 tools 防止 chat.js 注入搜尋工具
+        // 修正：移除會導致 400 錯誤的 tools 陣列
         const audioPayload = {
           contents: [{ parts: [{ text: text }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } },
-          tools: [] // 避免與後端 chat.js 的 google_search 衝突
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } }
         };
 
         // 修正：更換為呼叫後端 API
