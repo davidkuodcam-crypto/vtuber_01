@@ -21,8 +21,9 @@
 
   <!-- 系統核心變數與 API 設定 -->
   <script>
-    // 修正：移除明碼 API Key，改為使用後端 Serverless API 端點
-    const API_URL = "/api/chat";
+    // 修正：解決 Canvas 預覽環境 (blob:) 無法解析相對路徑 "/api/chat" 導致的 TypeError
+    const isPreviewEnv = window.location.protocol === 'blob:' || window.location.protocol === 'file:';
+    const API_URL = isPreviewEnv ? "https://vtuber01.vercel.app/api/chat" : "/api/chat";
 
     const allVoices = [
       "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", 
@@ -613,7 +614,7 @@
         const historyParts = p.messages.filter(m => m.role !== 'system').map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] }));
         const textPayload = { contents: [...historyParts, { role: "user", parts: [{ text: text }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
 
-        // 修正：更換為呼叫後端 API
+        // 呼叫後端 API 產生文字
         const textResult = await fetchWithRetry(API_URL, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(textPayload)
         });
@@ -668,20 +669,21 @@
           setTimeout(() => { if(state.currentSimPatientId === p.id) setSpeakingState(false); }, aiText.length * 280);
 
         } else {
-          // 模式 A: 恢復使用 Google Gemini TTS API，並結合語言設定
+          // 模式 A: 使用 Google Gemini TTS API (繞過原本 chat.js 的限制)
           let styleText = "正常";
           if (p.speechSpeed <= 0.7) styleText = "非常緩慢且停頓較多";
           else if (p.speechSpeed <= 0.9) styleText = "有些猶豫且稍慢";
           else if (p.speechSpeed <= 1.4) styleText = "語氣稍快";
           else if (p.speechSpeed > 1.4) styleText = "非常急促";
 
-          // 修正：移除會導致 400 錯誤的 tools 陣列
+          // ⭐ 透過自訂的 audio 參數格式呼叫 API，避免被 chat.js 的 google_search 卡住
           const audioPayload = {
             contents: [{ parts: [{ text: `請用${p.language || '中文'}，以${styleText}的語氣說：${aiText}` }] }],
-            generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: p.voiceName } } } }
+            generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: p.voiceName } } } },
+            tools: [] // 避免與後端 chat.js 的 google_search 衝突
           };
 
-          // 修正：更換為呼叫後端 API
+          // 透過呼叫自己的後端 API
           const audioResult = await fetchWithRetry(API_URL, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(audioPayload)
           });
@@ -928,7 +930,7 @@
       closeDeleteModal(); // 關閉視窗
     }
 
-    // 聲音測試鈕 (恢復為使用 Google Gemini TTS API)
+    // 聲音測試鈕 (使用 Google Gemini TTS API)
     async function testVoice() {
       const btn = dom.btnTestVoice;
       const originalHtml = btn.innerHTML;
@@ -956,13 +958,12 @@
         };
         const text = testGreetings[language] || testGreetings['中文'];
 
-        // 修正：移除會導致 400 錯誤的 tools 陣列
         const audioPayload = {
           contents: [{ parts: [{ text: text }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } }
+          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } },
+          tools: [] // 避免與後端 chat.js 的 google_search 衝突
         };
 
-        // 修正：更換為呼叫後端 API
         const audioResult = await fetchWithRetry(API_URL, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(audioPayload)
         });
@@ -1018,7 +1019,6 @@
 
         const textPayload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
         
-        // 修正：更換為呼叫後端 API
         const textResult = await fetchWithRetry(API_URL, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(textPayload)
         });
