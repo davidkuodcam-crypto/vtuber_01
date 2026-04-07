@@ -21,7 +21,8 @@
 
   <!-- 系統核心變數與 API 設定 -->
   <script>
-    const apiKey = "AIzaSyDKU3UbaIn742zsVmZXKoccs8wB8HkgOY8"; // API Key will be provided by the environment
+    // 修正：移除明碼 API Key，改為使用後端 Serverless API 端點
+    const API_URL = "/api/chat";
 
     const allVoices = [
       "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", 
@@ -125,7 +126,6 @@
 
         <div id="avatarContainer" class="h-[140px] md:h-[22vh] relative bg-gray-100 flex items-center justify-center overflow-hidden transition-all duration-300">
           <img id="simAvatar" src="" alt="虛擬病患" class="object-cover w-full h-full transition-transform duration-[2s] scale-100" />
-          <!-- 修正：將 object-cover 改為 object-contain，防止影片人物頭部被裁切 -->
           <video id="simAvatarVideo" src="" class="object-contain w-full h-full hidden" loop playsinline muted></video>
           <div class="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none"></div>
           
@@ -613,8 +613,8 @@
         const historyParts = p.messages.filter(m => m.role !== 'system').map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] }));
         const textPayload = { contents: [...historyParts, { role: "user", parts: [{ text: text }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
 
-        // 修正：更換為公開穩定版的 gemini-2.5-flash 模型
-        const textResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        // 修正：更換為呼叫後端 API
+        const textResult = await fetchWithRetry(API_URL, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(textPayload)
         });
         const aiText = textResult.candidates?.[0]?.content?.parts?.[0]?.text || "（沉默）";
@@ -675,13 +675,15 @@
           else if (p.speechSpeed <= 1.4) styleText = "語氣稍快";
           else if (p.speechSpeed > 1.4) styleText = "非常急促";
 
+          // 修正：移除會導致 400 錯誤的 model 屬性，並加入空 tools 防止 chat.js 注入搜尋工具
           const audioPayload = {
             contents: [{ parts: [{ text: `請用${p.language || '中文'}，以${styleText}的語氣說：${aiText}` }] }],
             generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: p.voiceName } } } },
-            model: "gemini-2.5-flash-preview-tts"
+            tools: [] // 避免與後端 chat.js 的 google_search 衝突
           };
 
-          const audioResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+          // 修正：更換為呼叫後端 API
+          const audioResult = await fetchWithRetry(API_URL, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(audioPayload)
           });
 
@@ -955,13 +957,15 @@
         };
         const text = testGreetings[language] || testGreetings['中文'];
 
+        // 修正：移除會導致 400 錯誤的 model 屬性，並加入空 tools 防止 chat.js 注入搜尋工具
         const audioPayload = {
           contents: [{ parts: [{ text: text }] }],
           generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } },
-          model: "gemini-2.5-flash-preview-tts"
+          tools: [] // 避免與後端 chat.js 的 google_search 衝突
         };
 
-        const audioResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+        // 修正：更換為呼叫後端 API
+        const audioResult = await fetchWithRetry(API_URL, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(audioPayload)
         });
 
@@ -1016,8 +1020,8 @@
 
         const textPayload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
         
-        // 修正：更換為公開穩定版的 gemini-2.5-flash 模型
-        const textResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        // 修正：更換為呼叫後端 API
+        const textResult = await fetchWithRetry(API_URL, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(textPayload)
         });
 
