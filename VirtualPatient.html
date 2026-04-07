@@ -21,7 +21,7 @@
 
   <!-- 系統核心變數與 API 設定 -->
   <script>
-    const apiKey = "AIzaSyAtdY1VIf__RKKssL_o7xaBbG3McxcrMvU"; // API Key will be provided by the environment
+    const apiKey = ""; // API Key will be provided by the environment
 
     const allVoices = [
       "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", 
@@ -613,7 +613,8 @@
         const historyParts = p.messages.filter(m => m.role !== 'system').map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] }));
         const textPayload = { contents: [...historyParts, { role: "user", parts: [{ text: text }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
 
-        const textResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        // 修正：更換為公開穩定版的 gemini-2.5-flash 模型
+        const textResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(textPayload)
         });
         const aiText = textResult.candidates?.[0]?.content?.parts?.[0]?.text || "（沉默）";
@@ -667,35 +668,19 @@
           setTimeout(() => { if(state.currentSimPatientId === p.id) setSpeakingState(false); }, aiText.length * 280);
 
         } else {
-          // 模式 A: Gemini TTS + MP4 循環
-          let styleText = "正常";
-          if (p.speechSpeed <= 0.7) styleText = "非常緩慢且停頓較多";
-          else if (p.speechSpeed <= 0.9) styleText = "有些猶豫且稍慢";
-          else if (p.speechSpeed <= 1.4) styleText = "語氣稍快";
-          else if (p.speechSpeed > 1.4) styleText = "非常急促";
+          // 模式 A: 修正為參考 index.html 的瀏覽器內建 Web Speech API，不需消耗語音 API Key
+          const langMap = {'中文': 'zh-TW', '英文': 'en-US', '法文': 'fr-FR', '德文': 'de-DE', '西班牙文': 'es-ES', '日文': 'ja-JP', '韓文': 'ko-KR', '越南文': 'vi-VN', '印尼文': 'id-ID', '泰文': 'th-TH'};
+          
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(aiText);
+          utterance.rate = p.speechSpeed;
+          utterance.lang = langMap[p.language] || 'zh-TW';
+          
+          utterance.onstart = () => { setSpeakingState(true); };
+          utterance.onend = () => { if(state.currentSimPatientId === p.id) setSpeakingState(false); };
+          utterance.onerror = () => { if(state.currentSimPatientId === p.id) setSpeakingState(false); };
 
-          const audioPayload = {
-            contents: [{ parts: [{ text: `請以${styleText}的語氣說：${aiText}` }] }],
-            generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: p.voiceName } } } },
-            model: "gemini-2.5-flash-preview-tts"
-          };
-
-          const audioResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(audioPayload)
-          });
-
-          const base64Data = audioResult.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-          if (base64Data) {
-            const binaryString = window.atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-            const wavBlob = createWavFile(bytes.buffer, 24000);
-            
-            dom.audioPlayer.src = URL.createObjectURL(wavBlob);
-            dom.audioPlayer.playbackRate = p.speechSpeed;
-            dom.audioPlayer.play();
-            setSpeakingState(true);
-          }
+          window.speechSynthesis.speak(utterance);
         }
       } catch (error) {
         console.error("錯誤:", error);
@@ -926,7 +911,7 @@
       closeDeleteModal(); // 關閉視窗
     }
 
-    // 聲音測試鈕
+    // 聲音測試鈕 (修正為瀏覽器原生語音 API)
     async function testVoice() {
       const btn = dom.btnTestVoice;
       const originalHtml = btn.innerHTML;
@@ -936,7 +921,6 @@
 
       try {
         const name = dom.editName.value.trim() || '未命名';
-        const voiceName = dom.editVoice.value;
         const speed = parseFloat(dom.editSpeed.value);
         const language = dom.editLanguage.value;
         
@@ -953,31 +937,27 @@
           '泰文': `สวัสดีครับ/ค่ะ หมอ ฉันชื่อ ${name} และนี่คือเสียงของฉัน`
         };
         const text = testGreetings[language] || testGreetings['中文'];
+        const langMap = {'中文': 'zh-TW', '英文': 'en-US', '法文': 'fr-FR', '德文': 'de-DE', '西班牙文': 'es-ES', '日文': 'ja-JP', '韓文': 'ko-KR', '越南文': 'vi-VN', '印尼文': 'id-ID', '泰文': 'th-TH'};
 
-        const audioPayload = {
-          contents: [{ parts: [{ text: text }] }],
-          generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } } } },
-          model: "gemini-2.5-flash-preview-tts"
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = speed;
+        utterance.lang = langMap[language] || 'zh-TW';
+        
+        utterance.onend = () => {
+          btn.innerHTML = originalHtml;
+          lucide.createIcons();
+          btn.disabled = false;
+        };
+        utterance.onerror = () => {
+          btn.innerHTML = originalHtml;
+          lucide.createIcons();
+          btn.disabled = false;
         };
 
-        const audioResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(audioPayload)
-        });
-
-        const base64Data = audioResult.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (base64Data) {
-          const binaryString = window.atob(base64Data);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-          const wavBlob = createWavFile(bytes.buffer, 24000);
-          
-          dom.audioPlayer.src = URL.createObjectURL(wavBlob);
-          dom.audioPlayer.playbackRate = speed;
-          dom.audioPlayer.play();
-        }
+        window.speechSynthesis.speak(utterance);
       } catch (e) {
         alert("測試語音失敗，請稍後再試。");
-      } finally {
         btn.innerHTML = originalHtml;
         lucide.createIcons();
         btn.disabled = false;
@@ -1004,7 +984,9 @@
 只需要直接回覆情境內容，不需任何問候語或解釋。`;
 
         const textPayload = { contents: [{ role: "user", parts: [{ text: prompt }] }] };
-        const textResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        
+        // 修正：更換為公開穩定版的 gemini-2.5-flash 模型
+        const textResult = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(textPayload)
         });
 
