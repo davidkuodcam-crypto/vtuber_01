@@ -16,8 +16,6 @@ export default async function handler(req, res) {
   if (allowedOrigins.includes(requestOrigin)) {
     // 如果有，就允許通過
     res.setHeader('Access-Control-Allow-Origin', requestOrigin);
-  } else {
-    // 如果沒有在白名單內，就不設定 Allow-Origin，瀏覽器會自動擋下該請求
   }
 
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -51,14 +49,26 @@ export default async function handler(req, res) {
   }
 
   try {
-    const GEMINI_MODEL = "gemini-2.5-flash"; 
-    const GOOGLE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
     const requestBody = req.body;
 
-    // 強制啟用 Google Search 工具，讓 AI 能查最新資料
-    if (!requestBody.tools) {
+    // 【新增智慧判斷邏輯】：檢查前端的請求是否為「產生語音 (AUDIO)」
+    const isAudioRequest = requestBody.generationConfig &&
+                           requestBody.generationConfig.responseModalities &&
+                           requestBody.generationConfig.responseModalities.includes("AUDIO");
+
+    // 若是語音請求，切換至 TTS 模型；若是文字對話 (如 3dshow.html)，維持原 flash 模型
+    const GEMINI_MODEL = isAudioRequest ? "gemini-2.5-flash-preview-tts" : "gemini-2.5-flash"; 
+    const GOOGLE_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+
+    // 【核心修正】：只有在「不是」語音請求時，才強制啟用 Google Search 工具。
+    // 這樣 3dshow.html 的搜尋功能完全不受影響，而語音請求也不會再報 500 錯誤。
+    if (!isAudioRequest && !requestBody.tools) {
         requestBody.tools = [{ google_search: {} }];
+    }
+
+    // 額外防呆：若前端不小心傳了空的 tools 陣列，將其刪除避免 Google API 拒絕請求
+    if (requestBody.tools && Array.isArray(requestBody.tools) && requestBody.tools.length === 0) {
+        delete requestBody.tools;
     }
 
     const response = await fetch(GOOGLE_API_URL, {
